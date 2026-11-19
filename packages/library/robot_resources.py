@@ -12,7 +12,7 @@ from packages.library.archive import destination_parent, import_lock
 from packages.library.common import NAME, LibraryError
 from packages.library.templates import TemplateError
 from packages.library.templates import resolve as resolve_templates
-from packages.library.transactions import durable_json
+from packages.library.transactions import METADATA_MAX_BYTES, durable_bytes, json_bytes
 from packages.programs.metadata import ProgramIntent
 
 ActionKey = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$")]
@@ -207,7 +207,7 @@ class RobotResources:
         path = destination_parent(root, relative.parts[:-1]) / relative.name
         try:
             if (path.is_symlink() or path.is_junction() or not path.is_file()
-                    or path.stat().st_nlink != 1 or path.stat().st_size > 256 * 1024):
+                    or path.stat().st_nlink != 1 or path.stat().st_size > METADATA_MAX_BYTES):
                 raise ValueError
             content = path.read_bytes()
             value = schema.model_validate(yaml.safe_load(content)).model_dump()
@@ -228,6 +228,9 @@ class RobotResources:
                 values[identifier] = record | {"root": origin}
         return values
 
+    def embodiment_metadata(self):
+        return self._documents("embodiments", Embodiment)
+
     def _validate_model(self, value, embodiments):
         if any(name not in embodiments for name in value["embodiments"]):
             raise LibraryError("unknown_embodiment", "Robot Model references an unknown Embodiment", 409)
@@ -238,7 +241,7 @@ class RobotResources:
 
     def models(self):
         values = self._documents("robot-models", RobotModel)
-        embodiments = self._documents("embodiments", Embodiment)
+        embodiments = self.embodiment_metadata()
         for value in values.values():
             self._validate_model(value, embodiments)
         return sorted(values.values(), key=lambda value: value["id"])
@@ -255,7 +258,7 @@ class RobotResources:
 
     def controller(self, identifier):
         metadata = self._find(list(self._documents("controllers", Controller).values()), identifier)
-        embodiments = self._documents("embodiments", Embodiment)
+        embodiments = self.embodiment_metadata()
         if metadata["embodiment"] not in embodiments:
             raise LibraryError("unknown_embodiment", "Controller references an unknown robot", 409)
         models = {value["id"]: value for value in self.models()}
@@ -290,7 +293,7 @@ class RobotResources:
 
     def embodiments(self):
         models = self.models()
-        values = self._documents("embodiments", Embodiment)
+        values = self.embodiment_metadata()
         controllers = self._documents("controllers", Controller)
         return [self._describe_embodiment(values[key], models, controllers) for key in sorted(values)]
 
@@ -354,18 +357,21 @@ class RobotResources:
     def register_model(self, document):
         return self._register(
             "robot-models", RobotModel, document,
-            lambda value: self._validate_model(value, self._documents("embodiments", Embodiment)),
+            lambda value: self._validate_model(value, self.embodiment_metadata()),
             self.model,
         )
 
     def register_embodiment(self, document):
         def validate(value):
+            asset = self.assets.resolve(value["asset"])
+            relative = asset.path.relative_to(self.assets.roots[asset.root]).as_posix()
+            self.assets.indexed_file(asset.root, relative + "/asset.yaml")
             controller_id = value["controller"]
             controllers = self._documents("controllers", Controller)
             if controller_id and (
                 controller_id in controllers or any(
                     item["controller"] == controller_id
-                    for item in self._documents("embodiments", Embodiment).values()
+                    for item in self.embodiment_metadata().values()
                 )
             ):
                 raise LibraryError("robot_resource_conflict", "Controller ID already reserved", 409)
@@ -375,7 +381,7 @@ class RobotResources:
 
     def register_controller(self, document):
         def validate(value):
-            embodiment = self._documents("embodiments", Embodiment).get(value["embodiment"])
+            embodiment = self.embodiment_metadata().get(value["embodiment"])
             if not embodiment or embodiment["kind"] != "sim" or embodiment["controller"] != value["id"]:
                 raise LibraryError(
                     "controller_embodiment_mismatch", "Simulated Embodiment must declare this Controller", 409
@@ -388,13 +394,16 @@ class RobotResources:
 
     def _register(self, kind, schema, document, validate, describe):
         value = document.model_dump()
+        content = json_bytes(value)
+        if len(content) > METADATA_MAX_BYTES:
+            raise LibraryError("robot_resource_too_large", "Robot resource metadata exceeds 256 KiB", 422)
         identifier = self._name(value["id"])
         root = self.roots["user"]
         if kind == "controllers":
             parents, filename = (kind, identifier), "controller.yaml"
         else:
             parents, filename = (kind,), identifier + ".yaml"
-        with import_lock(root):
+        with self.assets._lock, import_lock(root):
             relative = Path(*parents, filename)
             for origin in ("builtin", "user"):
                 source_root = self.roots[origin]
@@ -409,5 +418,5 @@ class RobotResources:
                 raise LibraryError("robot_resource_conflict", "Robot resource ID is already registered", 409)
             validate(value)
             path = destination_parent(root, parents, create=True) / filename
-            durable_json(path, value)  # JSON is also valid YAML for the existing metadata readers.
+            durable_bytes(path, content)
             return describe(identifier), True

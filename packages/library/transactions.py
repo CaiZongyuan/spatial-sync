@@ -8,16 +8,26 @@ from pathlib import Path
 from packages.library.common import LibraryError
 from packages.library.reports import SUBJECT
 
+METADATA_MAX_BYTES = 256 * 1024
+
+
+def json_bytes(value):
+    return json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
+
 
 def durable_json(path, value):
+    durable_bytes(path, json_bytes(value))
+
+
+def durable_bytes(path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink() or path.is_junction():
         raise ValueError("Transaction document cannot be a filesystem link")
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+        with tempfile.NamedTemporaryFile("wb", dir=path.parent, delete=False) as stream:
             temporary = stream.name
-            json.dump(value, stream, ensure_ascii=False, allow_nan=False)
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)

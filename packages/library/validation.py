@@ -51,7 +51,7 @@ class StructuralValidator:
         expected_assets=(), include_physics
     ):
         types = load_entity_types()
-        entity_types = EntityTypes(assets.roots["user"])
+        entity_types = EntityTypes(getattr(assets, "roots", {}).get("user"))
         declarations = (
             (bindings or {}).get("entities", []) if kind == "scene" else metadata.get("implements", [])
         )

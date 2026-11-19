@@ -13,11 +13,10 @@ from pydantic import Field, ValidationError
 from packages.info.declarations import EntityTypeDeclaration
 from packages.library.archive import destination_parent, import_lock, invalid
 from packages.library.common import TYPE_ROOT, LibraryError, document, load_entity_types
-from packages.library.transactions import durable_json
+from packages.library.transactions import METADATA_MAX_BYTES, durable_bytes, json_bytes
 
 USER_TYPE = re.compile(r"u-[a-z0-9]+(?:-[a-z0-9]+)*/v[1-9][0-9]*")
 ContentHash = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-MAX_BYTES = 256 * 1024
 
 _VECTOR = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
 _OPTIONAL_TEXT = {"type": ["string", "null"]}
@@ -59,11 +58,13 @@ class TypeSnapshot:
 
 class EntityTypes:
     def __init__(self, root):
-        self.root = Path(root)
+        self.root = Path(root) if root is not None else None
 
     def path(self, identifier):
         if len(identifier) > 160 or not USER_TYPE.fullmatch(identifier):
             raise LibraryError("unknown_entity_type", "Unknown EntityType version")
+        if self.root is None:
+            raise LibraryError("entity_type_library_unavailable", "User EntityType library unavailable", 409)
         namespace, version = identifier.split("/")
         return destination_parent(self.root, ("device-types", namespace)) / (version + ".yaml")
 
@@ -72,7 +73,7 @@ class EntityTypes:
         try:
             info = path.lstat()
             if (not stat.S_ISREG(info.st_mode) or path.is_junction()
-                    or info.st_nlink != 1 or info.st_size > MAX_BYTES):
+                    or info.st_nlink != 1 or info.st_size > METADATA_MAX_BYTES):
                 raise ValueError
             raw = path.read_bytes()
             value = RobotEntityType.model_validate(json.loads(raw)).model_dump(
@@ -131,7 +132,8 @@ class EntityTypes:
             )
             compile_catalog("entity-type-publication", {identifier: value}, {}, {})
             value = json.loads(json.dumps(value, sort_keys=True, allow_nan=False))
-            if len(json.dumps(value, ensure_ascii=False).encode()) > MAX_BYTES:
+            content = json_bytes(value)
+            if len(content) > METADATA_MAX_BYTES:
                 raise ValueError
         except (ValidationError, ValueError, KeyError, TypeError):
             raise invalid("Invalid robot EntityType declaration", path="type") from None
@@ -145,7 +147,7 @@ class EntityTypes:
                     raise LibraryError("entity_type_conflict", "Published EntityType is immutable", 409)
                 return version.public(), False
             destination_parent(self.root, path.relative_to(self.root).parts[:-1], create=True)
-            durable_json(path, value)
+            durable_bytes(path, content)
             return self.snapshot(identifier).public(), True
 
     def require_pin(self, binding, *, populate=False):

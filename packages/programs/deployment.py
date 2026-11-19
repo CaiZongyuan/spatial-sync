@@ -718,7 +718,7 @@ def verify_runtime_deployment(scene, catalog, permit, *, state_root):
             )
         if actual != permit:
             raise ValueError("Private payload differs from actual committed authority")
-        bindings = catalog.entities
+        bindings = catalog.binding_documents()
         if permit["scene"] == {"id": scene.id, "contentHash": scene.content_hash}:
             if permit["appliedBindings"] != {key: fingerprint(binding) for key, binding in bindings.items()}:
                 raise ValueError("Actual Scene or complete binding composition differs")

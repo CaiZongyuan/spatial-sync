@@ -28,20 +28,15 @@ from tests.fixtures.policy import artifact_archive, policy_task
 from tests.fixtures.training_task import task_document, training_plan
 from tests.gateway.test_training_jobs import HEARTBEAT, NODE, TOKEN, heartbeat
 
+CART_INTERFACE = "u-tilt-cart/v1"
 TILT_CART_TYPE = {
-    "type": "tilt-cart/v1",
+    "type": CART_INTERFACE,
     "title": "Two-DoF balancing tilt-cart robot",
     "description": "Custom non-arm multi-joint balancing and planar cart robot.",
     "properties": {
-        "phase": {"schema": {"enum": ["idle", "active", "fault"]}},
-        "jointPositions": {"schema": {"type": "array", "items": {"type": "number"}}},
         "jointVelocities": {"schema": {"type": "array", "items": {"type": "number"}}},
-        "basePosition": {"schema": {"type": "array", "items": {"type": "number"}}},
         "baseX": {"schema": {"type": "number"}, "unit": "m"},
         "baseY": {"schema": {"type": "number"}, "unit": "m"},
-        "baseHeight": {"schema": {"type": "number"}, "unit": "m"},
-        "tiltDeg": {"schema": {"type": "number"}, "unit": "deg"},
-        "pitchDeg": {"schema": {"type": "number"}, "unit": "deg"},
         "planarSpeed": {"schema": {"type": "number"}, "unit": "m/s"},
         "angularVelocity": {"schema": {"type": "array", "items": {"type": "number"}}},
     },
@@ -63,8 +58,7 @@ TILT_CART_TYPE = {
         },
         "stop": {
             "description": "Hold current joint targets",
-            "params": {},
-            "required": [],
+            "concurrent": True,
         },
     },
 }
@@ -174,7 +168,7 @@ def _linear_onnx_bytes(weights: np.ndarray) -> bytes:
     return model.SerializeToString()
 
 
-def _asset_tar(stage_dir, entity_type="tilt-cart/v1") -> bytes:
+def _asset_tar(stage_dir, entity_type=CART_INTERFACE) -> bytes:
     stage_dir.mkdir(parents=True, exist_ok=True)
     raw = ASSET_USDA.encode("utf-8")
     (stage_dir / "asset.usda").write_bytes(raw)
@@ -386,23 +380,19 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
     user_lib = tmp_path / "library"
     state_root = tmp_path / "state"
     rec_root = tmp_path / "recordings"
-    extra_types = tmp_path / "extra-types"
     monkeypatch.setenv("LW_LIBRARY", str(user_lib))
     monkeypatch.setenv("SPATIAL_STATE_ROOT", str(state_root))
     monkeypatch.setenv("SPATIAL_RECORDINGS_ROOT", str(rec_root))
-
-    # Isolated explicit SPATIAL_EXTRA_DEVICE_TYPES_DIR (never touches repo devices/types/ or LW_LIBRARY/types)
-    extra_types.mkdir(parents=True, exist_ok=True)
-    (extra_types / "tilt-cart.v1.yaml").write_text(
-        yaml.safe_dump(TILT_CART_TYPE, sort_keys=False), encoding="utf-8"
-    )
-    monkeypatch.setenv("SPATIAL_EXTRA_DEVICE_TYPES_DIR", str(extra_types))
+    monkeypatch.delenv("SPATIAL_EXTRA_DEVICE_TYPES_DIR", raising=False)
 
     settings = Settings(state_root=state_root, recordings_root=rec_root, node_token=TOKEN)
     app = create_app(settings, controller_promotion_qualification=controlled_qualification)
 
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://owned") as client:
+            published = await client.post("/api/v1/library/entity-types", json=TILT_CART_TYPE)
+            assert published.status_code == 201, published.text
+            type_hash = published.json()["contentHash"]
             # 1. Public HTTP Asset & Scene import (with real StructuralValidator + Newton CPU physics checks)
             asset_imp = await client.post(
                 "/api/v1/library/imports",
@@ -511,7 +501,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 "title": "Tilt Stabilize",
                 "scene": "tilt-cart-arena@1",
                 "robot": "/World/Lab/Bot",
-                "implements": "tilt-cart/v1.stabilize",
+                "implements": f"{CART_INTERFACE}.stabilize",
                 "episode": {"params": {}},
                 "success": stabilize_goal,
                 "control": {"hz": 30.0, "action": "joint_position_offset"},
@@ -532,7 +522,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 manager.library_assets.roots,
                 name="tilt-stabilize-suite",
                 scene=scene_v1,
-                implements="tilt-cart/v1.stabilize",
+                implements=f"{CART_INTERFACE}.stabilize",
                 goal=stabilize_goal,
                 params={},
             )
@@ -542,6 +532,10 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
             cand_stab = await _evaluate(client, suite_stab.id, pol_stab["id"], plan=plan_stab)
             assert ref_stab["result"]["successes"] == 0
             assert cand_stab["result"]["successes"] == 1
+            snapshot = manager.evaluations.store.records[cand_stab["evaluationId"]]["identitySnapshot"]
+            assert snapshot["environmentInputs"]["inputs"]["entityTypes"] == [
+                {"id": CART_INTERFACE, "contentHash": type_hash},
+            ]
             assert cand_stab["result"]["decision"] == "accepted"
             ep_stab = cand_stab["episodes"][0]
             assert ep_stab["policyExecution"]["providers"] == ["CPUExecutionProvider"]
@@ -608,7 +602,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 "title": "Tilt Drive",
                 "scene": scene_v2_id,
                 "robot": "/World/Lab/Bot",
-                "implements": "tilt-cart/v1.drive",
+                "implements": f"{CART_INTERFACE}.drive",
                 "episode": {
                     "params": {},
                     "paramBounds": {"vx": [0.1, 0.45], "wz": [-0.5, 0.5]},
@@ -639,7 +633,7 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 manager.library_assets.roots,
                 name="tilt-drive-suite",
                 scene=scene_v2,
-                implements="tilt-cart/v1.drive",
+                implements=f"{CART_INTERFACE}.drive",
                 goal=drive_goal,
                 params={"vx": 0.35, "wz": 0.0},
             )
@@ -747,6 +741,13 @@ async def test_custom_non_arm_embodied_robot_closed_loop_evaluation_and_multi_ac
                 assert closed.status_code == 204, closed.text
 
             assert all(not s.holds_resources for s in manager.sessions.values())
+            path = user_lib / "device-types/u-tilt-cart/v1.yaml"
+            path.write_bytes(path.read_bytes() + b"\n")
+            for expected in ("Invalid or changed EntityType", "Unknown EntityType version"):
+                denied = await client.post("/api/v1/sessions", json={"sceneVersion": scene_v3_id})
+                assert denied.status_code == 409, denied.text
+                assert expected in denied.json()["detail"]["message"], denied.text
+                path.unlink(missing_ok=True)
 
 
 async def test_published_entity_type_runs_through_generic_mcp_and_preview(tmp_path, monkeypatch):

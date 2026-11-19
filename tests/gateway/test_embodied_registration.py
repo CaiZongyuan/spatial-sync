@@ -1,3 +1,5 @@
+import json
+
 import yaml
 from fastapi.testclient import TestClient
 
@@ -141,3 +143,50 @@ def test_scene_import_requires_the_published_type_hash_and_injects_it():
             type_path.write_bytes(type_path.read_bytes() + b"\n")
             with pytest.raises(ValueError, match="EntityType"):
                 verify_identity(first, directory=directory, user_root=user_root)
+
+
+def test_robot_model_serialized_size_boundary_keeps_catalog_readable():
+    path = "/api/v1/robot-models"
+    model = yaml.safe_load((BUILTIN_ROOT / "robot-models/fr3-taught-motion.yaml").read_text())
+    model |= {"id": "bounded-model", "title": ""}
+    # Exercise UTF-8 bytes, including defaults and delimiters in the stored document.
+    room = 256 * 1024 - len(json.dumps(model, ensure_ascii=False).encode())
+    model["title"] = "界" * (room // 3) + "a" * (room % 3)
+    with TestClient(create_app(Settings())) as http:
+        accepted = http.post(path, json=model)
+        assert accepted.status_code == 201, accepted.text[:400]
+        assert http.get(path + "/bounded-model").json() == accepted.json()
+
+        oversized = model | {"id": "another-model", "title": model["title"] + "b"}
+        assert len(json.dumps(oversized, ensure_ascii=False).encode()) == 256 * 1024 + 1
+        denied = http.post(path, json=oversized)
+        listed = http.get(path)
+        assert listed.status_code == 200, listed.text[:400]
+        assert denied.status_code == 422, denied.text[:400]
+        assert http.get(path + "/" + oversized["id"]).status_code == 404
+        assert http.get(path + "/bounded-model").json() == accepted.json()
+        denied = http.post(path, json=model | {"title": model["title"] + "b"})
+        assert denied.status_code in (409, 422)
+        assert http.get(path + "/bounded-model").json() == accepted.json()
+
+
+def test_oversize_registrations_leave_other_resource_directories_readable():
+    with TestClient(create_app(Settings())) as http:
+        embodiment = {
+            "id": "oversize-robot", "title": "Large Robot", "asset": "robot/fr3@1", "kind": "sim",
+            "controller": None, "bindings": [
+                {"scene": "robot-and-tubes@2", "entity": "/World/Lab/RobotA", "source": "newton"},
+            ] * 4000,
+        }
+        for path, document in [
+            ("embodiments", embodiment),
+            ("controllers", {"id": "c" * (256 * 1024), "title": "Large ID", "embodiment": "fr3-sim"}),
+            ("library/entity-types", {"type": "u-big/v1", "title": "a" * (256 * 1024)}),
+        ]:
+            denied = http.post("/api/v1/" + path, json=document)
+            assert denied.status_code == 422, denied.text[:400]
+        assert http.get("/api/v1/embodiments/oversize-robot").status_code == 404
+        assert http.get("/api/v1/embodiments").status_code == 200
+        assert http.get("/api/v1/controllers/fr3-arm").status_code == 200
+        assert http.get("/api/v1/library/entity-types/u-big/v1").status_code == 404
+        assert http.get("/api/v1/library/entity-types").status_code == 200
