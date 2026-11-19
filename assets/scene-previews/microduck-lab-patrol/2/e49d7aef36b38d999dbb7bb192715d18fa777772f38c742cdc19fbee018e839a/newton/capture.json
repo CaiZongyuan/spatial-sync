@@ -19,7 +19,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T20:48:44.032463+00:00",
+  "capturedAt": "2026-11-19T21:13:53.422361+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -43,7 +43,7 @@
     },
     {
       "path": "apps/node/usd_mjcf.py",
-      "sha256": "f321e1c6e219f9ad97aeadf522d4d25d06e8de4bd9256b34542d09ebb52b679f"
+      "sha256": "3d1cce1c980696bc8970ae5bc0e149280fd0d95508f35ac7823bb3b6d52bf018"
     },
     {
       "path": "assets/registry.yaml",
@@ -585,10 +585,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "e0993c42a2981e5e0569e00bb4fda7f938f3cf750335b75a8fbbe1b825a64014",
-    "catalog.json": "de78d71ea0f2375c42bf55f983399e5fac60183b869486bc337f8f26e345b6ff",
-    "state.json": "9390f250366051661c60661d258654e560b9e02d827e1e4a4c9fba8f73ff4684",
-    "snapshot.bin": "dcd60d69735401f93d2bf569b4d6a9438a5fb65639012a3e1cd773395dd98023",
+    "manifest.json": "f8fc43511da4a7482c138b9e60de8de38be1c90efba551400998446f7936c424",
+    "catalog.json": "aa0e62f9b4923797fd5be56987c1b44a52f69fe0e8e4d2e28a53303925f4cbb3",
+    "state.json": "cf989bd75d485c70f0967b5bb2242b7ea5d70236c1b9b27fe9b862991f3f6aad",
+    "snapshot.bin": "51c6cb1c6a79da1633855c1de9b527d2fcd8ff7302aee3af27c0984fa7242428",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",
