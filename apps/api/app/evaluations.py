@@ -591,6 +591,7 @@ class EvaluationService:
                         verify_identity,
                         record.get("identitySnapshot"),
                         directory=self.store.root / "identity-inputs",
+                        user_root=self.suites.roots["user"],
                     )
                 except (OSError, ValueError):
                     raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
@@ -694,6 +695,7 @@ class EvaluationService:
                     verify_identity,
                     record.get("identitySnapshot"),
                     directory=self.store.root / "identity-inputs",
+                    user_root=self.suites.roots["user"],
                 )
             except (OSError, ValueError):
                 raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
