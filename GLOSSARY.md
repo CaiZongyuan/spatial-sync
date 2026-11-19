@@ -142,8 +142,16 @@ _Avoid_: Decoration, background entity
 ## Training
 
 **Job** (作业):
-A long-running piece of work the platform launches outside the gateway and tracks through queued, running, succeeded, failed or cancelled; training is the first kind.
+A long-running piece of work the platform launches outside the gateway and tracks through queued, running, suspended, succeeded, failed or cancelled; training, plan validation and motion preprocessing are managed kinds.
 _Avoid_: Run (when meaning the managed unit), process, experiment
+
+**Compute Node** (计算节点):
+A user-attached GPU or CPU machine—colocated with the gateway, on a remote server, or in an ephemeral cloud session—registered to claim and execute Jobs by polling the gateway.
+_Avoid_: Runner, worker, Agent Runtime
+
+**Checkpoint** (检查点):
+A versioned intermediate training snapshot of weights, optimizer state and normalization statistics saved during a Job so an interrupted run can resume.
+_Avoid_: Policy (a completed inference artifact), model
 
 **Task** (训练任务):
 A versioned definition of what a robot should learn in a Scene Version: which action it implements, its success condition, and its rewards, observations and randomization.
@@ -217,9 +225,21 @@ _Avoid_: Trajectory (a planned motion), dataset
 A versioned collection of Demonstrations selected as one reproducible Task input for resets or imitation learning. Later additions create a new version while earlier versions keep their members.
 _Avoid_: Recording (one captured session), Task (the consumer definition)
 
+**Motion Clip** (动作片段):
+A morphology-independent 3D pose sequence—such as one extracted from a single-person video—with its source and license provenance, before mapping to any specific robot.
+_Avoid_: Reference Motion (mapped to one Asset version), Demonstration, recording
+
+**Reference Motion** (参考动作轨迹):
+A versioned kinematic motion sequence retargeted onto a specific robot Asset version's kinematic tree, used for preview and as the tracking target of a Task.
+_Avoid_: Motion Clip (source pose sequence), Demonstration (a physically succeeded episode), Policy
+
 **Policy** (策略):
 A versioned, learned motion policy produced by a training Job for one Task, which a Device Program can run to carry out an EntityType action.
-_Avoid_: Model, Controller (the complete composition), checkpoint (a training-time snapshot), weights
+_Avoid_: Model, Controller (the complete composition), Checkpoint (an intermediate training snapshot), weights
+
+**Policy Export** (策略导出包):
+A self-contained export package of a Policy—including its inference model, joint and sensor mapping contracts, actuator parameters and provenance—for running outside the platform.
+_Avoid_: Policy (the library version), deployment permit (in-platform session authorization), SDK
 
 **Evaluation** (评估):
 A recorded series of platform-owned cases: an embodied Evaluation runs a Policy or Device Program against its Task's success condition; an Agent Evaluation hands public cases to an external runtime and grades the platform's own observations. The platform's result is the one that counts.

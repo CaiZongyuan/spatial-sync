@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-updated: 2026-10-24
+updated: 2026-11-19
 ---
 
 # Author scenes in external factories and retain the original Asset references
@@ -17,3 +17,9 @@ Blender is an authoring tool; a published Scene Version remains a USD compositio
 Use MCP for Blender as the agent's Blender control layer and small project-owned scripts for asset identity, layout extraction and package production. Scene-critical unknowns and placeholders remain explicit in a Scene Draft. A model's visual appearance does not establish its physical or behavioral suitability for the requested task. Image-to-3D is an optional route for noncritical props after reuse and procedural modeling, with a separately selected service, license policy and generation budget.
 
 This records an accepted design; the reusable factory and Blender bridge are not yet implemented. The workflow and verification targets are in [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md).
+
+## Amendment (2026-11-19): In-platform composition of deterministic training and evaluation Scenes
+
+Authoring conversations remain in external `Agent Runtime`s operating through `lw` CLI, `lw mcp` and `Platform Skill`s (no embedded authoring chat in the Web app), and high-detail visual laboratory environments continue to be authored in Blender as specified in [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md). However, requiring external Blender round trips for every embodied training arena blocks self-service robot training; we therefore relax the external-only placement boundary specifically for **deterministic embodied training and evaluation `Scene`s**.
+
+Agents (via CLI/MCP) and users (via lightweight placement and `Waypoint` controls in the Web app) may compose `Scene Draft`s from pinned library `Asset` versions, baked static terrain primitives (flat planes, slopes, box-decomposed stairs and solver-consistent uneven ground, avoiding convex-hulled monolithic stair meshes), static collision obstacles, initial rigid-body prop placements, and `Waypoint` / `Teach Location` / target `Site` markers (excluding fluids and deformable cloth), publishing immutable OpenUSD `Scene Version`s ([ADR-0001](0001-usd-canonical-scene-format.md)). Episode reset randomization, command sampling and progressive terrain curriculum belong in `Task` rather than `Scene`. The `mjlab` training compiler loads the `Scene Version`'s baked terrain geometry, static obstacles and declared interactive rigid bodies into parallel environments rather than training on an empty plane.
