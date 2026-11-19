@@ -1,6 +1,7 @@
 """Public training admission and authenticated, socket-free node ownership."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi import HTTPException
@@ -18,13 +19,16 @@ NODE = {"X-Node-Token": TOKEN, "X-Node-Instance": "worker-one"}
 HEARTBEAT = "/api/v1/nodes/local/heartbeat"
 
 
-def setup_plan(client, *, budget=1):
+def setup_plan(client, *, budget=1, seeds=None):
     uploaded = client.post(
         "/api/v1/tasks", content=task_archive(), headers={"Content-Type": "application/x-tar"}
     )
     assert uploaded.status_code == 201, uploaded.text
     task = uploaded.json()
-    created = client.post("/api/v1/plans", json=training_plan(task["id"], budget={"gpuHours": budget}))
+    overrides = {"jobs": {"seeds": seeds}} if seeds else {}
+    created = client.post(
+        "/api/v1/plans", json=training_plan(task["id"], budget={"gpuHours": budget}, **overrides),
+    )
     assert created.status_code == 201, created.text
     return created.json(), task
 
@@ -307,6 +311,103 @@ def test_queued_gpu_budget_uses_fresh_same_key_profile_before_lease():
         retired = f"/api/v1/approvals/{approval['approvalId']}"
         assert client.get(retired).json()["status"] == "unavailable"
         assert client.post(f"{retired}/decision", json={"decision": "approve"}).status_code == 409
+
+
+@pytest.mark.parametrize("decision", ["approve", "deny"])
+def test_job_approval_covers_only_the_extra_gpu_hours_reviewed(decision):
+    with TestClient(create_app(Settings(node_token=TOKEN))) as client:
+        plan, task = setup_plan(client, budget=0.2, seeds=[41, 42, 43])
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        body["profiles"][0].update(iterationSeconds=18, measuredAt=100)
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        prior = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 41}).json()
+        charged = {
+            "jobId": prior["jobId"], "leaseId": prior["leaseId"],
+            "status": "cancelled", "elapsedSeconds": 180,
+        }
+        assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [charged]}).is_success
+        first = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).json()
+        assert first["leaseId"] and first["estimatedGpuHours"] == pytest.approx(0.05)
+        body["profiles"][0].update(iterationSeconds=63, measuredAt=101)
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        waiting = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 43}).json()
+        original = waiting["approvalId"]
+        assert original and waiting["estimatedGpuHours"] == pytest.approx(0.175)
+        approval = client.get(f"/api/v1/approvals/{original}").json()
+        assert approval["details"]["remainingGpuHours"] == pytest.approx(0.1)
+        assert approval["details"]["extraGpuHours"] == pytest.approx(0.075)
+        approve(client, original)
+        settled = {
+            "jobId": first["jobId"], "leaseId": first["leaseId"],
+            "status": "cancelled", "elapsedSeconds": 360,
+        }
+        reply = client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [settled]})
+        assert reply.is_success and reply.json()["assignments"] == []
+        updated = client.get(f"/api/v1/jobs/{waiting['jobId']}").json()
+        assert updated["approvalId"] != original and updated["reason"] == "pending_approval"
+        replacement = client.get(f"/api/v1/approvals/{updated['approvalId']}").json()
+        assert replacement["details"]["remainingGpuHours"] == pytest.approx(0.05)
+        assert replacement["details"]["estimatedGpuHours"] == pytest.approx(0.175)
+        assert replacement["details"]["extraGpuHours"] == pytest.approx(0.125)
+        assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [settled]}).is_success
+        same = client.get(f"/api/v1/jobs/{waiting['jobId']}").json()
+        assert same["approvalId"] == updated["approvalId"]
+        action = f"/api/v1/approvals/{same['approvalId']}/decision"
+        assert client.post(action, json={"decision": decision}).is_success
+        decided = client.get(f"/api/v1/jobs/{waiting['jobId']}").json()
+        assert bool(decided["leaseId"]) == (decision == "approve")
+        if decision == "deny":
+            assert decided["reason"] == "approval_denied"
+
+
+def test_pending_job_reconsiders_a_different_eligible_gpu():
+    with TestClient(create_app(Settings(node_token=TOKEN))) as client:
+        plan, task = setup_plan(client, budget=0.2)
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        body["profiles"][0].update(iterationSeconds=108, measuredAt=100)
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        request = {"planId": plan["id"], "seed": 42, "requestId": "original"}
+        waiting = client.post("/api/v1/jobs", json=request).json()
+        assert waiting["reason"] == "pending_approval" and waiting["estimatedGpuHours"] == pytest.approx(0.3)
+        cheaper = {"id": "gpu-cheaper", "name": "Alternative device"}
+        key = profile_key(plan, task["contentHash"], body["hardware"], cheaper["id"])
+        profile = body["profiles"][0] | {"key": key, "iterationSeconds": 18, "measuredAt": 101}
+        reply = client.post(HEARTBEAT, headers=NODE, json=body | {
+            "gpus": [*body["gpus"], cheaper], "profiles": [profile],
+        })
+        assert reply.is_success
+        (lease,) = reply.json()["assignments"]
+        assert (lease["jobId"], lease["gpuId"]) == (waiting["jobId"], cheaper["id"])
+        launched = client.post("/api/v1/jobs", json=request).json()
+        assert launched["jobId"] == waiting["jobId"] and launched["estimatedGpuHours"] == pytest.approx(0.05)
+        assert client.get(f"/api/v1/approvals/{waiting['approvalId']}").json()["status"] == "unavailable"
+
+
+def test_concurrent_gpu_requests_share_one_plan_budget():
+    with TestClient(create_app(Settings(node_token=TOKEN))) as client:
+        plan, task = setup_plan(client, budget=0.2)
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        gpu = {"id": "gpu-other", "name": "Second card"}
+        body["gpus"].append(gpu)
+        key = profile_key(plan, task["contentHash"], body["hardware"], gpu["id"])
+        body["profiles"][0].update(iterationSeconds=45, measuredAt=100)
+        body["profiles"].append(body["profiles"][0] | {"key": key})
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+
+        def submit(seed):
+            return client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": seed}).json()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            jobs = list(executor.map(submit, [42, 43]))
+        assert sum(bool(job["leaseId"]) for job in jobs) == 1
+        (queued,) = [job for job in jobs if not job["leaseId"]]
+        assert queued["reason"] == "pending_approval" and not queued["budgetReserved"]
+        details = client.get(f"/api/v1/approvals/{queued['approvalId']}").json()["details"]
+        assert details["remainingGpuHours"] == pytest.approx(0.075)
+        assert details["extraGpuHours"] == pytest.approx(0.05)
 
 
 def test_profile_refresh_keeps_active_reservation_and_requires_current_over_budget_approval():

@@ -64,7 +64,9 @@ def start_server(settings, app=None):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX process ownership")
-@pytest.mark.parametrize("recovery", ["missing-work", "retained-proof", "expires-after-upgrade"])
+@pytest.mark.parametrize(
+    "recovery", ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish"],
+)
 def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     monkeypatch, recovery,
 ):
@@ -91,19 +93,21 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     owner = None
     if recovery != "missing-work":
         work.mkdir(parents=True)
-        program = "import time; time.sleep(30)" if recovery == "expires-after-upgrade" else "pass"
+        program = (
+            "import sys; sys.stdout.write(''.join(f'owned line {i}\\n' for i in range(500)) + 'owned tail');"
+        )
+        if recovery == "expires-after-upgrade":
+            program += "sys.stdout.flush(); import time; time.sleep(30)"
         with (work / "stdout.log").open("wb") as log:
             owner = OwnedProcess(
                 [sys.executable, "-c", program], cwd=work,
                 env={"PATH": ""}, stdout=log, stderr=log,
             )
-            if recovery == "retained-proof":
+            if recovery in ("retained-proof", "normal-finish"):
                 try:
                     assert owner.process.wait(timeout=5) == 0
                 finally:
                     owner.close()
-        # Cleanup must not depend on draining ordinary reports from the expired lease.
-        (work / "stdout.log").write_text("old line\n" * 501, encoding="utf-8")
     hardware = "node-hardware/2:fixture"
     capabilities = {"hardware": hardware, "legacyHardware": body["hardware"], "gpus": [gpu], "profiles": []}
     monkeypatch.setattr(runner, "discover", lambda: capabilities)
@@ -113,8 +117,10 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     now = [200]
     gateway.state.jobs.clock = lambda: now[0]
     reconciling = threading.Event()
+    committed_tail = {}
+    allow_tail = False
+    attempts = []
 
-    @gateway.middleware("http")
     async def observe_reconciliation(request, call_next):
         if request.url.path == HEARTBEAT:
             payload = await request.json()
@@ -123,8 +129,21 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 for report in payload.get("reports", [])
             ):
                 reconciling.set()
+            original_instance = request.headers.get("x-node-instance") == NODE["X-Node-Instance"]
+            if recovery == "retained-proof" and original_instance:
+                tail = next((report for report in payload.get("reports", []) if "tailEnd" in report), None)
+                if tail and tail["tailEnd"] == 501:
+                    if not committed_tail:
+                        response = await call_next(request)
+                        assert response.status_code == 200
+                        committed_tail.update(tail)
+                        return Response(status_code=503)
+                    if not allow_tail:
+                        return Response(status_code=503)
+                    attempts.append(tail["logAfter"])
         return await call_next(request)
 
+    gateway.middleware("http")(observe_reconciliation)
     _, server, server_thread = start_server(settings, gateway)
     args = SimpleNamespace(
         url=settings.node_gateway_url, root=str(root), node_id=None, registration_code=None,
@@ -132,7 +151,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     )
     thread = threading.Thread(target=runner.run_node, args=(args,))
     try:
-        if recovery != "expires-after-upgrade":
+        if recovery in ("retained-proof", "missing-work"):
             now[0] += 61
         thread.start()
         with httpx.Client(base_url=settings.node_gateway_url, trust_env=False) as client:
@@ -147,13 +166,67 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
                 owner.close()
                 wait_for(read, lambda node: not node["leases"])
-            elif recovery == "retained-proof":
+            elif recovery in ("retained-proof", "normal-finish"):
                 wait_for(read, lambda node: not node["leases"])
             else:
                 assert actual["leases"][gpu["id"]]["leaseId"] == job["leaseId"]
                 assert actual["leases"][gpu["id"]]["quarantined"]
                 assert reconciling.wait(5)
                 assert not work.exists()
+            if recovery != "missing-work":
+                url = f"/api/v1/jobs/{job['jobId']}/logs"
+
+                if recovery == "retained-proof":
+                    assert committed_tail["logAfter"] == 0 and len(committed_tail["logs"]) == 500
+                    assert client.get(url).json()["cursor"] == 500
+                    assert client.get(url, params={"after": 500}).json() == {
+                        "lines": [], "cursor": 500, "complete": False,
+                    }
+                    (root / "stop").touch()
+                    thread.join(10)
+                    assert not thread.is_alive()
+                    server.should_exit = True
+                    server_thread.join(10)
+                    assert not server_thread.is_alive()
+                    restarted = create_app(settings)
+                    restarted.state.jobs.clock = lambda: now[0]
+                    restarted.middleware("http")(observe_reconciliation)
+                    _, server, server_thread = start_server(settings, restarted)
+                    client.base_url = settings.node_gateway_url
+                    fenced = NODE | {"X-Lease-Id": job["leaseId"]}
+                    job_url = f"/api/v1/jobs/{job['jobId']}"
+                    assert client.get(job_url + "/inputs", headers=fenced).status_code == 403
+                    assert client.post(job_url + "/artifacts", headers=fenced).status_code == 403
+                    assert client.post(
+                        HEARTBEAT, headers=NODE | {"X-Node-Instance": "wrong"},
+                        json=capabilities | {"instanceId": "wrong", "reports": [committed_tail]},
+                    ).status_code == 403
+                    ordinary = {"jobId": job["jobId"], "leaseId": job["leaseId"], "status": "running"}
+                    packet = capabilities | {"instanceId": NODE["X-Node-Instance"]}
+                    assert client.post(
+                        HEARTBEAT, headers=NODE, json=packet | {"reports": [ordinary]},
+                    ).status_code == 403
+                    wrong_end = committed_tail | {"tailEnd": 502}
+                    assert client.post(
+                        HEARTBEAT, headers=NODE, json=packet | {"reports": [wrong_end]},
+                    ).status_code == 403
+                    allow_tail = True
+                    (root / "stop").unlink()
+                    args.url = settings.node_gateway_url
+                    thread = threading.Thread(target=runner.run_node, args=(args,))
+                    thread.start()
+
+                def completed_logs():
+                    result = client.get(url, params={"after": 500})
+                    return result.json() if result.is_success else {}
+
+                last = wait_for(completed_logs, lambda value: value.get("complete"), timeout=4)
+                assert last == {"lines": ["[stdout.log] owned tail"], "cursor": 501, "complete": True}
+                first = client.get(url).json()
+                assert first["lines"] == [f"[stdout.log] owned line {i}" for i in range(500)]
+                assert first["cursor"] == 500 and not first["complete"]
+                if recovery == "retained-proof":
+                    assert attempts[:2] == [0, 500]
     finally:
         if owner is not None and owner.process.poll() is None:
             owner.close()

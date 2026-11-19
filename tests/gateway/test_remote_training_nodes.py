@@ -235,6 +235,42 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         )
 
 
+def test_pending_job_keeps_its_explicit_node_target():
+    from tests.fixtures.training_task import task_archive, training_plan
+
+    with TestClient(create_app(remote_settings())) as client:
+        task = client.post(
+            "/api/v1/tasks", headers=OPERATOR | {"Content-Type": "application/x-tar"}, content=task_archive(),
+        ).json()
+        document = training_plan(task["id"], budget={"gpuHours": 0.2})
+        plan = client.post("/api/v1/plans", headers=OPERATOR, json=document).json()
+        approval_url = f"/api/v1/approvals/{plan['approvalId']}/decision"
+        assert client.post(approval_url, headers=OPERATOR, json={"decision": "approve"}).is_success
+        target, other = register(client, "original"), register(client, "another")
+
+        def announce(headers, gpu, rate, measured):
+            node = {"id": headers["X-Node-Id"], "hardware": "fixture",
+                    "trainerVersions": ISAAC_VERSIONS, **ISAAC_ENTRY}
+            key = node_profile_key(plan, task["contentHash"], node, gpu, backend="isaaclab")
+            profile = {
+                "key": key, "iterationSeconds": rate, "samples": 2, "measuredAt": measured,
+                "evidence": "fixture",
+            }
+            return beat(client, headers, gpus=[gpu], profiles=[profile],
+                        trainerVersions=ISAAC_VERSIONS, **ISAAC_ENTRY).json()["assignments"]
+
+        original_card = {"id": "GPU-original", "name": "Original card"}
+        assert announce(target, original_card, 108, 100) == []
+        request = {"planId": plan["id"], "seed": 42, "targetNodeId": "original", "requestId": "targeted"}
+        waiting = client.post("/api/v1/jobs", headers=OPERATOR, json=request).json()
+        assert waiting["reason"] == "pending_approval"
+        assert announce(other, {"id": "GPU-another", "name": "Cheaper card"}, 18, 101) == []
+        seen = client.post("/api/v1/jobs", headers=OPERATOR, json=request).json()
+        assert seen["jobId"] == waiting["jobId"] and seen["approvalId"] == waiting["approvalId"]
+        (lease,) = announce(target, original_card, 18, 102)
+        assert lease["jobId"] == waiting["jobId"]
+
+
 def test_gateway_cuda_session_does_not_block_automatic_remote_scheduling():
     from apps.api.app.sources.synthetic_source import SyntheticSource
     from packages.protocol.internal import SessionOptions

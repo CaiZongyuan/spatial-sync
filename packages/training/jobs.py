@@ -27,10 +27,16 @@ from packages.training.runtime import (
 from packages.training.runtime import profile_key as profile_key
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
+GPU_HOUR_TOLERANCE = 1e-12
 
 
 def _secret_digest(secret):
     return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def _approved_extra(approval):
+    details = approval.details
+    return max(0, details["estimatedGpuHours"] - details["remainingGpuHours"])
 
 
 class TrainingJobs:
@@ -208,8 +214,9 @@ class TrainingJobs:
         return self.records[identity]
 
     def document(self, job):
+        internal = ("plan", "lastNodeReport", "costLedger", "logTail")
         value = deepcopy(
-            {key: value for key, value in job.items() if key not in ("plan", "lastNodeReport", "costLedger")}
+            {key: value for key, value in job.items() if key not in internal}
         ) | {
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
@@ -357,8 +364,7 @@ class TrainingJobs:
                 return deepcopy(job["validationEstimate"])
         return {}
 
-    def _budget(self, job):
-        plan = job["plan"]
+    def _remaining_gpu_hours(self, job):
         peers = [
             item
             for item in self.records.values()
@@ -372,16 +378,22 @@ class TrainingJobs:
             else 0
             for item in peers
         )
-        remaining = max(0, plan["budget"]["gpuHours"] - consumed)
+        return max(0, job["plan"]["budget"]["gpuHours"] - consumed)
+
+    def _budget(self, job, remaining, same_profile):
         estimate = job["estimatedGpuHours"]
-        over_budget = estimate > remaining
+        extra = max(0, estimate - remaining)
+        over_budget = extra > GPU_HOUR_TOLERANCE
         approval = self.manager.approvals.records.get(job["approvalId"])
         if approval:
-            reviewed = approval.details.get("estimatedGpuHours", 0)
             superseded = (
                 approval.status == "unavailable"
-                or approval.status == "pending" and (not over_budget or estimate != reviewed)
-                or approval.status == "approved" and over_budget and estimate > reviewed
+                or approval.status in ("pending", "approved") and not same_profile
+                or approval.status == "pending" and (
+                    not over_budget or estimate != approval.details["estimatedGpuHours"]
+                    or abs(extra - _approved_extra(approval)) > GPU_HOUR_TOLERANCE
+                )
+                or approval.status == "approved" and extra - _approved_extra(approval) > GPU_HOUR_TOLERANCE
             )
             if superseded:
                 if approval.status != "unavailable":
@@ -402,6 +414,7 @@ class TrainingJobs:
                     "planRevision": job["planRevision"],
                     "estimatedGpuHours": estimate,
                     "remainingGpuHours": remaining,
+                    "extraGpuHours": extra,
                 },
             )
             job["approvalId"] = approval.approvalId
@@ -471,7 +484,7 @@ class TrainingJobs:
                 profiles = (self.validation_profiles.get(key), node["profiles"].get(key))
                 measured = max((profile for profile in profiles if profile),
                                key=lambda profile: profile["measuredAt"], default=None)
-                if not validation and (not measured or job["approvalId"] and job["profileKey"] != key):
+                if not validation and not measured:
                     continue
                 with self.manager._resource_lock:
                     blocker = self._resource_blocker(node, resource, now)
@@ -479,11 +492,27 @@ class TrainingJobs:
         if not candidates:
             job["reason"] = reason
             return
-        selected = min(candidates, key=lambda item: item[0] is not None)
+        remaining = self._remaining_gpu_hours(job) if not validation else 0
+        approval = self.manager.approvals.records.get(job["approvalId"])
+
+        def priority(candidate):
+            blocker, _, _, key, measured, _ = candidate
+            if validation:
+                return (blocker is not None, False, 0)
+            cost = self._estimate(job, measured)["estimatedGpuHours"]
+            approved = (
+                _approved_extra(approval)
+                if approval and approval.status == "approved" and job["profileKey"] == key else 0
+            )
+            needs_approval = cost - remaining - approved > GPU_HOUR_TOLERANCE
+            return (blocker is not None, needs_approval, cost)
+
+        selected = min(candidates, key=priority)
         blocker, node, resource, key, measured, runtime = selected
         if not validation:
+            same_profile = job["profileKey"] == key
             job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
-            if not self._budget(job):
+            if not self._budget(job, remaining, same_profile):
                 return
         if blocker:
             job["reason"] = blocker
@@ -683,6 +712,32 @@ class TrainingJobs:
             for lease in node["leases"].values()
         )
 
+    def _check_log_tail(self, job, report, identity, owner_instance, body_instance, node):
+        if (
+            identity != "local" or not node or owner_instance != node["instanceId"]
+            or owner_instance != body_instance or job["nodeId"] != identity
+            or job["leaseId"] != report.leaseId
+        ):
+            raise PlanError("lease_mismatch", "Node does not own this log tail", status=403)
+        tail = job.get("logTail")
+        if tail:
+            if tail["instanceId"] != owner_instance or tail["end"] != report.tailEnd:
+                raise PlanError("lease_mismatch", "Node does not own this log tail", status=403)
+        if (
+            report.status != "cleaned" or report.validation is not None
+            or report.logAfter + len(report.logs) > report.tailEnd
+            or len(self.read_logs(job["jobId"])) > report.tailEnd
+        ):
+            raise PlanError("invalid_log_cursor", "Node logs exceed the declared final cursor", status=422)
+        self._log_suffix(job, report.logAfter, report.logs)
+
+    def _append_log_tail(self, job, report, instance):
+        self._append_logs(job, report.logAfter, report.logs)
+        job["logTail"] = {
+            "instanceId": instance, "end": report.tailEnd,
+            "complete": len(self.read_logs(job["jobId"])) == report.tailEnd,
+        }
+
     def heartbeat(self, body, identity="local", *, owner_instance=None):
         self._require_available()
         now = self.clock()
@@ -703,7 +758,7 @@ class TrainingJobs:
             raise PlanError("invalid_node_report", "The CPU resource ID is reserved", status=422)
         if len({report.jobId for report in body.reports}) != len(body.reports):
             raise PlanError("invalid_node_report", "Job reports must be distinct", status=422)
-        fresh = []
+        fresh, tails = [], []
         capabilities = {
             "id": identity, "hardware": body.hardware, "trainerVersions": body.trainerVersions,
             "isaaclabVersions": body.isaaclabVersions, "compilerHash": body.compilerHash,
@@ -715,9 +770,16 @@ class TrainingJobs:
                 identity != "local" and job["reason"] == "validation_timeout"
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
+            if report.tailEnd is not None:
+                self._check_log_tail(job, report, identity, owner_instance, body.instanceId, node)
+                if job.get("logTail"):
+                    tails.append((job, report))
+                    continue
             data = report.model_dump()
             if report.validation is None:
                 del data["validation"]
+            if report.tailEnd is None:
+                del data["tailEnd"]
             if (
                 node and job["nodeId"] == identity
                 and node["instanceId"] == body.instanceId
@@ -733,6 +795,8 @@ class TrainingJobs:
                 or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
+            if report.tailEnd is not None and not (lease.get("cleanupOnly") and lease["quarantined"]):
+                raise PlanError("lease_mismatch", "Log tail requires a fenced recovery lease", status=403)
             if report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
             if report.status == "succeeded" and "runtimeIdentity" in lease:
@@ -796,7 +860,10 @@ class TrainingJobs:
             if retained is None or profile.measuredAt > retained["measuredAt"]:
                 node["profiles"][profile.key] = profile.model_dump()
         for job, report, data in fresh:
-            self._append_logs(job, report.logAfter, report.logs)
+            if report.tailEnd is not None:
+                self._append_log_tail(job, report, body.instanceId)
+            else:
+                self._append_logs(job, report.logAfter, report.logs)
             job["metrics"] = {key: data[key] for key in (
                 "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
             )}
@@ -826,6 +893,8 @@ class TrainingJobs:
             })
             del history[:-900]
             self._event(job)
+        for job, report in tails:
+            self._append_log_tail(job, report, body.instanceId)
         self.reconcile()
         self._save()
         self.telemetry.observe(node["id"], node["instanceId"], node["gpus"], now)
@@ -847,6 +916,14 @@ class TrainingJobs:
                     **self._cleanup_offer(node, gpu, lease),
                 }
                 for gpu, lease in node["leases"].items()
+            ],
+            "logTails": [
+                {"jobId": job["jobId"], "leaseId": job["leaseId"], "gpuId": None,
+                 "cancel": True, "cleanupOnly": True, "quarantined": True}
+                for job in self.records.values()
+                if identity == "local" and owner_instance == body.instanceId
+                and job.get("logTail") and not job["logTail"]["complete"]
+                and job["logTail"]["instanceId"] == owner_instance
             ],
         }
 
@@ -953,7 +1030,10 @@ class TrainingJobs:
             job, lines = self.get(identity), self.read_logs(identity)
             if after > len(lines):
                 raise PlanError("invalid_log_cursor", "Log cursor is beyond retained output", status=422)
-            settled = job["status"] in TERMINAL and not self._has_lease(job)
+            settled = (
+                job["status"] in TERMINAL and not self._has_lease(job)
+                and job.get("logTail", {}).get("complete", True)
+            )
             if len(lines) > after or settled or time.monotonic() >= deadline:
                 selected = lines[after : after + 500]
                 return {

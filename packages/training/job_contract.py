@@ -82,6 +82,7 @@ class JobReport(Schema):
     reason: str | None = Field(default=None, max_length=4000)
     logAfter: int = Field(default=0, ge=0)
     logs: list[str] = Field(default_factory=list, max_length=500)
+    tailEnd: int | None = Field(default=None, ge=0)
     validation: ValidationTiming | None = None
 
 

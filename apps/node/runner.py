@@ -528,8 +528,6 @@ class OwnedRun:
         return self.node.headers | {"X-Lease-Id": self.assignment["leaseId"]}
 
     def report(self):
-        # An exit during any producer-owned read requires another report for its final data.
-        producer_finished = not self.thread.is_alive() and not self.uncertain_owner
         if self.uncertain_owner and owned_processes_clean(self.root):
             result = self.root / "result.json"
             if result.exists():
@@ -539,16 +537,13 @@ class OwnedRun:
                 self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
             self.uncertain_owner = False
             self.finished = time.monotonic()
+        # An exit during any producer-owned read requires another report for its final data.
+        producer_finished = not self.thread.is_alive() and not self.uncertain_owner
         elapsed = self.baseline_elapsed + (self.finished or time.monotonic()) - self.started
-        if (
-            self.assignment.get("quarantined") and not self.thread.is_alive()
-            and not self.uncertain_owner and owned_processes_clean(self.root)
-        ):
-            # A fenced local owner can settle cleanup even when unsent logs would take more heartbeats.
-            return {"jobId": self.assignment["jobId"], "leaseId": self.assignment["leaseId"],
-                    "status": "cleaned", "elapsedSeconds": elapsed}
-        if producer_finished and "cleanup" in self.assignment and not owned_processes_clean(self.root):
-            producer_finished = False
+        if producer_finished and ("cleanup" in self.assignment or self.assignment.get("quarantined")):
+            producer_finished = owned_processes_clean(self.root)
+        recovered = self.assignment.get("quarantined") and producer_finished
+        snapshot = self.root / "recovered-log-tail.json"
         metrics = self.root / "output/metrics.jsonl"
         if metrics.exists():
             complete = metrics.read_text(encoding="utf-8").splitlines()
@@ -558,6 +553,8 @@ class OwnedRun:
                 except ValueError:
                     pass  # A still-open final line is retried at the next heartbeat.
         for name in ("stdout.log", "stderr.log"):
+            if recovered and snapshot.exists():
+                break
             path = self.root / name
             if path.exists():
                 lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
@@ -579,6 +576,25 @@ class OwnedRun:
                             stream.write(json.dumps(row) + "\n")
                     self._logs.extend(row["text"] for row in new)
                 self._log_offsets[name] = len(complete)
+        selected = self._logs[self.log_cursor:self.log_cursor + 500]
+        if recovered:
+            if snapshot.exists():
+                final_cursor = json.loads(snapshot.read_bytes())["end"]
+                if final_cursor != len(self._logs):
+                    raise RuntimeError("The recovered log spool differs from its final cursor")
+            else:
+                # Sync the spool and its final cursor before releasing the GPU.
+                spool = self.root / "node-logs.jsonl"
+                if spool.exists():
+                    with spool.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                final_cursor = len(self._logs)
+                durable_json(snapshot, {"end": final_cursor})
+            return {
+                "jobId": self.assignment["jobId"], "leaseId": self.assignment["leaseId"],
+                "status": "cleaned", "elapsedSeconds": elapsed, "tailEnd": final_cursor,
+                "logAfter": self.log_cursor, "logs": selected,
+            }
         memory = None
         if self.assignment["gpuId"] is not None and self.current_process is not None:
             try:
@@ -592,7 +608,6 @@ class OwnedRun:
                 memory = sum(rows) if rows else None
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        selected = self._logs[self.log_cursor:self.log_cursor + 500]
         draining = self.status in ("succeeded", "failed", "cancelled") and (
             not producer_finished or self.log_cursor + len(selected) < len(self._logs))
         status = "running" if draining else self.status
@@ -719,7 +734,9 @@ class LocalNode:
                             raise RuntimeError("Gateway replied for another Compute Node")
                         for identity, cursor in reply["logCursors"].items():
                             self.active[identity].log_cursor = cursor
-                        assignments = {row["jobId"]: row for row in reply["assignments"]}
+                        assignments = {
+                            row["jobId"]: row for row in (*reply["assignments"], *reply.get("logTails", ()))
+                        }
                         for identity, owned in list(self.active.items()):
                             if identity not in assignments and not owned.thread.is_alive():
                                 owned.thread.join()
