@@ -65,7 +65,9 @@ def start_server(settings, app=None):
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX process ownership")
 @pytest.mark.parametrize(
-    "recovery", ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish"],
+    "recovery",
+    ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish", "modern-expired",
+     "modern-no-proof"],
 )
 def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     monkeypatch, recovery,
@@ -77,13 +79,25 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
         plan, task = setup_plan(client)
         approve(client, plan["approvalId"])
         body = heartbeat(plan, task)
-        body["hardware"] = "a" * 64
+        modern = recovery.startswith("modern-")
+        body["hardware"] = "node-hardware/2:fixture" if modern else "a" * 64
         gpu = body["gpus"][0]
-        body["profiles"][0]["key"] = profile_key(plan, task["contentHash"], body["hardware"], gpu["id"])
+        if modern:
+            body.update(trainerVersions=ISAAC_VERSIONS, trainingEntries={"isaaclab": "isaaclab:cli"})
+            identity = {"id": "local", **body}
+            key = node_profile_key(plan, task["contentHash"], identity, gpu, backend="isaaclab")
+        else:
+            key = profile_key(plan, task["contentHash"], body["hardware"], gpu["id"])
+        body["profiles"][0]["key"] = key
         assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
         request = {"planId": plan["id"], "seed": 42}
         job = client.post("/api/v1/jobs", json=request).json()
         assert job["leaseId"]
+        progress = {
+            "jobId": job["jobId"], "leaseId": job["leaseId"], "status": "running",
+            "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
+        }
+        assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [progress]}).is_success
 
     root = settings.state_root / "local-node"
     root.mkdir()
@@ -91,7 +105,8 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     (root / "capabilities.json").write_text(json.dumps({"hardware": body["hardware"], "profiles": []}))
     work = root / "work" / runner.work_directory_id(job["jobId"], job["leaseId"])
     owner = None
-    if recovery != "missing-work":
+    missing_proof = recovery in ("missing-work", "modern-no-proof")
+    if not missing_proof:
         work.mkdir(parents=True)
         program = (
             "import sys; sys.stdout.write(''.join(f'owned line {i}\\n' for i in range(500)) + 'owned tail');"
@@ -103,13 +118,15 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 [sys.executable, "-c", program], cwd=work,
                 env={"PATH": ""}, stdout=log, stderr=log,
             )
-            if recovery in ("retained-proof", "normal-finish"):
+            if recovery in ("retained-proof", "normal-finish", "modern-expired"):
                 try:
                     assert owner.process.wait(timeout=5) == 0
                 finally:
                     owner.close()
     hardware = "node-hardware/2:fixture"
-    capabilities = {"hardware": hardware, "legacyHardware": body["hardware"], "gpus": [gpu], "profiles": []}
+    capabilities = {"hardware": hardware, "gpus": [gpu], "profiles": []}
+    if not modern:
+        capabilities["legacyHardware"] = body["hardware"]
     monkeypatch.setattr(runner, "discover", lambda: capabilities)
     monkeypatch.setattr(runner, "gpu_usage", lambda: ({}, {}))
     monkeypatch.setenv("SPATIAL_NODE_TOKEN", TOKEN)
@@ -130,7 +147,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
             ):
                 reconciling.set()
             original_instance = request.headers.get("x-node-instance") == NODE["X-Node-Instance"]
-            if recovery == "retained-proof" and original_instance:
+            if recovery in ("retained-proof", "modern-expired") and original_instance:
                 tail = next((report for report in payload.get("reports", []) if "tailEnd" in report), None)
                 if tail and tail["tailEnd"] == 501:
                     if not committed_tail:
@@ -151,7 +168,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     )
     thread = threading.Thread(target=runner.run_node, args=(args,))
     try:
-        if recovery in ("retained-proof", "missing-work"):
+        if recovery != "expires-after-upgrade" and recovery != "normal-finish":
             now[0] += 61
         thread.start()
         with httpx.Client(base_url=settings.node_gateway_url, trust_env=False) as client:
@@ -166,17 +183,26 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
                 owner.close()
                 wait_for(read, lambda node: not node["leases"])
-            elif recovery in ("retained-proof", "normal-finish"):
-                wait_for(read, lambda node: not node["leases"])
+            elif recovery in ("retained-proof", "normal-finish", "modern-expired"):
+                wait_for(read, lambda node: not node["leases"], timeout=7)
             else:
+                actual = wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
                 assert actual["leases"][gpu["id"]]["leaseId"] == job["leaseId"]
-                assert actual["leases"][gpu["id"]]["quarantined"]
                 assert reconciling.wait(5)
                 assert not work.exists()
-            if recovery != "missing-work":
+                if modern:
+                    proofless = {
+                        "jobId": job["jobId"], "leaseId": job["leaseId"], "status": "cleaned",
+                    }
+                    packet = {"instanceId": NODE["X-Node-Instance"], **capabilities}
+                    for report in (proofless, progress):
+                        reply = client.post(HEARTBEAT, headers=NODE, json=packet | {"reports": [report]})
+                        assert reply.status_code == 403
+                    assert read()["leases"][gpu["id"]]["quarantined"]
+            if not missing_proof:
                 url = f"/api/v1/jobs/{job['jobId']}/logs"
 
-                if recovery == "retained-proof":
+                if recovery in ("retained-proof", "modern-expired"):
                     assert committed_tail["logAfter"] == 0 and len(committed_tail["logs"]) == 500
                     assert client.get(url).json()["cursor"] == 500
                     assert client.get(url, params={"after": 500}).json() == {
@@ -225,8 +251,14 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 first = client.get(url).json()
                 assert first["lines"] == [f"[stdout.log] owned line {i}" for i in range(500)]
                 assert first["cursor"] == 500 and not first["complete"]
-                if recovery == "retained-proof":
+                if recovery in ("retained-proof", "modern-expired"):
                     assert attempts[:2] == [0, 500]
+                if recovery != "normal-finish":
+                    settled = client.get(f"/api/v1/jobs/{job['jobId']}").json()
+                    assert settled["reason"] == "node_lost"
+                    assert settled["metrics"] | {
+                        "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
+                    } == settled["metrics"]
     finally:
         if owner is not None and owner.process.poll() is None:
             owner.close()

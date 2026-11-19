@@ -361,6 +361,57 @@ def test_job_approval_covers_only_the_extra_gpu_hours_reviewed(decision):
             assert decided["reason"] == "approval_denied"
 
 
+@pytest.mark.parametrize("earlier_approval", [True, False])
+def test_dispatch_charges_reported_overrun_of_active_gpu_reservation(earlier_approval):
+    from tests.gateway.test_remote_training_nodes import ISAAC_ENTRY, ISAAC_VERSIONS, node_profile_key
+
+    with TestClient(create_app(Settings(node_token=TOKEN))) as client:
+        plan, task = setup_plan(client, budget=0.2 if earlier_approval else 0.1)
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        body.update(hardware="node-hardware/2:fixture", trainerVersions=ISAAC_VERSIONS, **ISAAC_ENTRY)
+        node = {"id": "local", **body}
+        body["profiles"][0]["key"] = node_profile_key(
+            plan, task["contentHash"], node, body["gpus"][0], backend="isaaclab",
+        )
+        body["profiles"][0].update(iterationSeconds=18, measuredAt=100)
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        first = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).json()
+        assert first["leaseId"] and first["estimatedGpuHours"] == pytest.approx(0.05)
+        if earlier_approval:
+            body["profiles"][0].update(iterationSeconds=63, measuredAt=101)
+            assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        waiting = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 43}).json()
+        original = waiting["approvalId"]
+        if earlier_approval:
+            assert original
+            prior = client.get(f"/api/v1/approvals/{original}").json()
+            assert prior["details"]["extraGpuHours"] == pytest.approx(0.025)
+            approve(client, original)
+        else:
+            assert original is None
+        gpu = body["gpus"][0] | {"id": "second-card"}
+        body["gpus"].append(gpu)
+        seconds = 540 if earlier_approval else 270
+        report = {
+            "jobId": first["jobId"], "leaseId": first["leaseId"], "status": "running",
+            "elapsedSeconds": seconds,
+        }
+        packet = body | {"reports": [report]}
+        reply = client.post(HEARTBEAT, headers=NODE, json=packet)
+        assert reply.is_success and [row["jobId"] for row in reply.json()["assignments"]] == [first["jobId"]]
+        url = f"/api/v1/jobs/{waiting['jobId']}"
+        queued = client.get(url).json()
+        assert queued["reason"] == "pending_approval" and queued["approvalId"] != original
+        details = client.get(f"/api/v1/approvals/{queued['approvalId']}").json()["details"]
+        assert details["extraGpuHours"] == pytest.approx(0.125 if earlier_approval else 0.025)
+        settled = report | {"status": "cancelled"}
+        assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [settled]}).is_success
+        assert client.get(url).json()["approvalId"] == queued["approvalId"]
+        approve(client, queued["approvalId"])
+        assert client.get(url).json()["leaseId"]
+
+
 def test_pending_job_reconsiders_a_different_eligible_gpu():
     with TestClient(create_app(Settings(node_token=TOKEN))) as client:
         plan, task = setup_plan(client, budget=0.2)

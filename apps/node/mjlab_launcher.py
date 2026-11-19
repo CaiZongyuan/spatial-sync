@@ -126,6 +126,9 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
         return observations, rewards, dones, extras
 
     def check_finite():
+        if physics_checks and bool(torch.stack(physics_checks).any().item()):
+            raise ValueError("Validation produced non-finite physics state before automatic reset")
+        physics_checks.clear()
         if checks and not bool(torch.stack(checks).all().item()):
             raise ValueError("Validation produced non-finite observations or rewards")
         checks.clear()
@@ -190,13 +193,27 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
     optimizer_steps = {alg.optimizer: 0}
     if rnd_optimizer := getattr(alg, "rnd_optimizer", None):
         optimizer_steps[rnd_optimizer] = 0
-    checks, update_checks, samples = [], [], []
+    checks, physics_checks, update_checks, samples = [], [], [], []
     pending_gradient_steps = {}
     updating = updated = False
     steps, started = 0, 0.0
     original_act, original_step = alg.act, env.step
     original_update, original_log = alg.update, runner.logger.log
     with ExitStack() as hooks:
+        # The real mjlab VecEnv exposes the simulation through its unwrapped environment.
+        sim = getattr(getattr(env, "unwrapped", None), "sim", None)
+        if sim is not None:
+            from mjlab.utils.nan_guard import NanGuard
+
+            original_substep = sim.step
+
+            def observed_substep():
+                original_substep()
+                # Materialize the boolean on-device before another substep or reset replaces the state.
+                physics_checks.append(NanGuard.detect_nans(sim.data).any())
+
+            sim.step = observed_substep
+            hooks.callback(setattr, sim, "step", original_substep)
         for optimizer in optimizer_steps:
             hooks.callback(optimizer.register_step_pre_hook(optimizer_gradients).remove)
             hooks.callback(optimizer.register_step_post_hook(optimizer_step).remove)

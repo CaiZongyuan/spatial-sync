@@ -708,10 +708,7 @@ class LocalNode:
                                     },
                                 )
                             )
-                    reports = [
-                        owned.report() for owned in self.active.values()
-                        if not (refresh_recovery and owned.assignment.get("cleanupOnly"))
-                    ]
+                    reports = [] if refresh_recovery else [owned.report() for owned in self.active.values()]
                     refresh_recovery = False
                     for report in reports:
                         root = self.active[report["jobId"]].root
@@ -753,10 +750,8 @@ class LocalNode:
                                 self.active[identity].cancel.set()
                     except httpx.HTTPStatusError as error:
                         if self.node_id == "local" and error.response.status_code == 403:
-                            # Refresh the retained assignments without replaying fenced ordinary reports.
-                            refresh_recovery = any(
-                                owned.assignment.get("cleanupOnly") for owned in self.active.values()
-                            )
+                            # An ordinary assignment can become fenced while the node is disconnected.
+                            refresh_recovery = bool(self.active)
                         if error.response.status_code < 500:
                             for owned in self.active.values():
                                 owned.cancel.set()

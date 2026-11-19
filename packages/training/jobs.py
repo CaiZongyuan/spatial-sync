@@ -370,14 +370,11 @@ class TrainingJobs:
             for item in self.records.values()
             if item["planId"] == job["planId"] and item["jobId"] != job["jobId"]
         ]
-        consumed = sum(
-            item["chargedGpuHours"]
-            if item["status"] in TERMINAL
-            else (item["estimatedGpuHours"] or 0)
-            if item["budgetReserved"]
-            else 0
-            for item in peers
-        )
+        consumed = 0.0
+        for item in peers:
+            reserved = item["budgetReserved"] and item["status"] not in TERMINAL
+            estimate = (item["estimatedGpuHours"] or 0) if reserved else 0
+            consumed += max(item["chargedGpuHours"], estimate)
         return max(0, job["plan"]["budget"]["gpuHours"] - consumed)
 
     def _budget(self, job, remaining, same_profile):
@@ -602,7 +599,7 @@ class TrainingJobs:
         lease = node["leases"][resource]
         self._fail_lease(lease, reason, now)
         if node["id"] == "local":
-            lease["quarantined"] = True  # Retained local owners can still send their legacy terminal report.
+            lease.update(quarantined=True, cleanupOnly=True)
             return
         if resource != "cpu":
             receipt = self._cleanup_scope(node, resource, lease)
@@ -780,13 +777,14 @@ class TrainingJobs:
                 del data["validation"]
             if report.tailEnd is None:
                 del data["tailEnd"]
+            lease = (node or {}).get("leases", {}).get(job["resourceId"])
             if (
                 node and job["nodeId"] == identity
                 and node["instanceId"] == body.instanceId
                 and job.get("lastNodeReport") == data
+                and not (lease and lease["quarantined"])
             ):
                 continue
-            lease = (node or {}).get("leases", {}).get(job["resourceId"])
             if (
                 not lease
                 or lease["leaseId"] != report.leaseId
@@ -795,9 +793,13 @@ class TrainingJobs:
                 or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
-            if report.tailEnd is not None and not (lease.get("cleanupOnly") and lease["quarantined"]):
+            if report.tailEnd is not None and not lease["quarantined"]:
                 raise PlanError("lease_mismatch", "Log tail requires a fenced recovery lease", status=403)
-            if report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
+            if lease["quarantined"] and lease.get("trainerVersions") and report.tailEnd is None:
+                raise PlanError(
+                    "lease_mismatch", "Expired local dispatch requires a cleanup receipt", status=403
+                )
+            if report.status != "cleaned" and report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
             if report.status == "succeeded" and "runtimeIdentity" in lease:
                 try:
@@ -825,7 +827,7 @@ class TrainingJobs:
                     "artifacts_incomplete", "Upload verified artifacts before success", status=422
                 )
             self._log_suffix(job, report.logAfter, report.logs)
-            fresh.append((job, report, data))
+            fresh.append((job, report, data, lease.get("cleanupOnly")))
         if node is None:
             node = {"id": identity, "instanceId": body.instanceId, "leases": {}, "profiles": {}}
             with self.manager._resource_lock:
@@ -859,14 +861,23 @@ class TrainingJobs:
             retained = node["profiles"].get(profile.key)
             if retained is None or profile.measuredAt > retained["measuredAt"]:
                 node["profiles"][profile.key] = profile.model_dump()
-        for job, report, data in fresh:
+        for job, report, data, recovering in fresh:
             if report.tailEnd is not None:
                 self._append_log_tail(job, report, body.instanceId)
             else:
                 self._append_logs(job, report.logAfter, report.logs)
-            job["metrics"] = {key: data[key] for key in (
-                "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
-            )}
+            if report.status == "cleaned" or recovering:
+                metrics = job["metrics"]
+                metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), report.elapsedSeconds)
+                if report.status != "cleaned" and report.iteration >= metrics.get("iteration", 0):
+                    metrics["iteration"] = report.iteration
+                    for key in ("meanReward", "trainSuccess", "memoryUsedMb"):
+                        if data[key] is not None:
+                            metrics[key] = data[key]
+            else:
+                job["metrics"] = {key: data[key] for key in (
+                    "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
+                )}
             if report.validation is not None:
                 job["metrics"]["validation"] = data["validation"]
                 self._record_validation(job, node, report.validation, report.elapsedSeconds, now)
@@ -912,7 +923,7 @@ class TrainingJobs:
                     **({"timeoutSeconds": VALIDATION_TIMEOUT}
                        if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
                     **({"cleanupOnly": True, "quarantined": lease["quarantined"]}
-                       if lease.get("cleanupOnly") else {}),
+                       if lease.get("cleanupOnly") or identity == "local" and lease["quarantined"] else {}),
                     **self._cleanup_offer(node, gpu, lease),
                 }
                 for gpu, lease in node["leases"].items()

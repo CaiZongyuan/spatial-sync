@@ -433,6 +433,7 @@ def test_colocated_gpu_releases_only_for_its_cleanup_receipt(fence):
         assert session_device(client) == ("cuda:0" if fence == "duplicate_uuid" else "cpu")
         stale = {"jobId": first["jobId"], "leaseId": first["leaseId"], "status": "cleaned", "logs": ["stale"]}
         assert beat(client, original, reports=[stale]).status_code in (401, 403, 409)
+        assert beat(client, original, reports=[stale | {"tailEnd": 1}]).status_code in (401, 403, 409)
         assert client.get(f"{job_url}/inputs", headers=old).status_code in (401, 403)
         assert client.post(f"{job_url}/artifacts", headers=old, content=b"stale").status_code in (401, 403)
         assert client.get(f"{job_url}/logs", headers=OPERATOR).json()["lines"] == []
