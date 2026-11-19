@@ -130,11 +130,23 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
             raise ValueError("Validation produced non-finite observations or rewards")
         checks.clear()
 
+    def optimizer_gradients(optimizer, args, kwargs):
+        if not updating:
+            return
+        gradients = [
+            parameter.grad for group in optimizer.param_groups for parameter in group["params"]
+            if parameter.grad is not None
+        ]
+        pending_gradient_steps[optimizer] = bool(gradients)
+        update_checks.extend(torch.isfinite(gradient).all() for gradient in gradients)
+
     def optimizer_step(optimizer, args, kwargs):
-        if updating and any(
-            param.grad is not None for group in optimizer.param_groups for param in group["params"]
-        ):
+        if updating and pending_gradient_steps.pop(optimizer, False):
             optimizer_steps[optimizer] += 1
+            update_checks.extend(
+                torch.isfinite(parameter).all()
+                for group in optimizer.param_groups for parameter in group["params"]
+            )
 
     def update():
         nonlocal updating, updated
@@ -161,6 +173,9 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
         if not updated:
             raise ValueError("Validation did not complete PPO optimization before logging")
         check_finite()
+        if not bool(torch.stack(update_checks).all().item()):
+            raise ValueError("Validation produced non-finite PPO gradients or weights")
+        update_checks.clear()
         losses = values["loss_dict"]
         if not losses or not all(math.isfinite(loss) for loss in losses.values()):
             raise ValueError("Validation produced invalid PPO losses")
@@ -175,13 +190,15 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
     optimizer_steps = {alg.optimizer: 0}
     if rnd_optimizer := getattr(alg, "rnd_optimizer", None):
         optimizer_steps[rnd_optimizer] = 0
-    checks, samples = [], []
+    checks, update_checks, samples = [], [], []
+    pending_gradient_steps = {}
     updating = updated = False
     steps, started = 0, 0.0
     original_act, original_step = alg.act, env.step
     original_update, original_log = alg.update, runner.logger.log
     with ExitStack() as hooks:
         for optimizer in optimizer_steps:
+            hooks.callback(optimizer.register_step_pre_hook(optimizer_gradients).remove)
             hooks.callback(optimizer.register_step_post_hook(optimizer_step).remove)
         try:
             alg.act, env.step, alg.update, runner.logger.log = act, step, update, log

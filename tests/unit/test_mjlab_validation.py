@@ -10,7 +10,10 @@ from apps.node.mjlab_launcher import profile_training
 
 
 @pytest.mark.parametrize(
-    "bad_output", [None, "observation", "reward", "loss", "short_rollout", "zero_updates", "partial_update"],
+    "bad_output", [
+        None, "observation", "reward", "loss", "short_rollout", "zero_updates", "partial_update",
+        "last_gradient", "last_weight",
+    ],
 )
 def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, bad_output):
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(isfinite=np.isfinite, stack=np.stack))
@@ -31,23 +34,41 @@ def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, 
         return obs, rewards, None, {}
 
     env = SimpleNamespace(step=step)
-    hooks = []
+    pre_hooks, post_hooks = [], []
+    class Parameter(np.ndarray):
+        grad = np.array(1.0)
+
+    parameter = np.array(1.0).view(Parameter)
+
     class Optimizer:
-        param_groups = [{"params": [SimpleNamespace(grad=1.0)]}]
+        param_groups = [{"params": [parameter]}]
 
     optimizer = Optimizer()
 
-    def register_step_post_hook(hook):
-        hooks.append(hook)
-        return SimpleNamespace(remove=lambda: hooks.remove(hook))
+    def register_hooks(hooks):
+        def register(hook):
+            hooks.append(hook)
+            return SimpleNamespace(remove=lambda: hooks.remove(hook))
+        return register
 
-    optimizer.register_step_post_hook = register_step_post_hook
-    optimizer.step = lambda: [hook(optimizer, (), {}) for hook in hooks]
+    def optimizer_step(bad_weight):
+        for hook in pre_hooks:
+            hook(optimizer, (), {})
+        if bad_weight:
+            parameter[...] = float("nan")
+        for hook in post_hooks:
+            hook(optimizer, (), {})
+
+    optimizer.register_step_pre_hook = register_hooks(pre_hooks)
+    optimizer.register_step_post_hook = register_hooks(post_hooks)
 
     def update():
         updates = {"zero_updates": 0, "partial_update": 5}.get(bad_output, 6)
-        for _ in range(updates):
-            optimizer.step()
+        for index in range(updates):
+            last_step = events.count("update") == 2 and index == updates - 1
+            if last_step and bad_output == "last_gradient":
+                parameter.grad = np.array(float("nan"))
+            optimizer_step(last_step and bad_output == "last_weight")
         events.append("update")
         return {"value": float("inf") if bad_output == "loss" else 0.25}
 
@@ -81,6 +102,6 @@ def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, 
         assert result["numEnvs"] == 8 and len(result["samplesSeconds"]) == 2
         assert events == ["synchronize"] + ["synchronize", "step", "step", "update", "synchronize"] * 3
         assert result["setupSeconds"] > 0 and result["warmupSeconds"] > 0
-    assert not hooks
+    assert not pre_hooks and not post_hooks
     assert env.step is step and runner.alg.act is original_act and runner.alg.update is update
     assert runner.logger.log is None

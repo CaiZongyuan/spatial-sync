@@ -79,6 +79,15 @@ export interface NodeLease {
   assignedAt: number;
   quarantined: boolean;
 }
+export interface QuarantinedGpu {
+  nodeId: string;
+  instanceId: string;
+  jobId: string;
+  leaseId: string;
+  gpuId: string;
+  colocated: boolean;
+  releaseAt: null;
+}
 export interface GPUHistory {
   windowSeconds: number;
   sampleIntervalSeconds: number;
@@ -112,6 +121,8 @@ export interface TrainingNode {
   cpuAvailable: boolean;
   gpus: NodeGPU[];
   leases: Record<string, NodeLease>;
+  quarantinedGpus?: QuarantinedGpu[];
+  quarantinedGpuCount?: number;
   profiles: Record<string, TimingProfile>;
   queue: string[];
 }

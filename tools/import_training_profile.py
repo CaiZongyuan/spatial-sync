@@ -34,8 +34,9 @@ async def main():
         if not nodes:
             raise ValueError("Configure and start the local node before importing a measurement")
         node = nodes[0]
+        task = (await client.task_show(job["task"]))["task"] if job.get("backend") is None else None
     raw = args.measurement.read_bytes()
-    profile, digest = measured_profile(raw, job, plan, node, args.resource)
+    profile, digest = measured_profile(raw, job, plan, node, args.resource, task=task)
     capabilities = json.loads(args.capabilities.read_text(encoding="utf-8"))
     if capabilities["hardware"] != node["hardware"]:
         raise ValueError("Capability file belongs to another node hardware identity")

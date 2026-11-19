@@ -11,6 +11,7 @@ from pathlib import Path
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, extract_package, package_files
 from packages.library.common import content_hash
+from packages.training.runtime import job_backend, trainer_distributions
 
 
 def pack_package(path):
@@ -95,12 +96,8 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
                 or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
-            task_doc = manager.tasks.show(job["task"])["task"]
-            required_versions = (
-                ("mjlab", "mujoco", "mujoco_warp", "warp", "torch", "rsl_rl")
-                if task_doc.get("mjlab") is not None
-                else ("isaaclab", "newton", "warp", "torch", "rsl_rl")
-            )
+            task_doc = manager.tasks.show(job["task"])["task"] if job.get("backend") is None else None
+            required_versions = trainer_distributions(job_backend(job, task_doc) == "mjlab")
             if any(
                 not isinstance(versions["versions"].get(name), str) or not versions["versions"][name]
                 for name in required_versions

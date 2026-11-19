@@ -9,6 +9,11 @@ import sys
 import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+if __package__:
+    from packages.training.runtime import trainer_distributions
+else:
+    from lw_training_runtime import trainer_distributions
+
 
 def external_files(policy, output):
     import onnx
@@ -55,25 +60,6 @@ def ensure_runner_bridged(runner_cls):
     if current is not None and not getattr(current, "_lw_bridged", False):
         runner_cls.learn = _ACTIVE_WRAP_LEARN(current)
     return runner_cls
-
-
-def trainer_distributions(is_mjlab):
-    if is_mjlab:
-        return {
-            "mjlab": "mjlab",
-            "mujoco": "mujoco",
-            "mujoco_warp": "mujoco-warp",
-            "warp": "warp-lang",
-            "torch": "torch",
-            "rsl_rl": "rsl-rl-lib",
-        }
-    return {
-        "isaaclab": "isaaclab",
-        "newton": "newton",
-        "warp": "warp-lang",
-        "torch": "torch",
-        "rsl_rl": "rsl-rl-lib",
-    }
 
 
 def verify_trainer_versions(inputs, is_mjlab):

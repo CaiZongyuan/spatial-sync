@@ -19,13 +19,13 @@ from urllib.parse import urlsplit
 import httpx
 import psutil
 
-from apps.node.bridge_callback import trainer_distributions
 from apps.node.mjlab_launcher import compiler_hash
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
 from packages.library.archive import extract_package, import_lock, relative_path
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
+from packages.training import runtime as training_runtime
 from packages.training.inputs import pack_package
 
 GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
@@ -359,6 +359,7 @@ class OwnedRun:
                                 bridge / "lw_usd_mjcf.py")
                 shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
                                 bridge / "lw_mjlab_launcher.py")
+                shutil.copyfile(training_runtime.__file__, bridge / "lw_training_runtime.py")
                 leased_compiler = inputs.get("compilerHash")
                 if leased_compiler and compiler_hash(bridge, prefix="lw_") != leased_compiler:
                     raise RuntimeError("Bundled mjlab compiler differs from the leased compiler digest")
@@ -395,6 +396,19 @@ class OwnedRun:
                     raise RuntimeError(
                         f"{backend_name} trainer runtime is not configured on this compute node"
                     )
+                entry = trainer_prefix[1:]
+                if runtime := inputs.get("runtimeIdentity"):
+                    if (
+                        runtime["backend"] != backend_name
+                        or training_runtime.entry_identity(backend_name, entry) != runtime["entry"]
+                    ):
+                        raise RuntimeError(
+                            "Configured trainer entry differs from the leased runtime identity"
+                        )
+                    if backend_name == "isaaclab" and not entry[0].startswith("-"):
+                        entry[0] = str(Path(entry[0]).resolve())
+                if is_mjlab and (validation or not entry):
+                    entry = list(training_runtime.MJLAB_ENTRY)
                 stage = scene_package["stage"]
                 env.pop("LW_SCENE_STAGE", None)
                 if inputs["task"][backend_name].get("sceneInput", "usd") == "usd":
@@ -454,15 +468,13 @@ class OwnedRun:
                     )
                     if is_mjlab:
                         args = mjlab_trainer_arguments(inputs, "lw_training_bridge.install")
-                        entry = trainer_prefix[1:] if len(trainer_prefix) > 1 else ["-m", "lw_mjlab_launcher"]
                         if validation:
-                            entry = ["-m", "lw_mjlab_launcher"]
                             iterations = str(job["validationLimits"]["iterations"])
                             args.extend(["--validation-iterations", iterations])
                         self._command([python, *entry, *args], env, stdout, stderr)
                     else:
                         args = trainer_arguments(inputs, "lw_training_bridge.install")
-                        self._command([python, *trainer_prefix[1:], *args], env, stdout, stderr)
+                        self._command([python, *entry, *args], env, stdout, stderr)
                 if validation:
                     self.metrics = {
                         "iteration": job["validationLimits"]["iterations"],
@@ -802,6 +814,11 @@ def run_node(args):
     if modern or node_id != "local" or not args.capabilities:
         capabilities["trainerVersions"] = mjlab_versions or isaaclab_versions
         capabilities["isaaclabVersions"] = isaaclab_versions
+        entries = {
+            backend: training_runtime.entry_identity(backend, prefix[1:])
+            for backend, prefix in (("isaaclab", trainer), ("mjlab", mjlab_trainer)) if prefix
+        }
+        capabilities["trainingEntries"] = {backend: entry for backend, entry in entries.items() if entry}
     if "mjlab" in (capabilities.get("trainerVersions") or {}):
         capabilities["compilerHash"] = compiler_hash()
     if not args.capabilities:
@@ -838,7 +855,7 @@ print(json.dumps(versions))
 """
     try:
         result = subprocess.run(
-            [prefix[0], "-c", script, json.dumps(trainer_distributions(is_mjlab))],
+            [prefix[0], "-c", script, json.dumps(training_runtime.trainer_distributions(is_mjlab))],
             capture_output=True, text=True, timeout=10, check=True,
             env=trainer_environment(),
         )

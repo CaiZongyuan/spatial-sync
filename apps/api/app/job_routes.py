@@ -125,6 +125,7 @@ def install_job_routes(app, manager, role_for, views=None):
             "job": jobs.document(job),
             "plan": job["plan"],
             "trainerVersions": lease.get("trainerVersions"),
+            **({"runtimeIdentity": lease["runtimeIdentity"]} if lease.get("runtimeIdentity") else {}),
             **({"compilerHash": lease["compilerHash"]} if lease.get("compilerHash") else {}),
             "nativeObservationProfile": None,
             "packages": await anyio.to_thread.run_sync(input_packages, manager, job),

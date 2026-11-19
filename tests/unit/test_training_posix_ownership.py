@@ -95,6 +95,21 @@ def test_owner_fixture_publishes_complete_json_on_first_visibility(tmp_path):
         }
 
 
+def test_failed_exec_leaves_durable_not_started_proof(tmp_path):
+    from apps.node.process import cleanup_confirmed
+
+    with (tmp_path / "launcher.log").open("wb") as log:
+        owner = OwnedProcess([str(tmp_path / "missing-trainer")], cwd=tmp_path, env=os.environ,
+                             stdout=log, stderr=log)
+        try:
+            assert owner.process.wait(timeout=5) != 0
+        finally:
+            owner.stop()
+    (record,) = tmp_path.glob("process-*.json")
+    assert cleanup_confirmed(tmp_path, json.loads(record.read_bytes()))
+    assert owner.cleanup.read_text() == "not_started"
+
+
 @pytest.mark.parametrize("lose_owner", [False, True])
 def test_resistant_grandchild_is_gone_before_cleanup_proof_even_after_owner_loss(tmp_path, lose_owner):
     env = os.environ | {"PYTHONPATH": str(ROOT)}

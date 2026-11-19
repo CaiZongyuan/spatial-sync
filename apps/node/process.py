@@ -18,9 +18,16 @@ class CleanupIncomplete(RuntimeError):
     pass
 
 
+def _cleanup_recorded(marker):
+    try:
+        return marker.read_bytes() in (b"clean", b"not_started")
+    except OSError:
+        return False
+
+
 def cleanup_confirmed(root, receipt):
     marker = root / receipt["cleanup"]
-    if marker.is_file():
+    if _cleanup_recorded(marker):
         return True
     if os.name == "nt" and receipt.get("jobName"):
         import pywintypes
@@ -125,5 +132,5 @@ class OwnedProcess:
 
     def close(self):
         self.stop()
-        if not self.cleanup.is_file():
+        if not _cleanup_recorded(self.cleanup):
             raise CleanupIncomplete("Process cleanup was not confirmed; retain the dispatch lease")

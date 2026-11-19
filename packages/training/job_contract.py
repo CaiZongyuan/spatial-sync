@@ -9,8 +9,6 @@ from packages.training.schema import Schema, Text
 NodeId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
 VALIDATION_ITERATIONS = 3
 VALIDATION_TIMEOUT = 180
-MJLAB_VERSIONS = {"mjlab": "1.3.0", "mujoco_warp": "3.8.1", "torch": "2.9.1"}
-ISAACLAB_VERSIONS = {"isaaclab": "3.0.0", "newton": "1.6.0rc1", "warp": "1.17.0", "torch": "2.11.0"}
 
 
 class NodeRegistration(Schema):
@@ -45,6 +43,7 @@ class TimingProfile(Schema):
     key: str = Field(pattern=r"^[a-f0-9]{64}$")
     iterationSeconds: float = Field(gt=0)
     setupSeconds: float = Field(default=0, ge=0)
+    dispatchOverheadSeconds: float = Field(default=0, ge=0)
     samples: int = Field(ge=1)
     measuredAt: float = Field(gt=0)
     evidence: Text
@@ -96,5 +95,6 @@ class NodeHeartbeat(Schema):
     trainerVersions: dict[str, Text] | None = Field(default=None, max_length=16)
     isaaclabVersions: dict[str, Text] | None = Field(default=None, max_length=16)
     compilerHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    trainingEntries: dict[Literal["isaaclab", "mjlab"], str] | None = Field(default=None, max_length=2)
     profiles: list[TimingProfile] = Field(default_factory=list, max_length=128)
     reports: list[JobReport] = Field(default_factory=list, max_length=16)

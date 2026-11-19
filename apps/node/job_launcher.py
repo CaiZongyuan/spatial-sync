@@ -12,6 +12,20 @@ from pathlib import Path
 import psutil
 
 
+def record_cleanup(path, outcome):
+    path = Path(path)
+    with path.open("w", encoding="ascii") as stream:
+        stream.write(outcome)
+        stream.flush()
+        os.fsync(stream.fileno())
+    if os.name != "nt":
+        parent = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
+
+
 def main():
     request = json.loads(sys.stdin.readline())
     stopping = False
@@ -23,22 +37,29 @@ def main():
     if sys.platform.startswith("linux"):
         kernel = ctypes.CDLL(None, use_errno=True)
         if kernel.prctl(36, 1, 0, 0, 0) != 0:
+            record_cleanup(request["cleanup"], "not_started")
             raise RuntimeError("Cannot establish child-subreaper ownership")
         signal.signal(signal.SIGTERM, stop)
         if kernel.prctl(1, signal.SIGTERM, 0, 0, 0) != 0:
+            record_cleanup(request["cleanup"], "not_started")
             raise RuntimeError("Cannot observe node owner loss")
         if os.getppid() != request["parentPid"]:
-            Path(request["cleanup"]).write_text("clean", encoding="ascii")
+            record_cleanup(request["cleanup"], "not_started")
             return 1
     elif os.name != "nt":
+        record_cleanup(request["cleanup"], "not_started")
         raise RuntimeError("Local node process ownership supports Linux and Windows")
-    child = subprocess.Popen(
-        request["command"],
-        stdin=subprocess.DEVNULL,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
+    try:
+        child = subprocess.Popen(
+            request["command"],
+            stdin=subprocess.DEVNULL,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except (FileNotFoundError, PermissionError, NotADirectoryError):
+        record_cleanup(request["cleanup"], "not_started")
+        raise
     code = 1
     try:
         while child.poll() is None and not stopping:
@@ -62,7 +83,7 @@ def main():
         if remaining or psutil.Process().children(recursive=True):
             raise RuntimeError("Owned descendants remain; cleanup is unconfirmed")
         child.wait()
-        Path(request["cleanup"]).write_text("clean", encoding="ascii")
+        record_cleanup(request["cleanup"], "clean")
     return code
 
 

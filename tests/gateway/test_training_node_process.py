@@ -19,9 +19,15 @@ from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.node import runner
 from packages.library.common import content_hash
-from packages.training.jobs import node_profile_key
+from packages.training.runtime import entry_identity
 from tests.fixtures.training_task import task_archive, task_directory, training_plan
-from tests.gateway.test_remote_training_nodes import ISAAC_VERSIONS, OPERATOR, register, remote_settings
+from tests.gateway.test_remote_training_nodes import (
+    ISAAC_VERSIONS,
+    OPERATOR,
+    node_profile_key,
+    register,
+    remote_settings,
+)
 
 
 def wait_for(read, predicate, *, timeout=30):
@@ -53,27 +59,40 @@ def start_server(settings, app=None):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX descendant ownership")
-def test_remote_node_retries_cleanup_after_descendants_exit_and_reply_is_lost(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failed_exec", [False, True], ids=["descendants-exited", "not-started"])
+def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, failed_exec):
     monkeypatch.setattr(runner, "gpu_usage", lambda: ({}, {}))
+    if failed_exec:
+        monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
     settings = remote_settings()
     app = create_app(settings)
     root = tmp_path / "workstation"
-    verified_leaf = []
+    verified = []
+    revoked = threading.Event()
 
     @app.middleware("http")
     async def lose_first_cleanup_reply(request, call_next):
+        if failed_exec and request.url.path.endswith("/heartbeat"):
+            payload = await request.json()
+            if any(report["status"] == "failed" for report in payload.get("reports", [])):
+                await asyncio.to_thread(revoked.wait, 10)
         response = await call_next(request)
         if request.url.path == "/api/v1/nodes/cleanup" and response.status_code == 204:
-            (leaf_file,) = (root / "work").glob("*/leaf.json")
-            leaf = json.loads(leaf_file.read_bytes())
-            try:
-                process = psutil.Process(leaf["pid"])
-                assert process.create_time() != leaf["createdAt"] or not process.is_running()
-            except psutil.NoSuchProcess:
-                pass
+            if failed_exec:
+                (marker,) = (root / "work").glob("*/clean-*")
+                assert marker.read_text() == "not_started"
+                assert not list((root / "work").glob("*/leaf.json"))
+            else:
+                (leaf_file,) = (root / "work").glob("*/leaf.json")
+                leaf = json.loads(leaf_file.read_bytes())
+                try:
+                    process = psutil.Process(leaf["pid"])
+                    assert process.create_time() != leaf["createdAt"] or not process.is_running()
+                except psutil.NoSuchProcess:
+                    pass
             assert "x-node-token" not in request.headers
-            verified_leaf.append(leaf)
-            if len(verified_leaf) == 1:
+            verified.append(response.status_code)
+            if len(verified) == 1:
                 return Response(status_code=503)
         return response
 
@@ -102,13 +121,6 @@ def test_remote_node_retries_cleanup_after_descendants_exit_and_reply_is_lost(tm
             approval_url = f"/api/v1/approvals/{plan['approvalId']}/decision"
             assert client.post(approval_url, json={"decision": "approve"}).is_success
             gpu = {"id": "GPU-fictional", "name": "CPU process fixture"}
-            hardware = {"id": "worker", "hardware": "fixture", "trainerVersions": ISAAC_VERSIONS}
-            profile = node_profile_key(plan, task["contentHash"], hardware, gpu, backend="isaaclab")
-            capabilities = {
-                "hardware": "fixture", "trainerVersions": ISAAC_VERSIONS, "gpus": [gpu],
-                "profiles": [{"key": profile, "iterationSeconds": 1.0, "samples": 1,
-                              "measuredAt": time.time(), "evidence": "CPU process fixture"}],
-            }
             holder = tmp_path / "hold.py"
             fixture = Path(__file__).resolve().parents[1] / "fixtures/owned_process_tree.py"
             holder.write_text(
@@ -117,6 +129,16 @@ def test_remote_node_retries_cleanup_after_descendants_exit_and_reply_is_lost(tm
                 "os.execv(sys.executable, args)\n",
                 encoding="utf-8",
             )
+            hardware = {
+                "id": "worker", "hardware": "fixture", "trainerVersions": ISAAC_VERSIONS,
+                "trainingEntries": {"isaaclab": entry_identity("isaaclab", [str(holder)])},
+            }
+            profile = node_profile_key(plan, task["contentHash"], hardware, gpu, backend="isaaclab")
+            capabilities = {key: value for key, value in hardware.items() if key != "id"}
+            capabilities.update(gpus=[gpu], profiles=[{
+                "key": profile, "iterationSeconds": 1.0, "samples": 1,
+                "measuredAt": time.time(), "evidence": "CPU process fixture",
+            }])
 
             def node():
                 return runner.LocalNode(
@@ -126,11 +148,13 @@ def test_remote_node_retries_cleanup_after_descendants_exit_and_reply_is_lost(tm
 
             owner_thread = start_owner(node())
             assert client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).status_code == 202
-            wait_for(lambda: list((root / "work").glob("*/leaf.json")), bool, timeout=35)
+            ready = "*/clean-*" if failed_exec else "*/leaf.json"
+            wait_for(lambda: list((root / "work").glob(ready)), bool, timeout=35)
             assert client.delete("/api/v1/nodes/worker").status_code == 204
+            revoked.set()
             owner_thread.join(10)
             assert not owner_thread.is_alive()
-            assert len(verified_leaf) == 1
+            assert verified == [204]
             assert errors == ["Gateway rejected Compute Node credentials or ownership"]
             (receipt,) = (root / "cleanup-receipts").glob("*.json")
 
@@ -139,8 +163,9 @@ def test_remote_node_retries_cleanup_after_descendants_exit_and_reply_is_lost(tm
             owner_thread = start_owner(node())
             owner_thread.join(5)
             assert not owner_thread.is_alive()
-            assert len(verified_leaf) == 2 and not receipt.exists()
+            assert verified == [204, 204] and not receipt.exists()
     finally:
+        revoked.set()
         (root / "stop").parent.mkdir(parents=True, exist_ok=True)
         (root / "stop").touch()
         if owner_thread:
