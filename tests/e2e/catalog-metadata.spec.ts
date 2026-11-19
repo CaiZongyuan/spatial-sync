@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { cleanupOwnedProcesses, finishCleanup, type OwnedProcess } from './owned-cleanup';
+import { observeCatalog } from './catalog-diagnostics';
 
 async function freePort() {
   return new Promise<number>((done, reject) => {
@@ -33,6 +34,8 @@ test('released metadata has compact cards, encoded identities, bounded pages and
     child.stdout?.on('data', chunk => { record.output += chunk; }); child.stderr?.on('data', chunk => { record.output += chunk; });
     child.once('error', error => { record.error = error; }); processes.push(record);
   };
+  const browserDiagnostics: unknown[] = [];
+  const stopDiagnostics = await observeCatalog(page, browserDiagnostics);
   try {
     start('catalog-metadata-api', python, ['-m', 'uvicorn', 'catalog_metadata_browser_gateway:app', '--app-dir', 'tests/fixtures',
       '--host', '127.0.0.1', '--port', String(apiPort)], resolve('../..'));
@@ -260,10 +263,15 @@ test('released metadata has compact cards, encoded identities, bounded pages and
   expect(remote).toEqual([]);
   } catch (error) { original.push(error); }
   finally {
+    stopDiagnostics();
     const cleanup = await cleanupOwnedProcesses(processes, {
       python, script: owned, original, outputPath: name => info.outputPath(name),
       context: { source: resolve('../..'), api, web }, ports: [apiPort, webPort],
-      prepare: [{ label: 'page:close', run: () => page.goto('about:blank') }],
+      prepare: [{ label: 'catalog:diagnostics', run: async () => {
+        if (original.length) await page.screenshot({ path: info.outputPath('failure-before-cleanup.png'), timeout: 5000 })
+          .catch(error => browserDiagnostics.push({ event: 'diagnostic-screenshot-error', name: error.name }));
+        await writeFile(info.outputPath('catalog-diagnostics.json'), JSON.stringify(browserDiagnostics, null, 2));
+      } }, { label: 'page:close', run: () => page.goto('about:blank') }],
     });
     finishCleanup(cleanup, original);
   }
