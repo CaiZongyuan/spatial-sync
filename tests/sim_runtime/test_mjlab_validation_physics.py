@@ -19,7 +19,8 @@ def test_mjlab_validation_rejects_nonfinite_physics_before_automatic_reset(tmp_p
         "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "PYTHONDONTWRITEBYTECODE": "1",
     }
     script = str(Path(__file__).resolve())
-    subprocess.run([trainer, script, str(root)], cwd=tmp_path, env=env, check=True, timeout=60)
+    # The first CPU run can spend over 100 seconds compiling cold Warp kernels and running both cases.
+    subprocess.run([trainer, script, str(root)], cwd=tmp_path, env=env, check=True, timeout=240)
 
 
 def check_validation(root, inject_nan):
