@@ -55,6 +55,7 @@ class DerivedJoint:
     armature: float
     frictionloss: float
     actuated: bool
+    initial_position: float | None = None
 
 
 @dataclass(frozen=True)
@@ -638,6 +639,36 @@ def _contact_attributes(prim):
     return attrs
 
 
+def _check_mjlab_ground(spec, path):
+    import mujoco
+    import numpy as np
+
+    model = spec.copy().compile()
+    ground = model.geom("terrain").id
+    data = mujoco.MjData(model)
+    mujoco.mj_kinematics(model, data)
+    normal = data.geom_xmat[ground].reshape(3, 3)[:, 2]
+    if (not np.allclose(normal, (0., 0., 1.), rtol=0., atol=1e-6)
+            or abs(data.geom_xpos[ground, 2]) > 1e-6
+            or model.body_weldid[model.geom_bodyid[ground]] != 0):
+        raise UnsupportedUsdPhysics(path, "Final mjlab terrain must remain a fixed Z-up plane at height zero")
+
+    groups = model.geom_contype | model.geom_conaffinity
+    canonical = ((groups & 1) != 0) & (model.body_weldid[model.geom_bodyid] != 0)
+    actual = (((model.geom_contype & model.geom_conaffinity[ground])
+               | (model.geom_conaffinity & model.geom_contype[ground])) != 0
+              ) & (model.body_weldid[model.geom_bodyid] != 0)
+    ground_body = model.geom_bodyid[ground]
+    for signature in model.exclude_signature:
+        first, second = (int(signature) >> 16) & 0xffff, int(signature) & 0xffff
+        if ground_body in (first, second):
+            actual[model.geom_bodyid == (second if first == ground_body else first)] = False
+    if (not (groups[ground] and np.array_equal(actual, canonical))
+            or model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT
+            or ground in model.pair_geom1 or ground in model.pair_geom2):
+        raise UnsupportedUsdPhysics(path, "Final mjlab terrain must retain canonical collision eligibility")
+
+
 def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     """Carry canonical USD contact settings through mjlab's final SceneCfg attachment."""
     import mujoco
@@ -668,6 +699,7 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
         raise UnsupportedUsdPhysics(plane.GetPath(), "mjlab plane composition requires unfiltered terrain")
 
     contact = _contact_attributes(plane.GetPrim())
+    plane_path = plane.GetPath()
     previous = scene_cfg.spec_fn
 
     def apply(spec):
@@ -675,11 +707,12 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
             previous(spec)
         geom = spec.geom("terrain")
         if geom is None or geom.type != mujoco.mjtGeom.mjGEOM_PLANE:
-            raise ValueError("Final mjlab SceneCfg must attach a plane geom named terrain")
+            raise UnsupportedUsdPhysics(plane_path, "Final mjlab scene requires a plane geom named terrain")
         # MjSpec.attach preserves entity exclusions, but only the root owns solver flags.
         spec.option.disableflags |= mujoco.mjtDisableBit.mjDSBL_FILTERPARENT
         geom.friction = [float(value) for value in contact["friction"].split()]
         geom.solref = [float(value) for value in contact.get("solref", ".02 1").split()]
+        _check_mjlab_ground(spec, plane_path)
 
     scene_cfg.spec_fn = apply
 
@@ -1016,48 +1049,51 @@ def derive_usd_mjcf(
             "pass prim_path to select a single articulation"
         )
     root_path = root_candidates[0]
-    # Compute root pose in world coordinates
-    scope_world_pos, scope_world_quat, _ = _decompose_matrix(
-        xform_cache.GetLocalToWorldTransform(scope_prim), meters_per_unit
-    )
+    articulated_joints = set()
+    if any(incoming_joint.get(path, (None, None))[1] for path in root_candidates):
+        load_physics = getattr(UsdPhysics, "UsdPhysicsLoadStageFromPrimRange", None)
+        if load_physics is None:
+            load_physics = UsdPhysics.LoadUsdPhysicsFromRange
+        parsed = load_physics(stage, ["/"])
+        _, articulations = parsed.get(UsdPhysics.ObjectType.Articulation, ((), ()))
+        articulated_joints = {
+            joint for entry in articulations if entry.isValid for joint in entry.articulatedJoints
+        }
 
     def root_transform(root_prim, world_joint_prim):
+        pos, quat, s1 = _decompose_matrix(
+            xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit
+        )
         if not world_joint_prim:
-            pos, quat, _ = _decompose_matrix(xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit)
             return pos, quat
         wj = UsdPhysics.Joint(world_joint_prim)
-        # Empty body0 inside a referenced asset is relative to scope_prim.
         b0_targets = wj.GetBody0Rel().GetForwardedTargets()
-        if b0_targets:
-            b0_prim = stage.GetPrimAtPath(b0_targets[0])
+        b0_prim = stage.GetPrimAtPath(b0_targets[0]) if b0_targets else None
+        # Newton reconstructs the world-side frame of an orphan joint from the
+        # authored child pose. An articulated joint uses its resolved world anchor.
+        has_children = bool(children_by_parent[root_prim.GetPath()])
+        lone_fixed = world_joint_prim.IsA(UsdPhysics.FixedJoint) and not has_children
+        orphan = (world_joint_prim.GetPath() not in articulated_joints
+                  or wj.GetExcludeFromArticulationAttr().Get())
+        if (lone_fixed or orphan) and not (b0_prim and _is_rigid_body(b0_prim)):
+            return pos, quat
+        lp0 = _gf_vec3(wj.GetLocalPos0Attr().Get(), meters_per_unit)
+        lr0 = _gf_quat_to_wxyz(wj.GetLocalRot0Attr().Get())
+        if b0_prim:
             frame0_pos, frame0_quat, s0 = _decompose_matrix(
                 xform_cache.GetLocalToWorldTransform(b0_prim), meters_per_unit
             )
+            anchor = tuple(p * s for p, s in zip(lp0, s0, strict=True))
+            w_j0_pos, w_j0_quat = _pose_mul(frame0_pos, frame0_quat, anchor, lr0)
         else:
-            j_parent = world_joint_prim.GetParent()
-            if j_parent and j_parent.IsValid() and j_parent.GetPath().HasPrefix(scope_path):
-                frame0_pos, frame0_quat, s0 = _decompose_matrix(
-                    xform_cache.GetLocalToWorldTransform(j_parent), meters_per_unit
-                )
-            else:
-                frame0_pos, frame0_quat, s0 = scope_world_pos, scope_world_quat, (1.0, 1.0, 1.0)
-        lp0 = wj.GetLocalPos0Attr().Get()
-        lr0 = _gf_quat_to_wxyz(wj.GetLocalRot0Attr().Get())
-        p0_local = (
-            float(lp0[0]) * s0[0] * meters_per_unit if lp0 is not None else 0.0,
-            float(lp0[1]) * s0[1] * meters_per_unit if lp0 is not None else 0.0,
-            float(lp0[2]) * s0[2] * meters_per_unit if lp0 is not None else 0.0,
-        )
-        w_j0_pos, w_j0_quat = _pose_mul(frame0_pos, frame0_quat, p0_local, lr0)
-
-        _, _, s1 = _decompose_matrix(xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit)
-        lp1 = wj.GetLocalPos1Attr().Get()
+            # Newton 1.7 recovers an identity world anchor from the child's stage
+            # placement. Any non-identity anchor with no body0 is already world space.
+            if max(map(abs, lp0)) <= 1e-6 and abs(lr0[0]) > 1.0 - 1e-6:
+                return pos, quat
+            w_j0_pos, w_j0_quat = lp0, lr0
+        lp1 = _gf_vec3(wj.GetLocalPos1Attr().Get(), meters_per_unit)
         lr1 = _gf_quat_to_wxyz(wj.GetLocalRot1Attr().Get())
-        p1_local = (
-            float(lp1[0]) * s1[0] * meters_per_unit if lp1 is not None else 0.0,
-            float(lp1[1]) * s1[1] * meters_per_unit if lp1 is not None else 0.0,
-            float(lp1[2]) * s1[2] * meters_per_unit if lp1 is not None else 0.0,
-        )
+        p1_local = tuple(p * s for p, s in zip(lp1, s1, strict=True))
         inv_j1_pos, inv_j1_quat = _pose_inv(p1_local, lr1)
         return _pose_mul(w_j0_pos, w_j0_quat, inv_j1_pos, inv_j1_quat)
 
@@ -1162,8 +1198,8 @@ def derive_usd_mjcf(
         state_pos = _custom_float(
             j_prim,
             (
-                f"state:{drive_type}:physics:position",
                 f"newton:{drive_type}:position",
+                f"state:{drive_type}:physics:position",
             ),
             default=math.nan,
         )
@@ -1194,6 +1230,7 @@ def derive_usd_mjcf(
             armature=armature,
             frictionloss=frictionloss,
             actuated=actuated,
+            initial_position=state_pos * pos_scale if math.isfinite(state_pos) else None,
         )
 
     def _add_body_geoms_and_sites(

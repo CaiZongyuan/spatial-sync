@@ -94,6 +94,9 @@ def check_composition(path):
 
     def callback(spec):
         spec.option.gravity[2] = -8
+        # Translation and rotation within an infinite plane are physically equivalent.
+        spec.geom("terrain").pos = (.3, -.4, 0.)
+        spec.geom("terrain").quat = (math.sqrt(.5), 0., 0., math.sqrt(.5))
         spec.add_sensor(name="floor-position", type=mujoco.mjtSensor.mjSENS_FRAMEPOS,
                         objtype=mujoco.mjtObj.mjOBJ_GEOM, objname="terrain")
 
@@ -124,6 +127,25 @@ def check_composition(path):
     }
     assert robot_pairs == {frozenset(("robot/A_Ball", "robot/B_Ball"))}
     print("Measured allowed pairs", contacts(final), "and ground friction", final.geom("terrain").friction[0])
+
+    def move_parent(spec):
+        spec.body("terrain").pos = (0., 0., .25)
+
+    def tilt_plane(spec):
+        spec.geom("terrain").quat = (math.sqrt(.5), math.sqrt(.5), 0., 0.)
+
+    def disable_contacts(spec):
+        spec.geom("terrain").contype = spec.geom("terrain").conaffinity = 2
+
+    for override in (move_parent, tilt_plane, disable_contacts):
+        altered = SceneCfg(terrain=terrain, entities=cfg.entities, spec_fn=override)
+        usd_mjcf.configure_mjlab_usd_scene(altered, path)
+        try:
+            Scene(altered, device="cpu").compile()
+        except usd_mjcf.UnsupportedUsdPhysics as exc:
+            assert exc.prim_path == "/World/Lab/Floor"
+        else:
+            raise AssertionError(f"Final scene accepted ground override {override.__name__}")
 
 
 if __name__ == "__main__":

@@ -110,3 +110,119 @@ def test_world_root_coordinate_and_body_projection(tmp_path, kind, target, autho
 
 def test_instance_proxy_root_keeps_actual_motor_and_body_configuration_coherent(tmp_path):
     test_world_root_coordinate_and_body_projection(tmp_path, "slide", .02, True, instanceable=True)
+
+
+def test_fixed_world_anchor_under_translated_parent_forwards_to_floor_contacts():
+    from types import SimpleNamespace
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+    from packages.library.physics import contact_observations
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    UsdGeom.SetStageMetersPerUnit(stage, 1.)
+    root = UsdGeom.Xform.Define(stage, "/Asset")
+    stage.SetDefaultPrim(root.GetPrim())
+    parent = UsdGeom.Xform.Define(stage, "/Asset/Robot")
+    parent.AddTranslateOp().Set((0., 0., .05))
+    UsdPhysics.ArticulationRootAPI.Apply(parent.GetPrim())
+    for name in ("Base", "Link"):
+        body = UsdGeom.Xform.Define(stage, f"/Asset/Robot/{name}")
+        UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+        colliders = [("Sphere", 0., .025)] if name == "Base" else [("Left", -.12, .08), ("Right", .12, .08)]
+        for label, x, radius in colliders:
+            sphere = UsdGeom.Sphere.Define(stage, f"/Asset/Robot/{name}/{label}")
+            sphere.CreateRadiusAttr(radius)
+            sphere.AddTranslateOp().Set((x, 0, 0))
+            UsdPhysics.CollisionAPI.Apply(sphere.GetPrim())
+    ground = UsdGeom.Plane.Define(stage, "/Asset/Ground")
+    ground.CreateAxisAttr("Z")
+    UsdPhysics.CollisionAPI.Apply(ground.GetPrim())
+    fixed = UsdPhysics.FixedJoint.Define(stage, "/Asset/Robot/Fixed")
+    fixed.CreateBody1Rel().SetTargets(["/Asset/Robot/Base"])
+    fixed.CreateLocalPos0Attr((0, 0, .075))
+    hinge = UsdPhysics.RevoluteJoint.Define(stage, "/Asset/Robot/Hinge")
+    hinge.CreateBody0Rel().SetTargets(["/Asset/Robot/Base"])
+    hinge.CreateBody1Rel().SetTargets(["/Asset/Robot/Link"])
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage, root_path="/Asset")
+    model = builder.finalize(device="cpu")
+    state = model.state()
+    newton.eval_fk(model, state.joint_q, state.joint_qd, state)
+    newton_link = model.body_label.index("/Asset/Robot/Link")
+    assert state.body_q.numpy()[newton_link, 2] == pytest.approx(.075)
+    measured = contact_observations(SimpleNamespace(model=model, state=state, collision_pipeline=None))
+    assert {frozenset((a, b)) for a, b, distance in measured if distance < 0.} == {
+        frozenset(("/Asset/Ground", "/Asset/Robot/Link/Left")),
+        frozenset(("/Asset/Ground", "/Asset/Robot/Link/Right")),
+    }
+
+    derived = derive_usd_mjcf(stage)
+    native = derived.to_mjmodel()
+    forward = mujoco.MjData(native)
+    mujoco.mj_forward(native, forward)
+    assert forward.body("Link").xpos[2] == pytest.approx(.075)
+    assert {frozenset(native.geom(i).name for i in (contact.geom1, contact.geom2))
+            for contact in forward.contact} == {
+        frozenset(("Ground", "Link_Left")), frozenset(("Ground", "Link_Right")),
+    }
+    report = compare_models(model, derived)
+    assert [row["status"] for row in report] == ["pass"], report
+
+
+@pytest.mark.parametrize("anchor", ["world", "explicit", "identity", "standalone"])
+def test_rotated_referenced_root_matches_newton_fk(anchor):
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+
+    asset = Usd.Stage.CreateInMemory()
+    root = UsdGeom.Xform.Define(asset, "/Asset")
+    asset.SetDefaultPrim(root.GetPrim())
+    UsdPhysics.ArticulationRootAPI.Apply(root.GetPrim())
+    body = UsdGeom.Xform.Define(asset, "/Asset/Base")
+    body.AddTranslateOp().Set((.1, 0., .2))
+    UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+    box = UsdGeom.Cube.Define(asset, "/Asset/Base/Box")
+    box.CreateSizeAttr(.1)
+    box.AddRotateXOp().Set(25.)
+    UsdPhysics.CollisionAPI.Apply(box.GetPrim())
+    fixed = UsdPhysics.FixedJoint.Define(asset, "/Asset/Fixed")
+    fixed.CreateBody1Rel().SetTargets(["/Asset/Base"])
+    if anchor != "identity":
+        fixed.CreateLocalPos0Attr((.1, 0., .2))
+    if anchor == "explicit":
+        fixed.CreateBody0Rel().SetTargets(["/Asset"])
+    if anchor != "standalone":
+        link = UsdGeom.Xform.Define(asset, "/Asset/Link")
+        UsdPhysics.RigidBodyAPI.Apply(link.GetPrim())
+        end = UsdGeom.Sphere.Define(asset, "/Asset/Link/Collider")
+        end.CreateRadiusAttr(.025)
+        UsdPhysics.CollisionAPI.Apply(end.GetPrim())
+        hinge = UsdPhysics.RevoluteJoint.Define(asset, "/Asset/Hinge")
+        hinge.CreateBody0Rel().SetTargets(["/Asset/Base"])
+        hinge.CreateBody1Rel().SetTargets(["/Asset/Link"])
+        hinge.CreateLocalPos0Attr((0, 0, .2))
+
+    scene = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(scene, "Z")
+    UsdGeom.SetStageMetersPerUnit(scene, 1.)
+    robot = UsdGeom.Xform.Define(scene, "/Robot")
+    robot.GetPrim().GetReferences().AddReference(asset.GetRootLayer().identifier)
+    robot.AddTranslateOp().Set((.4, -.2, .3))
+    robot.AddRotateZOp().Set(90.)
+    builder = newton.ModelBuilder()
+    import_usd(builder, scene, root_path="/Robot")
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(scene, prim_path="/Robot")
+    native = derived.to_mjmodel()
+    forward = mujoco.MjData(native)
+    mujoco.mj_forward(native, forward)
+    if anchor == "world":
+        np.testing.assert_allclose(forward.body("Base").xpos, [.1, 0., .2], atol=1e-6)
+        np.testing.assert_allclose(forward.body("Base").xmat.reshape(3, 3)[:, 0], [1, 0, 0], atol=1e-6)
+    else:
+        np.testing.assert_allclose(forward.body("Base").xpos, [.4, -.1, .5], atol=1e-6)
+        np.testing.assert_allclose(forward.body("Base").xmat.reshape(3, 3)[:, 0], [0, 1, 0], atol=1e-6)
+    report = compare_models(model, derived)
+    assert [row["status"] for row in report] == ["pass"], report

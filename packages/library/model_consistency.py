@@ -6,6 +6,8 @@ REL_TOL = 1e-4
 MASS_ATOL = 1e-6  # kg
 INERTIA_ATOL = 1e-8  # kg m²
 PARAMETER_ATOL = 1e-6  # Coordinates and drive/contact parameters in solver units
+POSITION_ATOL = 1e-5  # m, accounting for Newton's Float32 transforms
+ORIENTATION_ATOL = 1e-5  # Unit rotation basis vectors
 
 
 def _mujoco_contact_pairs(model):
@@ -40,13 +42,18 @@ def _named_pairs(pairs, names):
     return {tuple(sorted((names.get(a, f"geom {a}"), names.get(b, f"geom {b}")))) for a, b in pairs}
 
 
-def compare_models(newton_model, derived, *, mujoco_solver=None):
+def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=0., mujoco_solver=None):
     import mujoco
     import newton
     import numpy as np
 
     model = mujoco.MjModel.from_xml_string(derived.mjcf_xml)
     reference = newton_model
+    if newton_state is None:
+        newton_state = reference.state()
+        newton.eval_fk(reference, newton_state.joint_q, newton_state.joint_qd, newton_state)
+    newton_body_poses = newton_state.body_q.numpy()
+    origin = np.array([0., 0., newton_origin_z])
     failures = []
 
     def equal(field, expected, actual, path=None):
@@ -54,9 +61,9 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
             failures.append(check("P7", "fail", f"{field} differs between Newton and MuJoCo", entity=path,
                                   measurements={"newton": expected, "mujoco": actual}))
 
-    def close(field, expected, actual, path=None, atol=PARAMETER_ATOL):
+    def close(field, expected, actual, path=None, atol=PARAMETER_ATOL, rtol=REL_TOL):
         left, right = np.asarray(expected, dtype=float), np.asarray(actual, dtype=float)
-        if left.shape == right.shape and np.allclose(left, right, atol=atol, rtol=REL_TOL):
+        if left.shape == right.shape and np.allclose(left, right, atol=atol, rtol=rtol):
             return
         if np.isfinite(left).all() and np.isfinite(right).all():
             equal(field, left.tolist(), right.tolist(), path)
@@ -68,8 +75,18 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
 
     def rotation(quat):
         matrix = np.empty(9)
-        mujoco.mju_quat2Mat(matrix, quat)
+        normalized = np.asarray(quat, dtype=float)
+        mujoco.mju_quat2Mat(matrix, normalized / np.linalg.norm(normalized))
         return matrix.reshape(3, 3)
+
+    joint_ids = ids({joint.prim_path: joint.name for joint in derived.joints}, mujoco.mjtObj.mjOBJ_JOINT)
+    newton_body_rotations = [rotation(pose[[6, 3, 4, 5]]) for pose in newton_body_poses]
+    data = mujoco.MjData(model)
+    for joint in derived.joints:
+        index = joint_ids[joint.prim_path]
+        if index >= 0 and joint.initial_position is not None:
+            data.qpos[model.jnt_qposadr[index]] = joint.initial_position
+    mujoco.mj_forward(model, data)
 
     body_ids = ids(derived.body_names_by_path, mujoco.mjtObj.mjOBJ_BODY)
     newton_bodies = dict(zip(reference.body_label, range(reference.body_count), strict=True))
@@ -83,12 +100,15 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
         if path not in newton_bodies or idx < 1:
             continue
         ref = newton_bodies[path]
+        pose = newton_body_poses[ref]
+        close("Body world position", pose[:3] - origin, data.xpos[idx], path, POSITION_ATOL, 0.)
+        close("Body world orientation", newton_body_rotations[ref],
+              data.xmat[idx].reshape(3, 3), path, ORIENTATION_ATOL, 0.)
         close("Body mass", mass[ref], model.body_mass[idx], path, MASS_ATOL)
         principal_axes = rotation(model.body_iquat[idx])
         tensor = (principal_axes * model.body_inertia[idx]) @ principal_axes.T
         close("Body inertia in the link frame", inertia[ref], tensor, path, INERTIA_ATOL)
 
-    joint_ids = ids({joint.prim_path: joint.name for joint in derived.joints}, mujoco.mjtObj.mjOBJ_JOINT)
     joint_types = {
         newton.JointType.PRISMATIC: mujoco.mjtJoint.mjJNT_SLIDE,
         newton.JointType.REVOLUTE: mujoco.mjtJoint.mjJNT_HINGE,
@@ -101,6 +121,13 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
     expected_order = [path for path, ref in newton_joints.items() if
                       ke[dof_starts[ref]] > 0 or kd[dof_starts[ref]] > 0]
     path_by_joint_id = {idx: path for path, idx in joint_ids.items() if idx >= 0}
+    q_starts = reference.joint_q_start.numpy()
+    scalar_kinds = {int(kind) for kind in joint_types.values()}
+    scalar_ids = [idx for idx, kind in enumerate(model.jnt_type) if kind in scalar_kinds]
+    scalar_ids.sort(key=lambda idx: model.jnt_qposadr[idx])
+    expected_scalar_order = sorted(newton_joints, key=lambda path: q_starts[newton_joints[path]])
+    equal("Scalar joint coordinate order", expected_scalar_order,
+          [path_by_joint_id.get(idx, model.joint(idx).name) for idx in scalar_ids])
     actual_order = [path_by_joint_id.get(int(idx), f"joint index {idx}")
                     for idx in model.actuator_trnid[:, 0]]
     equal("Controlled joint order", expected_order, actual_order)
@@ -145,12 +172,39 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
                                 reference.shape_material_mu_rolling.numpy()))
     newton_body_paths = {-1: "/", **dict(enumerate(reference.body_label))}
     body_paths = {0: "/", **{idx: path for path, idx in body_ids.items() if idx > 0}}
+    local_shapes = reference.shape_transform.numpy()
     for path, idx in geom_ids.items():
         if path in newton_colliders and idx >= 0:
             ref = newton_colliders[path]
             equal("Collider body", newton_body_paths[shape_to_body[ref]],
                   body_paths.get(model.geom_bodyid[idx]), path)
             close("Collider friction", friction[ref], model.geom_friction[idx], path)
+            local = local_shapes[ref]
+            shape_position = local[:3]
+            shape_rotation = rotation(local[[6, 3, 4, 5]])
+            body = shape_to_body[ref]
+            if body >= 0:
+                pose = newton_body_poses[body]
+                body_rotation = newton_body_rotations[body]
+                shape_position = pose[:3] + body_rotation @ shape_position
+                shape_rotation = body_rotation @ shape_rotation
+            geom_position = data.geom_xpos[idx]
+            geom_rotation = data.geom_xmat[idx].reshape(3, 3)
+            geom_type = model.geom_type[idx]
+            if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
+                mesh = model.geom_dataid[idx]
+                # MuJoCo compiles the mesh in its principal-axis frame and compensates in the geom.
+                geom_rotation = geom_rotation @ rotation(model.mesh_quat[mesh]).T
+                geom_position = geom_position - geom_rotation @ model.mesh_pos[mesh]
+            close("Collider world position", shape_position - origin, geom_position, path, POSITION_ATOL, 0.)
+            if geom_type == mujoco.mjtGeom.mjGEOM_PLANE:
+                shape_rotation, geom_rotation = shape_rotation[:, 2], geom_rotation[:, 2]
+            elif geom_type in (mujoco.mjtGeom.mjGEOM_CAPSULE, mujoco.mjtGeom.mjGEOM_CYLINDER):
+                # These shapes have an unoriented symmetry axis.
+                axis, other = shape_rotation[:, 2], geom_rotation[:, 2]
+                shape_rotation, geom_rotation = np.outer(axis, axis), np.outer(other, other)
+            if geom_type != mujoco.mjtGeom.mjGEOM_SPHERE:
+                close("Collider world orientation", shape_rotation, geom_rotation, path, ORIENTATION_ATOL, 0.)
 
     newton_paths = {index: path for path, index in newton_colliders.items()}
     geom_paths = {index: path for path, index in geom_ids.items() if index >= 0}
@@ -197,13 +251,14 @@ def compare_models(newton_model, derived, *, mujoco_solver=None):
     })]
 
 
-def consistency_checks(payload, model, tools, *, mujoco_solver=None):
+def consistency_checks(payload, model, tools, *, newton_state=None, mujoco_solver=None):
     from importlib.metadata import PackageNotFoundError, version
 
     from pxr import UsdPhysics
 
     from apps.node.usd_mjcf import UnsupportedUsdPhysics, derive_usd_mjcf
     from packages.library.structural import USDGraph, training_scope
+    from packages.sim_runtime.library_scene import asset_floor_offset
 
     scope = training_scope(payload)
     if scope is None or not model.body_count:
@@ -225,7 +280,10 @@ def consistency_checks(payload, model, tools, *, mujoco_solver=None):
         return [check("P7", "warn", "Model consistency was not measured because MuJoCo is not installed")]
     try:
         derived = derive_usd_mjcf(stage, prim_path=scope, allow_multiple_roots=payload["kind"] == "scene")
-        return compare_models(model, derived, mujoco_solver=mujoco_solver)
+        return compare_models(
+            model, derived, newton_state=newton_state, mujoco_solver=mujoco_solver,
+            newton_origin_z=asset_floor_offset(stage) if payload["kind"] == "asset" else 0.,
+        )
     except UnsupportedUsdPhysics as exc:
         return [check("P7", "fail", str(exc), entity=exc.prim_path)]
     except (ValueError, RuntimeError) as exc:

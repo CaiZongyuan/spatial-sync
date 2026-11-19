@@ -6,6 +6,32 @@ from fnmatch import fnmatchcase
 from .scenes import SceneConfig
 
 
+def asset_floor_offset(stage):
+    """World Z translation used when placing an asset on the validation floor."""
+    from pxr import Gf, UsdGeom, UsdPhysics
+
+    cache = UsdGeom.BBoxCache(0, ["default", "render", "proxy"])
+    xforms = UsdGeom.XformCache(0)
+    bottoms = []
+    for prim in stage.Traverse():
+        if (not prim.HasAPI(UsdPhysics.CollisionAPI)
+                or UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is False):
+            continue
+        bounds = cache.ComputeWorldBound(prim).ComputeAlignedRange()
+        if not bounds.IsEmpty():
+            bottoms.append(float(bounds.GetMin()[2]))
+        elif prim.IsA(UsdGeom.Mesh):
+            # Valid physics-only meshes may omit the imaging extent, as on FR3.
+            transform = xforms.GetLocalToWorldTransform(prim)
+            points = UsdGeom.Mesh(prim).GetPointsAttr().Get(0)
+            if points:
+                bottoms.append(min(transform.Transform(Gf.Vec3d(*point))[2] for point in points))
+    offset = -min(bottoms, default=0.)
+    if not math.isfinite(offset):
+        raise ValueError("Asset collision bounds are not finite")
+    return offset
+
+
 def prepare_scene_config(payload, *, include_visuals=False):
     from packages.library.templates import require_spatial_domain
 
@@ -16,7 +42,6 @@ def prepare_scene_config(payload, *, include_visuals=False):
     # Only the worker/Runner calls this function; importing the module is SDK-free.
     import newton
     import warp as wp
-    from pxr import UsdGeom, UsdPhysics
 
     from packages.library.structural import USDGraph
 
@@ -41,16 +66,7 @@ def prepare_scene_config(payload, *, include_visuals=False):
         )
         if problems:
             raise ValueError("Physical grasp calibration failed: " + "; ".join(problems))
-    offset = 0.
-    if asset:
-        cache = UsdGeom.BBoxCache(0, ["default", "render", "proxy"])
-        bottoms = [float(cache.ComputeWorldBound(prim).ComputeAlignedRange().GetMin()[2])
-                   for prim in stage.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI)
-                   and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False]
-        if bottoms:
-            offset = -min(bottoms)
-            if not math.isfinite(offset):
-                raise ValueError("Asset collision bounds are not finite")
+    offset = asset_floor_offset(stage) if asset else 0.
 
     def builder():
         result = newton.ModelBuilder(up_axis=newton.Axis.Z)

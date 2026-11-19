@@ -560,7 +560,10 @@ the structural worker. With Newton and MuJoCo installed, the CPU physics worker
 adds `P7` for rigid training models. It compares the compiled models by USD
 Prim Path with relative tolerance `1e-4`, absolute tolerance `1e-6 kg` for
 mass, `1e-8 kg·m²` for inertia and `1e-6` in solver units for joint and friction
-parameters. It checks controlled joint order and collision exclusions exactly.
+parameters. It compares initial body and collider world positions to
+`1e-5 m` and rotation basis vectors to `1e-5` after MuJoCo mesh-frame
+normalization. It checks scalar coordinate order, actuator order, and effective
+collision pairs exactly.
 Author joint armature as `newton:armature`. Both paths accept existing
 `mjc:armature` and `physxJoint:armature` when the canonical attribute is absent.
 Bound `UsdPhysics.MaterialAPI` supplies dynamic sliding friction. The rigid

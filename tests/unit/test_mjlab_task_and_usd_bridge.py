@@ -412,7 +412,12 @@ def test_usd_mjcf_derives_articulation_hierarchy_inertias_geoms_drives_and_groun
 
     # Scene stage referencing library:assets/... resolved via asset_packages + fixed base + ground plane
     fixed_asset_dir = tmp_path / "fixed_pkg"
-    _write_test_articulation_usd(fixed_asset_dir / "asset.usda", fixed_base=True)
+    from pxr import Usd, UsdPhysics
+
+    asset_path = _write_test_articulation_usd(fixed_asset_dir / "asset.usda", fixed_base=True)
+    fixed_asset = Usd.Stage.Open(str(asset_path))
+    UsdPhysics.FixedJoint.Get(fixed_asset, "/Asset/base_fixed_joint").CreateBody0Rel().SetTargets(["/Asset"])
+    fixed_asset.GetRootLayer().Save()
     scene_stage = tmp_path / "scene" / "stage.usda"
     scene_stage.parent.mkdir(parents=True, exist_ok=True)
     scene_stage.write_text(
@@ -2008,6 +2013,13 @@ def test_model_consistency_measures_newton_and_detects_derived_drift(tmp_path):
     starts = model.joint_qd_start.numpy()
     assert model.joint_armature.numpy()[[starts[hinge_id], starts[slide_id]]] == pytest.approx([.027, .003])
 
+    moved_mesh = ET.fromstring(derived.mjcf_xml)
+    mesh_geom = moved_mesh.find(".//geom[@name='upper_link_fin_mesh']")
+    mesh_geom.set("pos", "0.01 0 0")
+    moved = dataclasses.replace(derived, mjcf_xml=ET.tostring(moved_mesh, encoding="unicode"))
+    assert any(row.get("entityKey") == "/Asset/upper_link/fin_mesh"
+               and "Collider world position" in row["message"] for row in compare_models(model, moved))
+
     xml = ET.fromstring(derived.mjcf_xml)
     xml.find(".//body[@name='carriage_link']/inertial").set("mass", "0.5")
     xml.find(".//body[@name='upper_link']/inertial").set("diaginertia", "0.006 0.007 0.008")
@@ -2116,3 +2128,66 @@ def test_validation_distinguishes_zero_volume_components_from_solid_hull(tmp_pat
         assert report["launchable"] is False
         with pytest.raises(ValueError, match=path):
             derive_usd_mjcf(stage)
+
+
+@pytest.mark.newton
+@pytest.mark.parametrize("change", ["passive_order", "body_position", "geom_position", "quaternion_sign"])
+def test_p7_detects_actual_pose_drift_and_passive_coordinate_reorder(change):
+    from dataclasses import replace
+    from xml.etree import ElementTree as ET
+
+    newton = pytest.importorskip("newton")
+    pytest.importorskip("mujoco")
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+    from packages.sim_runtime.loaders import import_usd
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, 1)
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    root = UsdGeom.Xform.Define(stage, "/Asset")
+    stage.SetDefaultPrim(root.GetPrim())
+    UsdPhysics.ArticulationRootAPI.Apply(root.GetPrim())
+    for name in ("Base", "B", "C"):
+        body = UsdGeom.Xform.Define(stage, f"/Asset/{name}")
+        UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+        collider = UsdGeom.Cube.Define(stage, f"/Asset/{name}/Box")
+        collider.CreateSizeAttr(.2)
+        UsdPhysics.CollisionAPI.Apply(collider.GetPrim())
+    for name, child, x in (("AB", "B", .3), ("BC", "C", -.3)):
+        joint = UsdPhysics.RevoluteJoint.Define(stage, f"/Asset/{name}")
+        joint.CreateBody0Rel().SetTargets(["/Asset/Base"])
+        joint.CreateBody1Rel().SetTargets([f"/Asset/{child}"])
+        joint.CreateLocalPos0Attr(Gf.Vec3f(x, 0, 0))
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage)
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(stage)
+    original = compare_models(model, derived)
+    assert [row["status"] for row in original] == ["pass"], original
+
+    xml = ET.fromstring(derived.mjcf_xml)
+    base = xml.find(".//body[@name='Base']")
+    if change == "passive_order":
+        child = base.find("./body[@name='B']")
+        base.remove(child)
+        base.append(child)
+    elif change == "body_position":
+        base.set("pos", "0 0 .25")
+    elif change == "geom_position":
+        xml.find(".//geom[@name='B_Box']").set("pos", ".25 0 0")
+    else:
+        base.set("quat", "-1 0 0 0")
+
+    rows = compare_models(model, replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode")))
+    failures = [(row.get("entityKey"), row["message"]) for row in rows if row["status"] == "fail"]
+    if change == "passive_order":
+        assert failures == [(None, "Scalar joint coordinate order differs between Newton and MuJoCo")]
+    elif change == "body_position":
+        assert ("/Asset/Base", "Body world position differs between Newton and MuJoCo") in failures
+    elif change == "geom_position":
+        assert failures == [("/Asset/B/Box", "Collider world position differs between Newton and MuJoCo")]
+    else:
+        assert [row["status"] for row in rows] == ["pass"], rows
