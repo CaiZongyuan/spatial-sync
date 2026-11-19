@@ -10,9 +10,9 @@ import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 if __package__:
-    from packages.training.runtime import trainer_distributions
+    from packages.training.runtime import rsl_rl_matches, trainer_distributions
 else:
-    from lw_training_runtime import trainer_distributions
+    from lw_training_runtime import rsl_rl_matches, trainer_distributions
 
 
 def external_files(policy, output):
@@ -67,7 +67,7 @@ def verify_trainer_versions(inputs, is_mjlab):
         name: importlib.metadata.version(distribution)
         for name, distribution in trainer_distributions(is_mjlab).items()
     }
-    if actual["rsl_rl"] != inputs["plan"]["algorithm"]["version"]:
+    if not rsl_rl_matches(actual["rsl_rl"], inputs["plan"]["algorithm"].get("version")):
         raise RuntimeError("Installed RSL-RL version differs from the approved plan")
     if any(actual.get(name) != version for name, version in (inputs.get("trainerVersions") or {}).items()):
         raise RuntimeError("Installed trainer versions differ from the leased Compute Node capabilities")

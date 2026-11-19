@@ -75,6 +75,10 @@ def reported_versions(node, backend):
     return node.get("trainerVersions")
 
 
+def rsl_rl_matches(installed, pinned):
+    return isinstance(pinned, str) and bool(pinned) and installed == pinned
+
+
 def training_runtime(node, job, backend):
     """Return the exact leased identity, or None for supported legacy-local training."""
     if legacy_local(node) and job.get("kind", "training") == "training":
@@ -83,9 +87,10 @@ def training_runtime(node, job, backend):
     versions = reported_versions(node, backend)
     expected_rsl = job["plan"]["algorithm"].get("version")
     if (
-        not versions or not expected_rsl or (backend == "mjlab" and expected_rsl != "5.0.1")
+        not versions or not rsl_rl_matches(versions.get("rsl_rl"), expected_rsl)
+        or (backend == "mjlab" and expected_rsl != "5.0.1")
         or any(versions.get(name, "").split("+", 1)[0] != version
-               for name, version in (PINS[backend] | {"rsl_rl": expected_rsl}).items())
+               for name, version in PINS[backend].items())
     ):
         raise RuntimeMismatch(
             "trainer_version_mismatch", "Trainer versions do not match the pinned Job runtime"

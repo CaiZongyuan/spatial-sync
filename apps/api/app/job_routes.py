@@ -112,9 +112,10 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.post("/api/v1/nodes/{node_id}/heartbeat")
     async def heartbeat(node_id: str, body: NodeHeartbeat, request: Request):
         node(request, node_id=node_id)
-        if node_id != "local" and request.headers.get("x-node-instance") != body.instanceId:
+        instance = request.headers.get("x-node-instance")
+        if node_id != "local" and instance != body.instanceId:
             raise PlanError("node_owner_conflict", "Heartbeat instance must match the caller", status=403)
-        return jobs.heartbeat(body, node_id)
+        return jobs.heartbeat(body, node_id, owner_instance=instance)
 
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):

@@ -1,6 +1,7 @@
 """Wait for the creating node to establish process ownership before launching work."""
 
 import ctypes
+import errno
 import json
 import os
 import signal
@@ -57,8 +58,12 @@ def main():
             stderr=sys.stderr,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-    except (FileNotFoundError, PermissionError, NotADirectoryError):
-        record_cleanup(request["cleanup"], "not_started")
+    except OSError as error:
+        # POSIX Popen reaps the failed exec before it raises ENOEXEC to its caller.
+        if isinstance(error, (FileNotFoundError, PermissionError, NotADirectoryError)) or (
+            os.name == "posix" and error.errno == errno.ENOEXEC
+        ):
+            record_cleanup(request["cleanup"], "not_started")
         raise
     code = 1
     try:

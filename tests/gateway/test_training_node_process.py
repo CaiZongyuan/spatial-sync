@@ -8,17 +8,21 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import psutil
 import pytest
 import uvicorn
 from fastapi import Response
+from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from apps.node import runner
+from apps.node.process import OwnedProcess
 from packages.library.common import content_hash
+from packages.training.jobs import profile_key
 from packages.training.runtime import entry_identity
 from tests.fixtures.training_task import task_archive, task_directory, training_plan
 from tests.gateway.test_remote_training_nodes import (
@@ -28,6 +32,7 @@ from tests.gateway.test_remote_training_nodes import (
     register,
     remote_settings,
 )
+from tests.gateway.test_training_jobs import HEARTBEAT, NODE, TOKEN, approve, heartbeat, setup_plan
 
 
 def wait_for(read, predicate, *, timeout=30):
@@ -58,12 +63,121 @@ def start_server(settings, app=None):
     return app, server, thread
 
 
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX descendant ownership")
-@pytest.mark.parametrize("failed_exec", [False, True], ids=["descendants-exited", "not-started"])
-def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, failed_exec):
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX process ownership")
+@pytest.mark.parametrize("recovery", ["missing-work", "retained-proof", "expires-after-upgrade"])
+def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
+    monkeypatch, recovery,
+):
+    settings = Settings(node_token=TOKEN)
+    old = create_app(settings)
+    old.state.jobs.clock = lambda: 100
+    with TestClient(old) as client:
+        plan, task = setup_plan(client)
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        body["hardware"] = "a" * 64
+        gpu = body["gpus"][0]
+        body["profiles"][0]["key"] = profile_key(plan, task["contentHash"], body["hardware"], gpu["id"])
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        request = {"planId": plan["id"], "seed": 42}
+        job = client.post("/api/v1/jobs", json=request).json()
+        assert job["leaseId"]
+
+    root = settings.state_root / "local-node"
+    root.mkdir()
+    (root / "instance-id").write_text(NODE["X-Node-Instance"], encoding="utf-8")
+    (root / "capabilities.json").write_text(json.dumps({"hardware": body["hardware"], "profiles": []}))
+    work = root / "work" / runner.work_directory_id(job["jobId"], job["leaseId"])
+    owner = None
+    if recovery != "missing-work":
+        work.mkdir(parents=True)
+        program = "import time; time.sleep(30)" if recovery == "expires-after-upgrade" else "pass"
+        with (work / "stdout.log").open("wb") as log:
+            owner = OwnedProcess(
+                [sys.executable, "-c", program], cwd=work,
+                env={"PATH": ""}, stdout=log, stderr=log,
+            )
+            if recovery == "retained-proof":
+                try:
+                    assert owner.process.wait(timeout=5) == 0
+                finally:
+                    owner.close()
+        # Cleanup must not depend on draining ordinary reports from the expired lease.
+        (work / "stdout.log").write_text("old line\n" * 501, encoding="utf-8")
+    hardware = "node-hardware/2:fixture"
+    capabilities = {"hardware": hardware, "legacyHardware": body["hardware"], "gpus": [gpu], "profiles": []}
+    monkeypatch.setattr(runner, "discover", lambda: capabilities)
     monkeypatch.setattr(runner, "gpu_usage", lambda: ({}, {}))
-    if failed_exec:
-        monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    monkeypatch.setenv("SPATIAL_NODE_TOKEN", TOKEN)
+    gateway = create_app(settings)
+    now = [200]
+    gateway.state.jobs.clock = lambda: now[0]
+    reconciling = threading.Event()
+
+    @gateway.middleware("http")
+    async def observe_reconciliation(request, call_next):
+        if request.url.path == HEARTBEAT:
+            payload = await request.json()
+            if any(
+                report["jobId"] == job["jobId"] and report.get("reason") == "owner_reconciliation_required"
+                for report in payload.get("reports", [])
+            ):
+                reconciling.set()
+        return await call_next(request)
+
+    _, server, server_thread = start_server(settings, gateway)
+    args = SimpleNamespace(
+        url=settings.node_gateway_url, root=str(root), node_id=None, registration_code=None,
+        trainer="[]", mjlab_trainer="[]", capabilities=None, interval=0.05, timeout=5,
+    )
+    thread = threading.Thread(target=runner.run_node, args=(args,))
+    try:
+        if recovery != "expires-after-upgrade":
+            now[0] += 61
+        thread.start()
+        with httpx.Client(base_url=settings.node_gateway_url, trust_env=False) as client:
+            def read():
+                return client.get("/api/v1/nodes/local").json()
+
+            actual = wait_for(read, lambda node: node["hardware"] == hardware)
+            if recovery == "expires-after-upgrade":
+                assert reconciling.wait(5)
+                assert owner.process.poll() is None
+                now[0] += 61
+                wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
+                owner.close()
+                wait_for(read, lambda node: not node["leases"])
+            elif recovery == "retained-proof":
+                wait_for(read, lambda node: not node["leases"])
+            else:
+                assert actual["leases"][gpu["id"]]["leaseId"] == job["leaseId"]
+                assert actual["leases"][gpu["id"]]["quarantined"]
+                assert reconciling.wait(5)
+                assert not work.exists()
+    finally:
+        if owner is not None and owner.process.poll() is None:
+            owner.close()
+        (root / "stop").touch()
+        if thread.ident is not None:
+            thread.join(10)
+        server.should_exit = True
+        server_thread.join(10)
+    assert not thread.is_alive() and not server_thread.is_alive()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX descendant ownership")
+@pytest.mark.parametrize("launch_failure", [None, "enoent", "enoexec"],
+                         ids=["descendants-exited", "enoent", "enoexec"])
+def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, launch_failure):
+    monkeypatch.setattr(runner, "gpu_usage", lambda: ({}, {}))
+    if launch_failure:
+        search = tmp_path / "isolated-bin"
+        search.mkdir()
+        if launch_failure == "enoexec":
+            invalid = search / "uv"
+            invalid.write_bytes(b"not a binary or shebang")
+            invalid.chmod(0o700)
+        monkeypatch.setenv("PATH", str(search))
     settings = remote_settings()
     app = create_app(settings)
     root = tmp_path / "workstation"
@@ -72,13 +186,13 @@ def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, 
 
     @app.middleware("http")
     async def lose_first_cleanup_reply(request, call_next):
-        if failed_exec and request.url.path.endswith("/heartbeat"):
+        if launch_failure and request.url.path.endswith("/heartbeat"):
             payload = await request.json()
             if any(report["status"] == "failed" for report in payload.get("reports", [])):
                 await asyncio.to_thread(revoked.wait, 10)
         response = await call_next(request)
         if request.url.path == "/api/v1/nodes/cleanup" and response.status_code == 204:
-            if failed_exec:
+            if launch_failure:
                 (marker,) = (root / "work").glob("*/clean-*")
                 assert marker.read_text() == "not_started"
                 assert not list((root / "work").glob("*/leaf.json"))
@@ -148,8 +262,11 @@ def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, 
 
             owner_thread = start_owner(node())
             assert client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).status_code == 202
-            ready = "*/clean-*" if failed_exec else "*/leaf.json"
+            ready = "*/clean-*" if launch_failure else "*/leaf.json"
             wait_for(lambda: list((root / "work").glob(ready)), bool, timeout=35)
+            assert not verified
+            live = client.get("/api/v1/nodes/worker").json()["leases"]
+            assert gpu["id"] in live
             assert client.delete("/api/v1/nodes/worker").status_code == 204
             revoked.set()
             owner_thread.join(10)

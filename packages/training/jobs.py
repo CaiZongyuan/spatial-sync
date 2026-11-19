@@ -19,6 +19,7 @@ from packages.training.node_telemetry import NodeTelemetryHistory
 from packages.training.runtime import (
     RuntimeMismatch,
     job_backend,
+    legacy_local,
     reported_versions,
     runtime_profile_key,
     training_runtime,
@@ -86,7 +87,10 @@ class TrainingJobs:
         self.node.start()
         for job in self.records.values():
             if job.get("validationEstimate"):
-                self.validation_profiles[job["profileKey"]] = job["profile"]
+                key, profile = job["profileKey"], job["profile"]
+                retained = self.validation_profiles.get(key)
+                if retained is None or profile["measuredAt"] >= retained["measuredAt"]:
+                    self.validation_profiles[key] = profile
             self._event(job)
 
     def _require_available(self):
@@ -369,8 +373,22 @@ class TrainingJobs:
             for item in peers
         )
         remaining = max(0, plan["budget"]["gpuHours"] - consumed)
+        estimate = job["estimatedGpuHours"]
+        over_budget = estimate > remaining
         approval = self.manager.approvals.records.get(job["approvalId"])
-        if job["estimatedGpuHours"] > remaining and approval is None:
+        if approval:
+            reviewed = approval.details.get("estimatedGpuHours", 0)
+            superseded = (
+                approval.status == "unavailable"
+                or approval.status == "pending" and (not over_budget or estimate != reviewed)
+                or approval.status == "approved" and over_budget and estimate > reviewed
+            )
+            if superseded:
+                if approval.status != "unavailable":
+                    self.manager.approvals.set_status(approval.approvalId, "unavailable")
+                job["approvalId"] = None
+                approval = None
+        if over_budget and approval is None:
             from packages.protocol.schema import Actor
 
             approval = self.manager.approvals.submit(
@@ -382,7 +400,7 @@ class TrainingJobs:
                     "jobId": job["jobId"],
                     "planId": job["planId"],
                     "planRevision": job["planRevision"],
-                    "estimatedGpuHours": job["estimatedGpuHours"],
+                    "estimatedGpuHours": estimate,
                     "remainingGpuHours": remaining,
                 },
             )
@@ -391,7 +409,7 @@ class TrainingJobs:
             job["budgetReserved"] = False
             job["reason"] = "pending_approval" if approval.status == "pending" else "approval_denied"
             return False
-        job["allowedGpuHours"] = max(remaining, job["estimatedGpuHours"])
+        job["allowedGpuHours"] = max(remaining, estimate)
         job["budgetReserved"] = True
         return True
 
@@ -400,9 +418,12 @@ class TrainingJobs:
         now = self.clock()
         for node in self.nodes.values():
             self._expire_leases(node, now)
-        for job in self.records.values():
-            if job["status"] != "queued" or job["leaseId"]:
-                continue
+        queued = [job for job in self.records.values() if job["status"] == "queued" and not job["leaseId"]]
+        # Rebuild queued reservations in order. Leased jobs keep their pinned amount.
+        for job in queued:
+            job["budgetReserved"] = False
+            job.pop("allowedGpuHours", None)
+        for job in queued:
             validation = job["kind"] == "plan_validation"
             try:
                 if validation:
@@ -447,7 +468,9 @@ class TrainingJobs:
                 continue
             for resource in resources:
                 key = runtime_profile_key(job["plan"], job["taskContentHash"], node, resource, runtime)
-                measured = self.validation_profiles.get(key) or node["profiles"].get(key)
+                profiles = (self.validation_profiles.get(key), node["profiles"].get(key))
+                measured = max((profile for profile in profiles if profile),
+                               key=lambda profile: profile["measuredAt"], default=None)
                 if not validation and (not measured or job["approvalId"] and job["profileKey"] != key):
                     continue
                 with self.manager._resource_lock:
@@ -459,8 +482,7 @@ class TrainingJobs:
         selected = min(candidates, key=lambda item: item[0] is not None)
         blocker, node, resource, key, measured, runtime = selected
         if not validation:
-            if job["profileKey"] != key:
-                job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
+            job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
             if not self._budget(job):
                 return
         if blocker:
@@ -646,7 +668,22 @@ class TrainingJobs:
         })
         node["profiles"][profile["key"]] = self.validation_profiles[profile["key"]] = profile
 
-    def heartbeat(self, body, identity="local"):
+    def _upgrade_local_hardware(self, node, body, owner_instance):
+        if (
+            not legacy_local(node) or owner_instance != node["instanceId"]
+            or body.instanceId != owner_instance or body.legacyHardware != node["hardware"]
+            or not body.hardware.startswith("node-hardware/2:")
+        ):
+            return False
+        resources = {gpu.id for gpu in body.gpus}
+        if body.cpuAvailable:
+            resources.add("cpu")
+        return resources.issuperset(node["leases"]) and all(
+            "trainerVersions" not in lease and "runtimeIdentity" not in lease
+            for lease in node["leases"].values()
+        )
+
+    def heartbeat(self, body, identity="local", *, owner_instance=None):
         self._require_available()
         now = self.clock()
         node = self.nodes.get(identity)
@@ -737,7 +774,10 @@ class TrainingJobs:
                 node.pop("instanceExpired", None)
                 self._save()
         if node["leases"] and node.get("hardware", body.hardware) != body.hardware:
-            raise PlanError("node_owner_conflict", "Hardware changed while a lease is retained")
+            if not self._upgrade_local_hardware(node, body, owner_instance):
+                raise PlanError("node_owner_conflict", "Hardware changed while a lease is retained")
+            for lease in node["leases"].values():
+                lease["cleanupOnly"] = True
         node.update(
             hardware=body.hardware,
             lastSeen=now,
@@ -751,7 +791,10 @@ class TrainingJobs:
             trainingEntries=body.trainingEntries,
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )
-        node["profiles"].update({profile.key: profile.model_dump() for profile in body.profiles})
+        for profile in body.profiles:
+            retained = node["profiles"].get(profile.key)
+            if retained is None or profile.measuredAt > retained["measuredAt"]:
+                node["profiles"][profile.key] = profile.model_dump()
         for job, report, data in fresh:
             self._append_logs(job, report.logAfter, report.logs)
             job["metrics"] = {key: data[key] for key in (
@@ -799,6 +842,8 @@ class TrainingJobs:
                     or self.records[lease["jobId"]]["status"] in TERMINAL,
                     **({"timeoutSeconds": VALIDATION_TIMEOUT}
                        if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
+                    **({"cleanupOnly": True, "quarantined": lease["quarantined"]}
+                       if lease.get("cleanupOnly") else {}),
                     **self._cleanup_offer(node, gpu, lease),
                 }
                 for gpu, lease in node["leases"].items()

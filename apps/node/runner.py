@@ -250,7 +250,7 @@ class OwnedRun:
 
     def run(self):
         try:
-            if self.root.exists():
+            if self.assignment.get("cleanupOnly") or self.root.exists():
                 self.uncertain_owner = True
                 self.reason = "owner_reconciliation_required"
                 history = self.root / "node-reports.jsonl"
@@ -539,6 +539,14 @@ class OwnedRun:
                 self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
             self.uncertain_owner = False
             self.finished = time.monotonic()
+        elapsed = self.baseline_elapsed + (self.finished or time.monotonic()) - self.started
+        if (
+            self.assignment.get("quarantined") and not self.thread.is_alive()
+            and not self.uncertain_owner and owned_processes_clean(self.root)
+        ):
+            # A fenced local owner can settle cleanup even when unsent logs would take more heartbeats.
+            return {"jobId": self.assignment["jobId"], "leaseId": self.assignment["leaseId"],
+                    "status": "cleaned", "elapsedSeconds": elapsed}
         if producer_finished and "cleanup" in self.assignment and not owned_processes_clean(self.root):
             producer_finished = False
         metrics = self.root / "output/metrics.jsonl"
@@ -595,7 +603,7 @@ class OwnedRun:
             "leaseId": self.assignment["leaseId"],
             "status": status,
             "reason": "draining_logs" if draining else self.reason,
-            "elapsedSeconds": self.baseline_elapsed + (self.finished or time.monotonic()) - self.started,
+            "elapsedSeconds": elapsed,
             "logAfter": self.log_cursor,
             "logs": selected,
             "memoryUsedMb": memory,
@@ -659,6 +667,7 @@ class LocalNode:
 
     async def run(self):
         view_worker = asyncio.create_task(relay_views(self), name="node-view-relays")
+        refresh_recovery = False
         async with httpx.AsyncClient(base_url=self.url, trust_env=False, timeout=10) as http:
             try:
                 while True:
@@ -684,7 +693,11 @@ class LocalNode:
                                     },
                                 )
                             )
-                    reports = [owned.report() for owned in self.active.values()]
+                    reports = [
+                        owned.report() for owned in self.active.values()
+                        if not (refresh_recovery and owned.assignment.get("cleanupOnly"))
+                    ]
+                    refresh_recovery = False
                     for report in reports:
                         root = self.active[report["jobId"]].root
                         if root.exists():
@@ -717,9 +730,16 @@ class LocalNode:
                                 self.active[identity] = OwnedRun(self, assignment)
                             elif self.active[identity].assignment["leaseId"] != assignment["leaseId"]:
                                 raise RuntimeError("Node cannot replace an owned live dispatch")
+                            else:
+                                self.active[identity].assignment = assignment
                             if assignment["cancel"]:
                                 self.active[identity].cancel.set()
                     except httpx.HTTPStatusError as error:
+                        if self.node_id == "local" and error.response.status_code == 403:
+                            # Refresh the retained assignments without replaying fenced ordinary reports.
+                            refresh_recovery = any(
+                                owned.assignment.get("cleanupOnly") for owned in self.active.values()
+                            )
                         if error.response.status_code < 500:
                             for owned in self.active.values():
                                 owned.cancel.set()
@@ -806,7 +826,7 @@ def run_node(args):
             previous = json.loads(capabilities_path.read_text(encoding="utf-8"))
             if previous["hardware"] in (capabilities["hardware"], capabilities.get("legacyHardware")):
                 capabilities["profiles"] = previous.get("profiles", [])
-        if node_id != "local" or not capabilities["profiles"]:
+        if node_id != "local":
             capabilities.pop("legacyHardware", None)
     mjlab_versions = trainer_versions(mjlab_trainer, is_mjlab=True)
     isaaclab_versions = trainer_versions(trainer, is_mjlab=False)

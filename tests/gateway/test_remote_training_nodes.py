@@ -115,7 +115,7 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         assert invalid.status_code == 422
         missing = {name: version for name, version in versions.items() if name != "mujoco"}
         entries = {"trainingEntries": {"mjlab": "mjlab:managed"}}
-        for wrong_versions in (missing, versions | {"warp": "1.18.0"}):
+        for wrong_versions in (missing, versions | {"warp": "1.18.0"}, versions | {"rsl_rl": "5.0.1+local"}):
             assert beat(
                 client, first, gpus=[gpu], trainerVersions=wrong_versions, compilerHash=COMPILER, **entries,
             ).json()["assignments"] == []
@@ -178,14 +178,18 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         # A fresh machine with the same model can use the receipt despite a new hostname and GPU UUID.
         second_gpu = [gpu | {"id": "GPU-b"}]
         other_runtime = runtime | {"compilerHash": "b" * 64}
-        assert beat(client, second, gpus=second_gpu, **other_runtime).is_success
+        suffixed = runtime | {"trainerVersions": versions | {"rsl_rl": "5.0.1+local"}}
+        assert beat(client, second, gpus=second_gpu, **suffixed).is_success
         assert client.post(
             f"{approval_url}/decision", headers=OPERATOR, json={"decision": "approve"}
         ).is_success
         training = client.post(
             "/api/v1/jobs", headers=operator, json=request | {"targetNodeId": "gpu-b"}
         ).json()
-        assert training["leaseId"] is None and training["reason"] == "estimate_unavailable"
+        assert training["leaseId"] is None and training["reason"] == "trainer_version_mismatch"
+        assert beat(client, second, gpus=second_gpu, **other_runtime).json()["assignments"] == []
+        queued = client.get(f"/api/v1/jobs/{training['jobId']}", headers=operator).json()
+        assert queued["reason"] == "estimate_unavailable"
         assert beat(client, second, hostname="temp-b", gpus=second_gpu, **runtime).is_success
         training = client.get(f"/api/v1/jobs/{training['jobId']}", headers=operator).json()
         assert training["nodeId"] == "gpu-b"
@@ -278,6 +282,8 @@ def test_gateway_cuda_session_does_not_block_automatic_remote_scheduling():
 
         assert announce()["assignments"] == []
         assert announce(trainerVersions=ISAAC_VERSIONS | {"newton": "1.7.0"})["assignments"] == []
+        suffixed = ISAAC_VERSIONS | {"rsl_rl": "5.4.1+local"}
+        assert announce(trainerVersions=suffixed, **ISAAC_ENTRY)["assignments"] == []
         both = announce(trainerVersions={"mjlab": "1.3.0"}, isaaclabVersions=ISAAC_VERSIONS, **ISAAC_ENTRY)
         (lease,) = both["assignments"]
         assert lease["jobId"] == job["jobId"]

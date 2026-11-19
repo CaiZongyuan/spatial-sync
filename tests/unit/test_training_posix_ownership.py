@@ -95,11 +95,16 @@ def test_owner_fixture_publishes_complete_json_on_first_visibility(tmp_path):
         }
 
 
-def test_failed_exec_leaves_durable_not_started_proof(tmp_path):
+@pytest.mark.parametrize("invalid_format", [False, True], ids=["enoent", "enoexec"])
+def test_failed_exec_leaves_durable_not_started_proof(tmp_path, invalid_format):
     from apps.node.process import cleanup_confirmed
 
+    executable = tmp_path / "missing-trainer"
+    if invalid_format:
+        executable.write_bytes(b"not a binary or shebang")
+        executable.chmod(0o700)
     with (tmp_path / "launcher.log").open("wb") as log:
-        owner = OwnedProcess([str(tmp_path / "missing-trainer")], cwd=tmp_path, env=os.environ,
+        owner = OwnedProcess([str(executable)], cwd=tmp_path, env=os.environ,
                              stdout=log, stderr=log)
         try:
             assert owner.process.wait(timeout=5) != 0
