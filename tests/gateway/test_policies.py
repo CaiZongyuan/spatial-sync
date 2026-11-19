@@ -1,5 +1,8 @@
 """Real node artifact HTTP channel to immutable CPU-loadable policy candidates."""
 
+import hashlib
+import json
+
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -54,7 +57,7 @@ def test_policy_freezes_real_onnx_and_provenance_retry_restart_and_detects_tampe
     app = create_app(settings)
     with TestClient(app) as client:
         job = uploaded_job(client, tmp_path)
-        body = {"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+        body = {"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         created = client.post("/api/v1/policies", json=body)
         assert created.status_code == 201, created.text
         policy = created.json()
@@ -93,7 +96,7 @@ def test_policy_freezes_verified_external_weights_and_rejects_manifest_omissions
             external={"weights.bin": np.ones((1, 1), dtype=np.float32).tobytes()},
         )
         created = client.post(
-            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         )
         assert created.status_code == 201, created.text
         record, package = app.state.policies.resolve(created.json()["id"])
@@ -119,6 +122,42 @@ def test_non_onnx_job_payload_does_not_become_policy(tmp_path):
     with TestClient(create_app(Settings(node_token=TOKEN))) as client:
         job = uploaded_job(client, tmp_path, model=b"explicit fake payload")
         result = client.post(
-            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         )
         assert result.status_code == 422
+
+
+def test_retained_pt_checkpoint_is_read_as_opaque_bytes(tmp_path):
+    settings = Settings(node_token=TOKEN)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        job = uploaded_job(client, tmp_path)
+        artifacts = app.state.manager.library_assets.roots["user"] / "jobs" / job["jobId"] / "artifacts"
+
+    # Install an on-disk record from the pre-JSON artifact layout, without using the upload API.
+    saved = settings.state_root / "jobs.json"
+    document = json.loads(saved.read_bytes())
+    row = document["jobs"][job["jobId"]]
+    row.pop("attempts")
+    (artifacts / "checkpoint-origin.json").unlink()
+    old_checkpoint = artifacts / "checkpoints/model_0.pt"
+    old_checkpoint.parent.mkdir()
+    old_checkpoint.write_bytes(b"opaque retained checkpoint, deliberately not a pickle")
+    export_path = artifacts / "export.json"
+    export = json.loads(export_path.read_bytes())
+    export.update(checkpoint="checkpoints/model_0.pt",
+                  checkpointSha256=hashlib.sha256(old_checkpoint.read_bytes()).hexdigest())
+    export_path.write_text(json.dumps(export))
+    row["artifacts"] = [
+        {"path": file.relative_to(artifacts).as_posix(), "size": file.stat().st_size,
+         "sha256": hashlib.sha256(file.read_bytes()).hexdigest()}
+        for file in sorted(artifacts.rglob("*")) if file.is_file()
+    ]
+    saved.write_text(json.dumps(document))
+    with TestClient(create_app(settings)) as client:
+        retained = client.get(f"/api/v1/jobs/{job['jobId']}").json()
+        assert retained["attempts"] == []
+        reference = f"{job['jobId']}/checkpoints/model_0.pt"
+        response = client.post("/api/v1/policies", json={"checkpoint": reference})
+        assert response.status_code == 201, response.text
+        assert response.json()["checkpointSha256"] == export["checkpointSha256"]

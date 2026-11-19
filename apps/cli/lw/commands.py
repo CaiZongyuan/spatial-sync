@@ -514,8 +514,10 @@ COMMANDS = (
                 Argument("seed", ("--seed",), int | None, "One of the declared seeds", None),
                 Argument("planRevision", ("--revision",), int | None, "Expected approved revision", None),
                 Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
-                Argument("kind", ("--kind",), Literal["training", "plan_validation"], "Job kind", "training"),
+                Argument("kind", ("--kind",), Literal["training", "plan_validation", "checkpoint_finalize"],
+                         "Job kind", "training"),
                 Argument("targetNodeId", ("--node",), str | None, "Target Compute Node", None),
+                Argument("checkpoint", ("--checkpoint",), str | None, "Job ID/Checkpoint SHA256", None),
             ), mcp_name="job_start", actor=True),
     Command(path=("job", "ls"), help="List retained jobs and their real queue/approval state.",
             method="job_list", arguments=(
@@ -525,6 +527,11 @@ COMMANDS = (
             ), output_type=list[dict[str, Any]], mcp_name="job_list"),
     Command(path=("job", "show"), help="Read a Job's pinned inputs, progress and artifacts.",
             method="job_show", arguments=(Argument("id", ("id",), str, "Job ID"),), mcp_name="job_show"),
+    Command(path=("job", "resume"), help="Resume suspended training on an automatic or selected node.",
+            method="job_resume", arguments=(
+                Argument("id", ("id",), str, "Suspended Job ID"),
+                Argument("targetNodeId", ("--node",), str | None, "Target Compute Node", None),
+            ), mcp_name="job_resume", actor=True),
     Command(path=("job", "cancel"), help="Cancel a job; release its lease after owned cleanup.",
             method="job_cancel", arguments=(Argument("id", ("id",), str, "Job ID"),),
             mcp_name="job_cancel", actor=True),

@@ -35,7 +35,12 @@ class StartJob(Schema):
     seed: int | None = None
     planRevision: int | None = Field(default=None, ge=1)
     requestId: str | None = Field(default=None, min_length=1, max_length=200)
-    kind: Literal["training", "plan_validation"] = "training"
+    kind: Literal["training", "plan_validation", "checkpoint_finalize"] = "training"
+    targetNodeId: NodeId | None = None
+    checkpoint: str | None = Field(default=None, pattern=r"^job-[a-f0-9]{32}/[a-f0-9]{64}$")
+
+
+class ResumeJob(Schema):
     targetNodeId: NodeId | None = None
 
 
@@ -97,5 +102,6 @@ class NodeHeartbeat(Schema):
     isaaclabVersions: dict[str, Text] | None = Field(default=None, max_length=16)
     compilerHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     trainingEntries: dict[Literal["isaaclab", "mjlab"], str] | None = Field(default=None, max_length=2)
+    checkpointVersion: Literal[1] | None = None
     profiles: list[TimingProfile] = Field(default_factory=list, max_length=128)
     reports: list[JobReport] = Field(default_factory=list, max_length=16)

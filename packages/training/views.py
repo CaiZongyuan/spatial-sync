@@ -160,7 +160,7 @@ class TrainingViews:
         self._producers[job["jobId"]] = producer
         descriptor = await self._descriptor(job)
         self._live(job)  # Geometry I/O did not reserve training ownership or freeze Job state.
-        if producer.superseded:
+        if producer.superseded or message.attemptId != attempt_identity(job):
             raise PlanError("training_view_stale_producer", "Producer socket was replaced")
         if value.descriptorDigest != descriptor.digest:
             raise PlanError("training_view_descriptor_mismatch", "Producer geometry descriptor differs")
@@ -276,7 +276,8 @@ class TrainingViews:
                     continue
 
                 def obsolete():
-                    changed = job["status"] in TERMINAL or self.states.get(identity) is not state
+                    changed = (job["status"] != "running" or self.states.get(identity) is not state
+                               or state.hello.attemptId != attempt_identity(job))
                     if changed:
                         reader.event.set()
                     return changed
@@ -339,7 +340,10 @@ class TrainingViews:
                 except PlanError:
                     self._notify(identity)
                     continue
-                if job["status"] not in TERMINAL:
+                state = self.states.get(identity)
+                if job["status"] not in TERMINAL | {"suspended"} and (
+                    state is None or state.hello.attemptId == attempt_identity(job)
+                ):
                     continue
                 state = self.states.pop(identity, None)
                 view_id = state.hello.viewId if state else None
@@ -347,16 +351,20 @@ class TrainingViews:
                     state.latest.clear()
                     state.producer.superseded = True
                 for reader in self.readers.get(identity, ()):
-                    reader.final = self.envelope(
-                        job, "ended", {"status": job["status"], "reason": job["reason"]}, view_id=view_id
-                    )
+                    if job["status"] in TERMINAL:
+                        reader.final = self.envelope(
+                            job, "ended", {"status": job["status"], "reason": job["reason"]}, view_id=view_id,
+                        )
+                    else:
+                        reader.final = self.envelope(job, "status", {"state": "stale"}, view_id=view_id)
                     reader.event.set()
                 self.errors.pop(identity, None)
                 self._producers.pop(identity, None)
-                self.descriptors.mark_terminal(identity)
-                cleanup = asyncio.create_task(asyncio.to_thread(self.descriptors.release, identity))
-                self._cleanup.add(cleanup)
-                cleanup.add_done_callback(self._cleanup.discard)
+                if job["status"] in TERMINAL:
+                    self.descriptors.mark_terminal(identity)
+                    cleanup = asyncio.create_task(asyncio.to_thread(self.descriptors.release, identity))
+                    self._cleanup.add(cleanup)
+                    cleanup.add_done_callback(self._cleanup.discard)
                 self._tracked.discard(identity)
             await asyncio.sleep(0.1)
 

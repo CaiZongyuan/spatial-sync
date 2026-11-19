@@ -69,8 +69,12 @@ def policy_task(path, *, spec=None, task=None):
 
 
 def artifact_archive(job, *, model=None, external=None):
+    origin = {
+        "schema": "lw.node-local-checkpoint/1", "jobId": job["jobId"], "leaseId": job["leaseId"],
+        "iteration": 0, "checkpointSha256": hashlib.sha256(b"fixture-local-only").hexdigest(),
+    }
     files = {
-        "checkpoints/model_0.pt": b"fixture-not-trained-checkpoint",
+        "checkpoint-origin.json": json.dumps(origin).encode(),
         "policy.onnx": model or model_bytes(),
         "stdout.log": b"explicit numerical fixture",
         "stderr.log": b"",
@@ -84,7 +88,7 @@ def artifact_archive(job, *, model=None, external=None):
         },
     }
     export = {
-        "checkpoint": "checkpoints/model_0.pt",
+        "checkpoint": "checkpoint-origin.json",
         "policy": "policy.onnx",
         "afterLearn": True,
         "iteration": 0,

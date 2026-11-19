@@ -45,7 +45,7 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
     ]
     with httpx.Client(base_url=gateway_url, trust_env=False) as http:
         job = uploaded_job(http, tmp_path, node_headers=NODE | {"X-Node-Token": token})
-        checkpoint = job["jobId"] + "/checkpoints/model_0.pt"
+        checkpoint = job["jobId"] + "/checkpoint-origin.json"
         policy = invoke("policy", "create", checkpoint)
         assert policy["qualified"] is False and not policy["idempotent"]
         assert invoke("policy", "create", checkpoint)["idempotent"]

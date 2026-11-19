@@ -2,6 +2,7 @@
 
 import tempfile
 import uuid
+from functools import partial
 
 import anyio
 from fastapi import Query, Request
@@ -9,12 +10,15 @@ from fastapi.responses import Response
 
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
+from packages.training import checkpoints
+from packages.training.checkpoint_format import MAX_BYTES
 from packages.training.inputs import export_input, input_packages, store_artifacts
 from packages.training.job_contract import (
     CleanupReceipt,
     ExchangeRegistration,
     NodeHeartbeat,
     NodeRegistration,
+    ResumeJob,
     StartJob,
 )
 
@@ -52,7 +56,7 @@ def install_job_routes(app, manager, role_for, views=None):
         actor = operator(request)
         return jobs.request(
             body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision,
-            kind=body.kind, target_node=body.targetNodeId,
+            kind=body.kind, target_node=body.targetNodeId, checkpoint=body.checkpoint,
         )
 
     @app.get("/api/v1/jobs")
@@ -78,6 +82,11 @@ def install_job_routes(app, manager, role_for, views=None):
     async def cancel(identity: str, request: Request):
         operator(request)
         return jobs.cancel(identity)
+
+    @app.post("/api/v1/jobs/{identity}/resume", status_code=202)
+    async def resume(identity: str, body: ResumeJob, request: Request):
+        operator(request)
+        return jobs.resume(identity, body.targetNodeId)
 
     @app.get("/api/v1/jobs/{identity}/logs")
     async def logs(identity: str, after: int = Query(0, ge=0), timeoutSeconds: float = Query(0, ge=0, le=30)):
@@ -124,7 +133,7 @@ def install_job_routes(app, manager, role_for, views=None):
         job = node(request, identity)
         lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
         value = {
-            "schemaVersion": 1,
+            "schemaVersion": 2 if lease.get("checkpointVersion") else 1,
             "job": jobs.document(job),
             "plan": job["plan"],
             "trainerVersions": lease.get("trainerVersions"),
@@ -133,11 +142,17 @@ def install_job_routes(app, manager, role_for, views=None):
             "nativeObservationProfile": None,
             "packages": await anyio.to_thread.run_sync(input_packages, manager, job),
         }
-        if job["kind"] == "training":
+        if lease.get("checkpointVersion"):
+            value["checkpointIdentity"] = checkpoints.identity(job, lease)
+            if source := lease.get("resumeCheckpoint"):
+                value["resumeCheckpoint"] = source | {
+                    "url": f"/api/v1/jobs/{identity}/inputs/checkpoint/{source['sha256']}",
+                }
+        if job["kind"] in ("training", "checkpoint_finalize"):
             value["nativeObservationProfile"] = manager.policy_evidence.native_profiles.for_task(
                 job["taskContentHash"], job["plan"]["algorithm"]["version"]
             )
-            if views is not None:
+            if views is not None and job["kind"] == "training":
                 value["view"] = await views.inputs_hint(job)
         node(request, identity)
         return value
@@ -149,10 +164,54 @@ def install_job_routes(app, manager, role_for, views=None):
         node(request, identity)
         return Response(data, media_type="application/x-tar")
 
+    @app.get("/api/v1/jobs/{identity}/inputs/checkpoint/{sha256}")
+    async def checkpoint_input(identity: str, sha256: str, request: Request):
+        job = node(request, identity)
+        lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
+        source = lease.get("resumeCheckpoint")
+        if not source or source["sha256"] != sha256:
+            raise PlanError("unknown_checkpoint", "Dispatch does not own the Checkpoint", status=404)
+        raw = await anyio.to_thread.run_sync(checkpoints.load, manager, source)
+        node(request, identity)
+        return Response(raw, media_type="application/x-tar")
+
+    @app.post("/api/v1/jobs/{identity}/checkpoints", status_code=201)
+    async def checkpoint_upload(identity: str, request: Request):
+        job = node(request, identity)
+        lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
+        if job["kind"] != "training" or not lease.get("checkpointVersion"):
+            raise PlanError("checkpoint_unsupported", "This dispatch cannot publish checkpoints", status=422)
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_BYTES:
+                raise PlanError("checkpoint_invalid", "Checkpoint exceeds 128 MiB", status=422)
+            data.extend(chunk)
+        raw = bytes(data)
+        node(request, identity)
+        descriptor = await anyio.to_thread.run_sync(checkpoints.validate, raw, job, lease)
+        node(request, identity)
+        retained = job.setdefault("checkpoints", [])
+        if retained and descriptor["iteration"] <= retained[-1]["iteration"]:
+            if descriptor in retained:
+                return descriptor
+            raise PlanError("checkpoint_conflict", "Checkpoint does not advance committed iterations")
+        await anyio.to_thread.run_sync(checkpoints.persist, manager, descriptor, raw)
+        with manager._resource_lock:
+            node(request, identity)
+            if retained and descriptor["iteration"] <= retained[-1]["iteration"]:
+                if descriptor in retained:
+                    return descriptor
+                raise PlanError("checkpoint_conflict", "Checkpoint does not advance committed iterations")
+            retained.append(descriptor)
+            attempt = jobs._attempt(job, lease["leaseId"])
+            attempt["endIteration"] = max(attempt["endIteration"], descriptor["iteration"])
+            jobs._save()
+        return descriptor
+
     @app.post("/api/v1/jobs/{identity}/artifacts")
     async def artifacts(identity: str, request: Request):
         job = node(request, identity)
-        if job["kind"] != "training":
+        if job["kind"] not in ("training", "checkpoint_finalize"):
             raise PlanError(
                 "artifacts_unsupported", "Validation submits timing in its terminal report", status=422
             )
@@ -166,11 +225,15 @@ def install_job_routes(app, manager, role_for, views=None):
                 stream.write(chunk)
             stream.seek(0)
             node(request, identity)
-            records, versions = await anyio.to_thread.run_sync(
-                store_artifacts, manager, job, stream, lambda: node(request, identity),
-                lease.get("trainerVersions"),
-            )
+            portable = bool(lease.get("checkpointVersion"))
+            descriptor = jobs.resume_source(job) if portable else None
+            records, versions = await anyio.to_thread.run_sync(partial(
+                store_artifacts, manager, dict(job), stream, lambda: node(request, identity),
+                lease.get("trainerVersions"), portable=portable, descriptor=descriptor,
+            ))
             node(request, identity)
+            if portable:
+                job["artifactLeaseId"] = lease["leaseId"]
             job.update(artifacts=records, versions=versions)
             jobs._save()
         return {"artifacts": records, "versions": versions}

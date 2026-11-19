@@ -1251,13 +1251,18 @@ class GatewayClient:
         return await self.request("POST", "/api/v1/plans", actor=actor, json=document)
 
     async def job_start(self, planId, seed=None, planRevision=None, requestId=None,
-                        kind="training", targetNodeId=None, *, actor="cli:lw"):
+                        kind="training", targetNodeId=None, checkpoint=None, *, actor="cli:lw"):
         return await self.request("POST", "/api/v1/jobs", actor=actor, json={
             "planId": planId, "seed": seed, "planRevision": planRevision,
             "requestId": requestId or uuid.uuid4().hex,
             **({"kind": kind} if kind != "training" else {}),
             **({"targetNodeId": targetNodeId} if targetNodeId else {}),
+            **({"checkpoint": checkpoint} if checkpoint else {}),
         })
+
+    async def job_resume(self, id, targetNodeId=None, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/jobs/" + quote(id, safe="") + "/resume", actor=actor,
+                                  json={"targetNodeId": targetNodeId} if targetNodeId else {})
 
     async def job_list(self, plan=None, status=None, kind=None):
         values = {key: value for key, value in {"plan": plan, "status": status, "kind": kind}.items()

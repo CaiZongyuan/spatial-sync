@@ -26,7 +26,6 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
         output = tmp_path / "output"
         output.mkdir()
         for name, data in {
-            "model_0.pt": b"checkpoint",
             "policy.onnx": b"protobuf",
             "policy.onnx.data": b"weights",
             "events.out.tfevents.fixture": b"events",
@@ -47,9 +46,14 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
         def digest(name):
             return hashlib.sha256((output / name).read_bytes()).hexdigest()
 
+        origin = {
+            "schema": "lw.node-local-checkpoint/1", "jobId": job["jobId"], "leaseId": job["leaseId"],
+            "iteration": 0, "checkpointSha256": "a" * 64,
+        }
+        (output / "checkpoint-origin.json").write_text(json.dumps(origin), encoding="utf-8")
         export = {
-            "checkpoint": "model_0.pt",
-            "checkpointSha256": digest("model_0.pt"),
+            "checkpoint": "checkpoint-origin.json",
+            "checkpointSha256": digest("checkpoint-origin.json"),
             "policy": "policy.onnx",
             "policySha256": digest("policy.onnx"),
             "afterLearn": True,
@@ -66,6 +70,11 @@ def test_artifact_upload_rejects_missing_or_changed_declared_onnx_data(tmp_path)
             versions["hardware"]["gpu"][key] = job["resourceId" if key == "uuid" else "resourceModel"]
         (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
         assert job["resourceModel"] == "GPU-free contract double"
+        forbidden = output / "legacy.pt"
+        forbidden.write_bytes(b"never load this archive member")
+        rejected = client.post(route, headers=headers, content=pack_package(output))
+        assert rejected.status_code == 422 and "must stay at the node" in rejected.text
+        forbidden.unlink()
         original = (output / "policy.onnx.data").read_bytes()
         (output / "policy.onnx.data").unlink()
         missing = client.post(route, headers=headers, content=pack_package(output))

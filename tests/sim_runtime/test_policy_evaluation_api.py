@@ -53,7 +53,7 @@ async def test_real_policy_http_evaluation_uses_fixed_suite_and_same_teacher_com
         response = seed.post(
             "/api/v1/policies",
             json={
-                "checkpoint": job["jobId"] + "/checkpoints/model_0.pt",
+                "checkpoint": job["jobId"] + "/checkpoint-origin.json",
             },
         )
         assert response.status_code == 201, response.text
@@ -64,7 +64,7 @@ async def test_real_policy_http_evaluation_uses_fixed_suite_and_same_teacher_com
         other_response = seed.post(
             "/api/v1/policies",
             json={
-                "checkpoint": other_job["jobId"] + "/checkpoints/model_0.pt",
+                "checkpoint": other_job["jobId"] + "/checkpoint-origin.json",
             },
         )
         assert other_response.status_code == 201, other_response.text
@@ -129,7 +129,7 @@ async def test_known_policy_keeps_completed_and_partial_evidence_when_comparison
         spec, task = finger_probe_inputs()
         job = uploaded_job(seed, tmp_path, spec=spec, task_document=task)
         created = seed.post(
-            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         )
         assert created.status_code == 201, created.text
         policy = created.json()
@@ -189,7 +189,7 @@ async def test_actual_newton_private_scopes_keep_train_reference_and_recordings_
     with TestClient(create_app(settings)) as seed:
         spec, task = finger_probe_inputs()
         job = uploaded_job(seed, tmp_path, spec=spec, task_document=task)
-        created = seed.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"})
+        created = seed.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"})
         assert created.status_code == 201, created.text
         policy = created.json()
         manager = seed.app.state.manager

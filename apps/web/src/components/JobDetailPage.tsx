@@ -10,7 +10,7 @@ import { JobMetricCharts } from './training/JobMetricCharts';
 import { TrainingViewGrid } from './training/TrainingViewGrid';
 import '../job-detail.css';
 
-const statuses = { queued: '排队中', running: '训练中', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
+const statuses = { queued: '排队中', running: '训练中', suspended: '已挂起', succeeded: '已完成', failed: '失败', cancelled: '已取消' };
 const value = (number: number | null | undefined, digits = 2) => number == null ? '—' : number.toFixed(digits);
 
 export function JobDetailPage({ jobId }: { jobId: string }) {
@@ -87,8 +87,10 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   const iterations = plan?.hyperparameters.max_iterations;
   const total = typeof iterations === 'number' ? iterations : undefined;
   const elapsed = job.metrics.elapsedSeconds;
-  const remaining = remainingSeconds(job.status, job.estimatedWallSeconds, elapsed);
-  const checkpoints = job.artifacts.filter(artifact => artifact.path.endsWith('.pt'));
+  const activeAttempt = job.attempts?.find(attempt => attempt.leaseId === job.leaseId);
+  const remaining = remainingSeconds(job.status, job.estimatedWallSeconds, activeAttempt?.elapsedSeconds ?? elapsed);
+  const checkpoints = job.artifacts.filter(artifact =>
+    /\.(pt|safetensors)$/.test(artifact.path) || artifact.path === 'checkpoint-origin.json');
   return <main className="job-detail" data-testid="job-detail">
     <header className="page-header"><div><p className="eyebrow">TRAINING JOB</p><h1>训练作业详情</h1>
       <p><code>{job.jobId}</code> · {statuses[job.status]}</p></div>
@@ -101,7 +103,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
       <div><span>已用 / 预计剩余</span><strong>{value(elapsed, 0)}s / {value(remaining, 0)}s</strong></div>
     </div>
     <div className="job-detail-columns"><div>
-      {job.status === 'running' && <TrainingViewGrid jobId={jobId} onStatusChange={setView} />}
+      {job.status === 'running' && job.kind === 'training' && <TrainingViewGrid key={job.leaseId} jobId={jobId} onStatusChange={setView} />}
       <JobMetricCharts history={job.metricsHistory} />
       <section className="panel"><h2>TensorBoard</h2>
         <div className="job-tensorboard-controls"><button type="button" disabled={tensorboardPending} onClick={() => void openTensorboard()}>
@@ -109,10 +111,21 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
           {tensorboardUrl && <a href={tensorboardUrl} target="_blank" rel="noreferrer">打开完整训练曲线 ↗</a>}</div>
         {tensorboardError && <p role="alert">{tensorboardError}</p>}
       </section>
-      <section className="panel"><h2>检查点</h2>{checkpoints.length ? <table><thead><tr><th>文件</th><th>大小</th><th>SHA256</th></tr></thead>
+      <section className="panel"><h2>检查点</h2>
+        {!!job.checkpoints?.length && <ul>{job.checkpoints.map(checkpoint =>
+          <li key={checkpoint.sha256}>迭代 {checkpoint.iteration} · <code title={checkpoint.sha256}>
+            {checkpoint.sha256.slice(0, 12)}</code> · {checkpoint.size.toLocaleString()} B</li>)}</ul>}
+        {checkpoints.length ? <table><thead><tr><th>文件</th><th>大小</th><th>SHA256</th></tr></thead>
         <tbody>{checkpoints.map(artifact => <tr key={artifact.path}><td><code>{artifact.path}</code></td><td>{artifact.size.toLocaleString()} B</td>
           <td><code title={artifact.sha256}>{artifact.sha256.slice(0, 12)}</code></td></tr>)}</tbody></table>
-        : <p>{job.status === 'queued' || job.status === 'running' ? '等待训练产物。' : '该作业未产生检查点。'}</p>}</section>
+        : !job.checkpoints?.length && <p>{job.status === 'queued' || job.status === 'running'
+          ? '等待训练产物。' : '该作业未产生检查点。'}</p>}</section>
+      {!!job.attempts?.length && <section className="panel"><h2>训练尝试</h2>
+        <table><thead><tr><th>租约</th><th>节点 / GPU</th><th>迭代区间</th><th>GPU 秒</th></tr></thead>
+          <tbody>{job.attempts.map(attempt => <tr key={attempt.leaseId}>
+            <td>{attempt.leaseId}</td><td>{attempt.nodeId} / {attempt.hardware.model ?? '—'}</td>
+            <td>{attempt.startIteration}–{attempt.endIteration}</td><td>{value(attempt.gpuSeconds, 1)}</td>
+          </tr>)}</tbody></table></section>}
       <section className="panel"><h2>日志 <small>最近最多 2000 行 · {logsComplete ? '已读至末尾' : '跟随中'}</small></h2>
         {logsError && <p role="alert">{logsError}</p>}<pre className="job-log" aria-label="作业日志">{logs.join('\n') || '等待节点日志。'}</pre></section>
       <section className="panel"><h2>作业产物</h2>{job.artifacts.length ? <ul>{job.artifacts.map(artifact =>

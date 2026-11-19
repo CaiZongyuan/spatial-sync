@@ -240,12 +240,17 @@ def main():
     policy_file = output / "policy.onnx"
     _write_valid_mlp_onnx(policy_file, obs_dim=4, act_dim=2)
 
-    rel_ckpt = ckpt.resolve().relative_to((Path.cwd() / "logs").resolve()).as_posix()
+    origin = output / "checkpoint-origin.json"
+    origin.write_text(json.dumps({
+        "schema": "lw.node-local-checkpoint/1", "jobId": inputs["job"]["jobId"],
+        "leaseId": inputs["job"]["leaseId"], "iteration": args.max_iterations,
+        "checkpointSha256": hashlib.sha256(ckpt.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
     (output / "export.json").write_text(
         json.dumps(
             {
-                "checkpoint": "checkpoints/" + rel_ckpt,
-                "checkpointSha256": hashlib.sha256(ckpt.read_bytes()).hexdigest(),
+                "checkpoint": origin.name,
+                "checkpointSha256": hashlib.sha256(origin.read_bytes()).hexdigest(),
                 "policy": "policy.onnx",
                 "policySha256": hashlib.sha256(policy_file.read_bytes()).hexdigest(),
                 "iteration": args.max_iterations,
@@ -372,7 +377,10 @@ def test_mjlab_node_job_runs_end_to_end_registers_policy_and_runs_cpu_inference(
             logs = http.get(f"/api/v1/jobs/{job_id}/logs").json()
             assert any("mjlab fake trainer completed iterations" in line for line in logs["lines"])
 
-            ckpt_entry = next(item["path"] for item in settled["artifacts"] if item["path"].endswith(".pt"))
+            files = {item["path"] for item in settled["artifacts"]}
+            assert "checkpoint-origin.json" in files
+            assert all(not path.endswith(".pt") for path in files)
+            ckpt_entry = "checkpoint-origin.json"
             created_policy = http.post(
                 "/api/v1/policies",
                 json={"checkpoint": f"{job_id}/{ckpt_entry}"},

@@ -1190,7 +1190,7 @@ def test_native_capture_with_command_source_passes_evidence_verifier_and_qualifi
         )
         assert client.post("/api/v1/nodes/local/heartbeat", headers=NODE, json=done_hb).status_code == 200
         pol = client.post(
-            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         )
         assert pol.status_code == 201, pol.text
         policy = pol.json()

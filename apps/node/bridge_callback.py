@@ -7,6 +7,7 @@ import os
 import statistics
 import sys
 import time
+from functools import wraps
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 if __package__:
@@ -82,6 +83,13 @@ def install():
     output.mkdir(parents=True, exist_ok=True)
     inputs = json.loads(Path(os.environ["LW_NODE_INPUTS"]).read_text(encoding="utf-8"))
     job = inputs["job"]
+    portable = inputs.get("schemaVersion") == 2
+    if portable:
+        import lw_checkpoint_format as checkpoint_wire
+        import lw_checkpoint_runner as checkpoint_runner
+
+        if "checkpointIdentity" not in inputs:
+            raise ValueError("Portable dispatch lacks checkpoint authority")
     declared = inputs.get("task", {})
     is_mjlab = isinstance(declared, dict) and declared.get("mjlab") is not None
     versions = {
@@ -116,6 +124,7 @@ def install():
     (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
 
     def _wrap_learn(raw_learn):
+        @wraps(raw_learn)
         def learn(runner, *args, **kwargs):
             if getattr(runner, "_lw_in_bridged_learn", False):
                 return raw_learn(runner, *args, **kwargs)
@@ -123,6 +132,11 @@ def install():
 
             runner._lw_in_bridged_learn = True
             native = None
+            original_save = runner.save if portable else None
+            source = inputs.get("resumeCheckpoint")
+            finalize = job["kind"] == "checkpoint_finalize" if portable else False
+            completed = 0
+            saved = None
             original_log = runner.logger.log
             started = time.monotonic()
 
@@ -141,7 +155,25 @@ def install():
                     stream.write(json.dumps(row, allow_nan=False) + "\n")
                 return result
 
+            def save(_path, infos=None):
+                nonlocal completed, saved
+                completed = runner.current_learning_iteration + 1
+                if saved is None or saved[0] != completed:
+                    saved = (completed, checkpoint_runner.publish(
+                        Path.cwd() / "checkpoints-pending", runner, inputs["checkpointIdentity"], completed,
+                    ))
+
             try:
+                if portable:
+                    if source:
+                        raw = Path(inputs["checkpointPath"]).read_bytes()
+                        metadata, _ = checkpoint_runner.restore(runner, raw, source)
+                        completed = metadata["iteration"]
+                    if not finalize:
+                        runner.save = save
+                        if args or "num_learning_iterations" not in kwargs:
+                            raise ValueError("Managed checkpoint dispatch requires named iteration count")
+                        kwargs["num_learning_iterations"] -= completed
                 runner.logger.log = log
                 try:
                     with ExitStack() as stack:
@@ -155,13 +187,32 @@ def install():
                                 native = stack.enter_context(
                                     NativeObservationCapture(runner, observer, profile, inputs)
                                 )
-                        result = raw_learn(runner, *args, **kwargs)
+                        if finalize or portable and kwargs["num_learning_iterations"] == 0:
+                            if finalize or native is not None:
+                                checkpoint_runner.collect_without_updates(runner, native)
+                            result = None
+                        else:
+                            result = raw_learn(runner, *args, **kwargs)
                 finally:
                     runner.logger.log = original_log
-                checkpoint = Path(runner.logger.log_dir) / f"model_{runner.current_learning_iteration}.pt"
-                relative = checkpoint.resolve().relative_to((Path.cwd() / "logs").resolve())
-                with checkpoint.open("rb") as stream:
-                    checkpoint_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+                if portable:
+                    if not finalize and completed != inputs["plan"]["hyperparameters"]["max_iterations"]:
+                        raise ValueError("Training ended before the approved iteration limit")
+                    raw = saved[1] if saved else Path(inputs["checkpointPath"]).read_bytes()
+                    metadata, tensors, _, _ = checkpoint_wire.read_checkpoint(raw)
+                    relative = "checkpoint.safetensors"
+                    (output / relative).write_bytes(tensors)
+                    (output / "checkpoint.json").write_bytes(checkpoint_wire.json_bytes(metadata))
+                    checkpoint_hash = metadata["tensorSha256"]
+                    export_iteration = metadata["iteration"]
+                else:
+                    checkpoint = Path(runner.logger.log_dir) / f"model_{runner.current_learning_iteration}.pt"
+                    relative = "checkpoints/" + checkpoint.resolve().relative_to(
+                        (Path.cwd() / "logs").resolve(),
+                    ).as_posix()
+                    with checkpoint.open("rb") as stream:
+                        checkpoint_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+                    export_iteration = runner.current_learning_iteration
                 try:
                     import torch.onnx as _torch_onnx
                 except ImportError:
@@ -183,23 +234,44 @@ def install():
                 with (output / "policy.onnx").open("rb") as stream:
                     policy_hash = hashlib.file_digest(stream, "sha256").hexdigest()
                 export = {
-                    "checkpoint": "checkpoints/" + relative.as_posix(),
+                    "checkpoint": relative,
                     "checkpointSha256": checkpoint_hash,
                     "policy": "policy.onnx",
                     "policySha256": policy_hash,
                     "externalData": external_files(output / "policy.onnx", output),
-                    "iteration": runner.current_learning_iteration,
-                    "afterLearn": True,
+                    "iteration": export_iteration,
+                    "afterLearn": not finalize,
                 }
+                if portable:
+                    export.update(schemaVersion=2, checkpointArchiveSha256=checkpoint_wire.digest(raw))
+                elif inputs.get("keepLegacyCheckpointLocal"):
+                    origin = {
+                        "schema": "lw.node-local-checkpoint/1", "jobId": job["jobId"],
+                        "leaseId": job["leaseId"], "checkpointSha256": checkpoint_hash,
+                        "iteration": export_iteration,
+                    }
+                    origin_file = output / "checkpoint-origin.json"
+                    origin_file.write_text(json.dumps(origin, sort_keys=True), encoding="utf-8")
+                    export.update(
+                        checkpoint=origin_file.name,
+                        checkpointSha256=hashlib.sha256(origin_file.read_bytes()).hexdigest(),
+                    )
+                if finalize:
+                    export["operation"] = "checkpoint_finalize"
                 (output / "export.json").write_text(json.dumps(export), encoding="utf-8")
                 if native is not None:
                     native.publish(output, export, versions)
-                if getattr(runner, "env", None) is not None:
+                    if finalize:
+                        checkpoint_runner.finalized_receipt(output / "observations/native-capture.json",
+                                                            source["sha256"])
+                if not finalize and getattr(runner, "env", None) is not None:
                     from lw_observation_capture import capture_observations
 
                     capture_observations(runner, output, inputs, export, versions)
                 return result
             finally:
+                if portable and not finalize:
+                    runner.save = original_save
                 runner._lw_in_bridged_learn = False
 
         learn._lw_bridged = True

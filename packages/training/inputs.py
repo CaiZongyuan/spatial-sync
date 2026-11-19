@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import tarfile
 import tempfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, extract_package, package_files
 from packages.library.common import content_hash
+from packages.training.checkpoint_format import MAX_METADATA, decode_json, digest, json_bytes
 from packages.training.runtime import job_backend, trainer_distributions
 
 
@@ -77,7 +79,89 @@ def _file_hash(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
-def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=None):
+def _bounded_checkpoint_json(file):
+    with file.open("rb") as source:
+        return decode_json(source.read(MAX_METADATA + 1))
+
+
+def _validate_portable_export(job, descriptor, stage, export, checkpoint, policy, versions):
+    if (
+        descriptor is None or checkpoint != "checkpoint.safetensors"
+        or export.get("schemaVersion") != 2
+        or export.get("checkpointArchiveSha256") != descriptor["sha256"]
+        or export["iteration"] != descriptor["iteration"]
+    ):
+        raise ValueError("Export does not identify a committed portable checkpoint")
+    metadata = _bounded_checkpoint_json(stage / "checkpoint.json")
+    if (
+        digest(json_bytes(metadata)) != descriptor["metadataSha256"]
+        or export["checkpointSha256"] != descriptor["tensorSha256"]
+    ):
+        raise ValueError("Exported checkpoint differs from the committed bytes")
+    if job["kind"] != "checkpoint_finalize":
+        if descriptor["iteration"] != job["plan"]["hyperparameters"]["max_iterations"]:
+            raise ValueError("Training export requires the approved final iteration")
+        return
+    from packages.policies.native_evidence import NATIVE_RECEIPTS, NativeSamples, validate_witnesses
+    from packages.training.views import attempt_identity
+
+    if export.get("operation") != "checkpoint_finalize":
+        raise ValueError("Checkpoint finalization requires an explicit export operation")
+    receipt = NATIVE_RECEIPTS.validate_json((stage / "observations/native-capture.json").read_bytes())
+    samples_file = stage / "observations/native-samples.json"
+    samples = NativeSamples.model_validate_json(samples_file.read_bytes())
+    validate_witnesses(receipt, samples)
+    if (
+        getattr(receipt, "finalizedCheckpointSha256", None) != descriptor["sha256"]
+        or receipt.samplesArtifact != "observations/native-samples.json"
+        or receipt.samplesSha256 != _file_hash(samples_file)
+        or receipt.capture != samples.capture
+        or receipt.iteration != descriptor["iteration"]
+        or receipt.source != samples.source or receipt.source.versions != versions
+        or any(getattr(receipt.source, key) != job[key] for key in (
+            "jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed",
+        ))
+        or receipt.source.attemptId != attempt_identity(job)
+        or receipt.policy != samples.policy
+        or receipt.policy.onnxSha256 != export["policySha256"]
+        or receipt.policy.checkpointSha256 != export["checkpointSha256"]
+    ):
+        raise ValueError("Checkpoint finalization requires 256 distinct native witnesses for this export")
+    import onnx
+
+    graph = onnx.load_model(str(stage / policy), load_external_data=False).graph
+    if not graph.input or not graph.output or any(
+        dim.WhichOneof("value") != "dim_value" or dim.dim_value <= 0
+        for value in (*graph.input, *graph.output)
+        for dim in value.type.tensor_type.shape.dim
+    ):
+        raise ValueError("Checkpoint finalization requires a static ONNX signature")
+
+
+def publish_attempt_artifacts(manager, job):
+    """Promote a verified attempt directory before committing a succeeded Job."""
+    root = manager.library_assets.roots["user"]
+    directory = destination_parent(root, ("jobs", job["jobId"]))
+    destination = directory / "artifacts"
+    stage = directory / ("artifacts-" + job["artifactLeaseId"])
+    if stage.is_dir():
+        # A prior attempt may have renamed its output before a crash interrupted
+        # the final Job save. Keep those bytes outside the successful path.
+        if destination.exists():
+            retired = Path(tempfile.mkdtemp(prefix="retired-artifacts-", dir=directory))
+            os.rename(destination, retired / "artifacts")
+        os.rename(stage, destination)
+        fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    elif not destination.is_dir():
+        raise PlanError("artifacts_incomplete", "Verified attempt artifacts are missing", status=422)
+
+
+def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=None, *,
+                    portable=False, descriptor=None):
     root = manager.library_assets.roots["user"]
     with manager.library_assets._lock, tempfile.TemporaryDirectory(prefix=".upload-", dir=root) as temporary:
         stage = Path(temporary)
@@ -114,30 +198,42 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
                 raise ValueError("GPU UUID/model must match the assigned resource")
             if not {"stdout.log", "stderr.log", "versions.json"}.issubset(files):
                 raise ValueError("Runtime versions and both process logs are required")
-            for predicate, label in (
-                (lambda name: name.endswith(".pt"), "checkpoint"),
-                (lambda name: name.endswith(".onnx"), "ONNX policy"),
-                (lambda name: "events.out.tfevents." in name, "TensorBoard events"),
+            if not portable and not any(
+                "events.out.tfevents." in name and (stage / name).stat().st_size > 0 for name in files
             ):
-                if not any(predicate(name) and (stage / name).stat().st_size > 0 for name in files):
-                    raise ValueError(f"Missing {label}")
+                raise ValueError("Missing TensorBoard events")
             export = json.loads((stage / "export.json").read_text(encoding="utf-8"))
             from packages.library.archive import relative_path
 
             checkpoint = relative_path(export["checkpoint"]).as_posix()
             policy = relative_path(export["policy"]).as_posix()
+            if any(name.lower().endswith((".pt", ".pth", ".pkl", ".pickle")) for name in files):
+                raise ValueError("Serialized Python checkpoint files must stay at the node")
+            expected_checkpoint = "checkpoint.safetensors" if portable else "checkpoint-origin.json"
+            if checkpoint != expected_checkpoint or checkpoint not in files:
+                raise ValueError("Export requires its portable checkpoint or a JSON source reference")
+            if not portable:
+                origin = _bounded_checkpoint_json(stage / checkpoint)
+                original_digest = origin["checkpointSha256"]
+                if origin != {
+                    "schema": "lw.node-local-checkpoint/1", "jobId": job["jobId"],
+                    "leaseId": job["leaseId"], "iteration": export["iteration"],
+                    "checkpointSha256": original_digest,
+                } or not re.fullmatch(r"[a-f0-9]{64}", original_digest):
+                    raise ValueError("Export does not identify a local checkpoint")
             if (
-                export["afterLearn"] is not True
+                export["afterLearn"] is not (job["kind"] != "checkpoint_finalize")
                 or type(export["iteration"]) is not int
                 or export["iteration"] < 0
-                or checkpoint not in files
                 or policy not in files
-                or not checkpoint.endswith(".pt")
                 or not policy.endswith(".onnx")
+                or (stage / policy).stat().st_size == 0
                 or _file_hash(stage / checkpoint) != export["checkpointSha256"]
                 or _file_hash(stage / policy) != export["policySha256"]
             ):
                 raise ValueError("ONNX export does not identify its exact trained checkpoint")
+            if portable:
+                _validate_portable_export(job, descriptor, stage, export, checkpoint, policy, versions)
             external = export["externalData"]
             if not isinstance(external, list) or len({entry["path"] for entry in external}) != len(external):
                 raise ValueError("ONNX external data manifest must contain distinct files")
@@ -159,7 +255,9 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
         ]
         parts = ("jobs", job["jobId"])
         directory = destination_parent(root, parts)
-        destination = directory / "artifacts"
+        destination = directory / (f"artifacts-{job['leaseId']}" if portable else "artifacts")
+        if portable and job["status"] == "succeeded":
+            destination = directory / "artifacts"
         if destination.exists():
             existing = [
                 {

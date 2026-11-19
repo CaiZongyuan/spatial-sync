@@ -1,7 +1,7 @@
 import { request } from './api';
 import type { Actor } from './protocol';
 
-export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type JobStatus = 'queued' | 'running' | 'suspended' | 'succeeded' | 'failed' | 'cancelled';
 export interface JobMetrics {
   iteration?: number;
   elapsedSeconds?: number;
@@ -35,7 +35,7 @@ export interface JobVersions {
 }
 export interface TrainingJob {
   jobId: string;
-  kind: 'training' | 'plan_validation';
+  kind: 'training' | 'plan_validation' | 'checkpoint_finalize';
   status: JobStatus;
   planId: string;
   planRevision: number;
@@ -69,6 +69,15 @@ export interface TrainingJob {
   reason: string | null;
   metrics: JobMetrics;
   metricsHistory?: JobMetricSample[];
+  attempts?: {
+    leaseId: string; nodeId: string; instanceId: string;
+    hardware: { summary: string; resourceId: string; model?: string | null };
+    startIteration: number; endIteration: number;
+    startedAt: number; finishedAt: number | null;
+    elapsedSeconds?: number; gpuSeconds: number; reportedGpuSeconds: number;
+  }[];
+  checkpoints?: { sha256: string; iteration: number; size: number }[];
+  checkpointRef?: string;
   artifacts: JobArtifact[];
   versions?: JobVersions;
   code?: string;

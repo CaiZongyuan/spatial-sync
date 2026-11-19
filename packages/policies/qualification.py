@@ -14,8 +14,17 @@ from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, do
 
 from .consistency import compare_observations
 from .library import digest, read_json
-from .native_evidence import NativeProfile, NativeReceipt, NativeSamples
+from .native_evidence import NATIVE_RECEIPTS, NativeProfile, NativeSamples, validate_witnesses
 from .observations import ObservationSpec
+
+# The pre-finalization verifier understood the same v1 evidence. Preserve its
+# retained decisions when all other implementation and runtime pins still match.
+LEGACY_VERIFIER_FILES = {
+    "packages/policies/qualification.py": "e2a48fc0c8dabe4d9f4f8c4d182f782004a6da58773ead36d7aabb93eccdec53",
+    "packages/policies/native_evidence.py": (
+        "91cdc9b874c6f07bd820721207d38098f92880b139b4db9a274f4ba21b7dfece"
+    ),
+}
 
 
 class NativeProfiles:
@@ -64,6 +73,11 @@ class NativeCaptureVerifier:
     def _facts(self, policy, job, report, envelope, receipt, profile, provider):
         self.evidence._validate_source(policy, job, receipt)
         self.evidence._validate_source(policy, job, envelope)
+        if job["kind"] == "checkpoint_finalize":
+            if getattr(receipt, "finalizedCheckpointSha256", None) != job["checkpointRef"].split("/", 1)[1]:
+                raise ValueError("Native receipt refers to a different source checkpoint")
+        elif not receipt.afterLearn:
+            raise ValueError("Training observation evidence requires a trained export")
         spec = ObservationSpec.model_validate(
             document(self.evidence.manager.policies.resolve(policy["id"])[1] / "obs_spec.yaml")
         )
@@ -88,27 +102,7 @@ class NativeCaptureVerifier:
             raise ValueError(
                 "Actual native source, export boundary or material differs from the reviewed profile"
             )
-        unique, scopes = set(), {}
-        for sample, witness in zip(envelope.samples, receipt.witnesses, strict=True):
-            state = {key: getattr(sample, key) for key in ("state", "references", "previousAction")}
-            if sample.command is not None:
-                state["command"] = sample.command
-            identity = f"env-{witness.environment}/epoch-{witness.epoch}/step-{witness.physicsStep}"
-            scope = (witness.epoch, witness.physicsStep)
-            if (
-                sample.sourceStateId != identity
-                or witness.sourceStateId != identity
-                or witness.stateSha256 != canonical_hash(state)
-                or witness.nativeInputSha256 != canonical_hash(sample.trainingObservation)
-                or witness.stateSha256 in unique
-                or scope <= scopes.get(witness.environment, (-1, -1))
-                or witness.environment not in profile.environments
-            ):
-                raise ValueError("Actual native state/input witnesses are duplicate, foreign or inconsistent")
-            unique.add(witness.stateSha256)
-            scopes[witness.environment] = scope
-        if len(unique) != 256:
-            raise ValueError("Native source did not capture256 distinct actual policy states")
+        sample_count = validate_witnesses(receipt, envelope)
         result = compare_observations(spec, [sample.model_dump() for sample in envelope.samples])
         return {
             "qualified": result["numericalPass"],
@@ -116,7 +110,7 @@ class NativeCaptureVerifier:
             "evidenceMode": profile.evidenceMode,
             "profile": profile.id,
             "profileSha256": canonical_hash(profile.model_dump(mode="json")),
-            "samples": len(unique),
+            "samples": sample_count,
             "maxAbsoluteError": result["maxAbsoluteError"],
             "boundary": profile.boundary,
             "normalization": profile.normalization,
@@ -134,7 +128,7 @@ class NativeCaptureVerifier:
             raw = source.read_bytes()
             if digest(source) != entry["sha256"]:
                 raise ValueError("Native receipt changed during verification")
-            receipt = NativeReceipt.model_validate_json(raw)
+            receipt = NATIVE_RECEIPTS.validate_json(raw)
             envelope = NativeSamples.model_validate_json((path / "package/samples.json").read_bytes())
             profile = self.profiles.require(receipt.capture.profile)
             import tempfile
@@ -192,10 +186,14 @@ class NativeCaptureVerifier:
         _, path = self.evidence._read(policy_id, report["id"])
         frozen = destination_parent(path, ("verifications", verification["id"], "package"))
         package_files(frozen)
-        receipt = NativeReceipt.model_validate_json((frozen / "capture.json").read_bytes())
+        receipt = NATIVE_RECEIPTS.validate_json((frozen / "capture.json").read_bytes())
         envelope = NativeSamples.model_validate_json((path / "package/samples.json").read_bytes())
         profile = self.profiles.require(receipt.capture.profile)
-        if verification["verifier"] != implementation_identity() or read_json(
+        current = implementation_identity()
+        compatible = [current]
+        if receipt.afterLearn:
+            compatible.append(current | {"files": current["files"] | LEGACY_VERIFIER_FILES})
+        if verification["verifier"] not in compatible or read_json(
             frozen / "profile.json"
         ) != profile.model_dump(mode="json"):
             raise PlanError(

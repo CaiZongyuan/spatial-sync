@@ -25,6 +25,7 @@ from apps.node.view_relay import relay_views
 from packages.library.archive import extract_package, import_lock, relative_path
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
+from packages.training import checkpoint_format
 from packages.training import runtime as training_runtime
 from packages.training.inputs import pack_package
 
@@ -205,9 +206,11 @@ class OwnedRun:
         self.view_active = threading.Event()
         self.cancel = threading.Event()
         self.status, self.reason = "running", None
-        self.started, self.log_cursor = time.monotonic(), 0
+        self.started = time.monotonic()
+        self.log_cursor = assignment.get("logAfter", 0)
         self.timeout = min(node.timeout, assignment.get("timeoutSeconds", node.timeout))
-        self.metrics = {}
+        self.metrics = {"iteration": assignment["startIteration"]} if "startIteration" in assignment else {}
+        self.checkpoint_http = None
         self._logs = []
         self._log_offsets = {"stdout.log": 0, "stderr.log": 0}
         self.uncertain_owner = False
@@ -217,6 +220,25 @@ class OwnedRun:
         self.thread = threading.Thread(target=self.run, name="owned-training-job", daemon=False)
         self.thread.start()
 
+    def _send_checkpoints(self):
+        if self.checkpoint_http is None:
+            return
+        for file in sorted((self.root / "checkpoints-pending").glob("*.tar")):
+            try:
+                with file.open("rb") as source:
+                    raw = source.read(checkpoint_format.MAX_BYTES + 1)
+            except FileNotFoundError:
+                continue
+            if len(raw) > checkpoint_format.MAX_BYTES:
+                raise ValueError("Trainer checkpoint exceeds the wire limit")
+            reply = self._request(
+                self.checkpoint_http, "POST", f"/api/v1/jobs/{self.assignment['jobId']}/checkpoints",
+                content=raw, headers={"Content-Type": "application/x-tar"},
+            )
+            if reply.json()["sha256"] != checkpoint_format.digest(raw):
+                raise ValueError("Gateway confirmed different checkpoint bytes")
+            file.unlink(missing_ok=True)
+
     def _command(self, command, env, stdout, stderr):
         process = OwnedProcess(command, cwd=self.root, env=env, stdout=stdout, stderr=stderr)
         self.current_process = process.process
@@ -225,22 +247,35 @@ class OwnedRun:
                 if self.cancel.wait(0.05) or time.monotonic() - self.started > self.timeout:
                     self.cancel.set()
                     raise InterruptedError("Owned job was cancelled or reached its wall-clock bound")
+                self._send_checkpoints()
             if process.process.returncode:
                 raise RuntimeError(f"Owned subprocess exited with status {process.process.returncode}")
+            self._send_checkpoints()
         finally:
             process.close()
             self.current_process = None
 
-    def _request(self, http, method, url, **arguments):
+    def _request(self, http, method, url, *, maximum_bytes=None, **arguments):
         while True:
             remaining = self.timeout - (time.monotonic() - self.started)
             if self.cancel.is_set() or remaining <= 0:
                 self.cancel.set()
                 raise InterruptedError("Owned job stopped before completing gateway I/O")
             try:
-                response = http.request(method, url, timeout=min(10, remaining), **arguments)
-                response.raise_for_status()
-                return response
+                if maximum_bytes is None:
+                    response = http.request(method, url, timeout=min(10, remaining), **arguments)
+                    response.raise_for_status()
+                    return response
+                with http.stream(method, url, timeout=min(10, remaining), **arguments) as response:
+                    response.raise_for_status()
+                    raw = bytearray()
+                    for chunk in response.iter_bytes():
+                        if len(raw) + len(chunk) > maximum_bytes:
+                            raise ValueError("Downloaded checkpoint exceeds the leased size")
+                        if self.cancel.is_set() or time.monotonic() - self.started > self.timeout:
+                            raise InterruptedError("Owned job stopped during checkpoint download")
+                        raw.extend(chunk)
+                    return bytes(raw)
             except httpx.HTTPStatusError as error:
                 if error.response.status_code < 500:
                     raise
@@ -278,6 +313,14 @@ class OwnedRun:
                 inputs = response.json()
                 job = inputs["job"]
                 validation = job["kind"] == "plan_validation"
+                portable = inputs["schemaVersion"] == 2
+                if portable and (self.node.capabilities.get("checkpointVersion") != 1
+                                 or "checkpointIdentity" not in inputs):
+                    raise ValueError("This node cannot execute the portable dispatch")
+                if not portable and not validation:
+                    inputs["keepLegacyCheckpointLocal"] = True
+                if inputs.get("resumeCheckpoint") and not portable:
+                    raise ValueError("Resume requires a portable dispatch version")
                 if validation:
                     self.timeout = min(self.timeout, job["validationLimits"]["timeoutSeconds"])
                 expected = {
@@ -291,7 +334,7 @@ class OwnedRun:
                 }
                 actual = {(item["kind"], item["id"]): item["contentHash"] for item in inputs["packages"]}
                 if (
-                    inputs["schemaVersion"] != 1
+                    inputs["schemaVersion"] not in (1, 2)
                     or job["jobId"] != self.assignment["jobId"]
                     or job["leaseId"] != self.assignment["leaseId"]
                     or job["resourceId"] != self.assignment["resourceId"]
@@ -299,6 +342,24 @@ class OwnedRun:
                     or len(inputs["packages"]) != len(expected)
                 ):
                     raise ValueError("Node inputs do not describe this exact immutable dispatch")
+                if source := inputs.get("resumeCheckpoint"):
+                    expected_url = f"/api/v1/jobs/{job['jobId']}/inputs/checkpoint/{source['sha256']}"
+                    if (
+                        source["url"] != expected_url
+                        or source["inputsSha256"] != inputs["checkpointIdentity"]["inputsSha256"]
+                        or source["runtime"] != inputs.get("runtimeIdentity")
+                        or source["iteration"] != self.assignment.get("startIteration")
+                    ):
+                        raise ValueError("Checkpoint source does not match the leased dispatch")
+                    size = source["size"]
+                    if type(size) is not int or not 0 < size <= checkpoint_format.MAX_BYTES:
+                        raise ValueError("Invalid leased checkpoint size")
+                    raw = self._request(http, "GET", expected_url, maximum_bytes=size)
+                    if len(raw) != source["size"] or checkpoint_format.digest(raw) != source["sha256"]:
+                        raise ValueError("Downloaded checkpoint differs from the leased digest")
+                    target = self.root / "checkpoint.tar"
+                    target.write_bytes(raw)
+                    inputs["checkpointPath"] = str(target)
                 for index, package in enumerate(inputs["packages"]):
                     if package["url"] != f"/api/v1/jobs/{job['jobId']}/inputs/packages/{index}":
                         raise ValueError("Input downloads must stay inside the owned dispatch endpoint")
@@ -360,6 +421,10 @@ class OwnedRun:
                 shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
                                 bridge / "lw_mjlab_launcher.py")
                 shutil.copyfile(training_runtime.__file__, bridge / "lw_training_runtime.py")
+                if portable:
+                    shutil.copyfile(checkpoint_format.__file__, bridge / "lw_checkpoint_format.py")
+                    shutil.copyfile(Path(__file__).with_name("checkpoint_runner.py"),
+                                    bridge / "lw_checkpoint_runner.py")
                 leased_compiler = inputs.get("compilerHash")
                 if leased_compiler and compiler_hash(bridge, prefix="lw_") != leased_compiler:
                     raise RuntimeError("Bundled mjlab compiler differs from the leased compiler digest")
@@ -467,6 +532,8 @@ class OwnedRun:
                         stderr,
                     )
                     if is_mjlab:
+                        if portable and job["kind"] == "training":
+                            self.checkpoint_http = http
                         args = mjlab_trainer_arguments(inputs, "lw_training_bridge.install")
                         if validation:
                             iterations = str(job["validationLimits"]["iterations"])
@@ -482,11 +549,10 @@ class OwnedRun:
                     }
                     self.status = "succeeded"
                     return
-                for pattern, category in (("*.pt", "checkpoints"), ("events.out.tfevents.*", "tensorboard")):
-                    for file in (self.root / "logs").rglob(pattern):
-                        target = output / category / file.relative_to(self.root / "logs")
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(file, target)
+                for file in (self.root / "logs").rglob("events.out.tfevents.*"):
+                    target = output / "tensorboard" / file.relative_to(self.root / "logs")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(file, target)
                 for name in ("stdout.log", "stderr.log"):
                     shutil.copyfile(self.root / name, output / name)
                 response = self._request(
@@ -576,7 +642,8 @@ class OwnedRun:
                             stream.write(json.dumps(row) + "\n")
                     self._logs.extend(row["text"] for row in new)
                 self._log_offsets[name] = len(complete)
-        selected = self._logs[self.log_cursor:self.log_cursor + 500]
+        offset = self.log_cursor - self.assignment.get("logAfter", 0)
+        selected = self._logs[offset:offset + 500]
         if recovered:
             if snapshot.exists():
                 final_cursor = json.loads(snapshot.read_bytes())["end"]
@@ -609,7 +676,7 @@ class OwnedRun:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
         draining = self.status in ("succeeded", "failed", "cancelled") and (
-            not producer_finished or self.log_cursor + len(selected) < len(self._logs))
+            not producer_finished or offset + len(selected) < len(self._logs))
         status = "running" if draining else self.status
         return {
             **{key: value for key, value in self.metrics.items()
@@ -755,7 +822,16 @@ class LocalNode:
                                 self._remember_cleanup(assignment)
                                 self.active[identity] = OwnedRun(self, assignment)
                             elif self.active[identity].assignment["leaseId"] != assignment["leaseId"]:
-                                raise RuntimeError("Node cannot replace an owned live dispatch")
+                                previous = self.active[identity]
+                                if "logAfter" not in assignment:
+                                    raise RuntimeError("Node cannot replace an owned live dispatch")
+                                previous.cancel.set()
+                                retiring.add(identity)
+                                if not previous.thread.is_alive() and not previous.uncertain_owner:
+                                    previous.thread.join()
+                                    self._remember_cleanup(assignment)
+                                    self.active[identity] = OwnedRun(self, assignment)
+                                    retiring.discard(identity)
                             else:
                                 self.active[identity].assignment = assignment
                             if assignment["cancel"]:
@@ -871,6 +947,10 @@ def run_node(args):
         capabilities["trainingEntries"] = {backend: entry for backend, entry in entries.items() if entry}
     if "mjlab" in (capabilities.get("trainerVersions") or {}):
         capabilities["compilerHash"] = compiler_hash()
+    if mjlab_versions.get("rsl_rl") == "5.0.1" and (
+        capabilities.get("trainingEntries") or {}
+    ).get("mjlab") == "mjlab:managed":
+        capabilities["checkpointVersion"] = 1
     if not args.capabilities:
         durable_json(capabilities_path, capabilities)
     node = LocalNode(

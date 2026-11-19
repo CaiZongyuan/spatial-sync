@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import AwareDatetime, Field, JsonValue, model_validator
+from pydantic import AwareDatetime, Field, JsonValue, TypeAdapter, model_validator
 
 from .evidence_contract import Sample, Source, Weights
 from .subjects import Hash, Schema, Text
@@ -88,3 +88,39 @@ class NativeReceipt(Schema):
     normalizerState: dict[str, JsonValue]
     afterLearn: Literal[True]
     iteration: int = Field(ge=0)
+
+
+class FinalizedNativeReceipt(NativeReceipt):
+    schema_version: Literal["lw.policy-native-observation-capture/2"] = Field(alias="schema")
+    afterLearn: Literal[False]
+    finalizedCheckpointSha256: Hash
+
+
+def validate_witnesses(receipt, envelope):
+    from apps.node.observation_capture import canonical_hash
+
+    unique, scopes = set(), {}
+    for sample, witness in zip(envelope.samples, receipt.witnesses, strict=True):
+        state = {key: getattr(sample, key) for key in ("state", "references", "previousAction")}
+        if sample.command is not None:
+            state["command"] = sample.command
+        identity = f"env-{witness.environment}/epoch-{witness.epoch}/step-{witness.physicsStep}"
+        scope = (witness.epoch, witness.physicsStep)
+        if (
+            sample.sourceStateId != identity
+            or witness.sourceStateId != identity
+            or witness.stateSha256 != canonical_hash(state)
+            or witness.nativeInputSha256 != canonical_hash(sample.trainingObservation)
+            or witness.stateSha256 in unique
+            or scope <= scopes.get(witness.environment, (-1, -1))
+            or witness.environment not in receipt.capture.runtime.environments
+        ):
+            raise ValueError("Actual native state/input witnesses are duplicate, foreign or inconsistent")
+        unique.add(witness.stateSha256)
+        scopes[witness.environment] = scope
+    if len(unique) != 256:
+        raise ValueError("Native source did not capture 256 distinct actual policy states")
+    return len(unique)
+
+
+NATIVE_RECEIPTS = TypeAdapter(NativeReceipt | FinalizedNativeReceipt)

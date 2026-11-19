@@ -53,6 +53,8 @@ async def test_installed_cli_and_official_mcp_share_the_job_pipeline(gateway_url
         assert invoke("job", "show", first["jobId"])["planRevision"] == plan["revision"]
         assert first["jobId"] in [job["jobId"] for job in invoke("job", "ls", "--plan", plan["id"])]
         assert invoke("job", "logs", first["jobId"])["lines"] == []
+        resume = invoke("job", "resume", first["jobId"], code=1)
+        assert resume["error"]["detail"]["code"] == "job_not_suspended"
         assert invoke("job", "cancel", first["jobId"], code=3)["status"] == "cancelled"
         assert invoke("job", "logs", first["jobId"], "--follow")["complete"]
         assert invoke("node", "ls") == []
@@ -66,6 +68,8 @@ async def test_installed_cli_and_official_mcp_share_the_job_pipeline(gateway_url
             assert (await result(mcp, "job_show", id=job["jobId"]))["task"] == task["id"]
             assert job["jobId"] in [item["jobId"] for item in await result(mcp, "job_list", plan=plan["id"])]
             assert (await result(mcp, "job_logs", id=job["jobId"]))["cursor"] == 0
+            denied = await mcp.call_tool("job_resume", {"id": job["jobId"]})
+            assert denied.is_error and "job_not_suspended" in denied.content[0].text
             assert (await result(mcp, "job_cancel", id=job["jobId"]))["status"] == "cancelled"
             assert await result(mcp, "node_ls") == []
             assert not any("approv" in tool.name for tool in (await mcp.list_tools()).tools)
