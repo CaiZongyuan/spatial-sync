@@ -5,7 +5,7 @@ date: 2026-11-19
 
 # Compiler-rooted Task qualification, bounded rewards and Goal-bound Evaluation Suites
 
-Use the platform-owned declarative `mjlab` environment compiler as the sole observation-qualification trust root for self-service `Task`s, and reserve Python `Task` archives for built-in or human-audited operator use. Combine built-in MDP primitives with a bounded mathematical expression DSL over versioned `lw.reward-state/1` tensors so users can define rewards and terminations as data. To preserve RSI comparability across reward revisions, the server generates embodied `Evaluation Suite`s by `(EntityType action, Goal)` and freezes their criteria and perturbations at the first approved `Training Plan` for the `Goal`.
+Use the platform-owned declarative `mjlab` environment compiler as the sole observation-qualification trust root for self-service `Task`s, and reserve Python `Task` archives for built-in or human-audited operator use. Combine built-in MDP primitives with a bounded mathematical expression DSL over versioned `lw.reward-state/1` tensors so users can define rewards and terminations as data. To preserve RSI comparability across reward revisions, the server generates embodied `Evaluation Suite`s by `(EntityType action, Goal)` and freezes their success criteria, perturbations and selected episode count at the first approved `Training Plan` for the `Goal`.
 
 ## Considered Options
 

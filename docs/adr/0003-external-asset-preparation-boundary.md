@@ -16,7 +16,7 @@ The complete accepted scope and delivery criteria are in [Lab Scene Factory](../
 
 ## Amendment (2026-11-19) — External robot import and baked calibration
 
-To let users and Agents onboard external robots without repository packaging scripts, the platform extends bounded preparation to uploaded `URDF`, `MJCF` and `USD` robot archives with rigid-body meshes. It bakes non-geometric calibration into a new immutable `Z-up` OpenUSD `Asset` version and preserves the source-to-canonical joint mapping so simulation and training derive their models from the same calibrated source.
+To let users and Agents onboard external robots without repository packaging scripts, extend bounded preparation to uploaded `URDF`, `MJCF` and `USD` rigid-body robot archives, including packages made entirely of supported primitives and packages using supported meshes. Bake non-geometric calibration into a new immutable `Z-up` OpenUSD `Asset` version and preserve the source-to-canonical joint mapping so simulation and training derive their models from the same calibrated source.
 
 ### Consequences
 

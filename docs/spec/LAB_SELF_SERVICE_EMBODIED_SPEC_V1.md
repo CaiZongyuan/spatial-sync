@@ -17,7 +17,7 @@
 
 立项时，双足 Microduck 标杆已验证 **Lab World** 从规范 USD `Asset`、MuJoCo Warp 并行训练、确定性物理 `Evaluation` 到跨场景运行的链路。用户或外部 `Agent` 接入自己的机器人并训练自定义场景与动作仍有以下障碍。
 
-1. **外部机器人格式与双侧物理保真度断层**。平台导入接口只接受手工打包的 `.usd`、`.glb` 与绑定清单，无法直接接入 `URDF` 或 `MJCF` 机器人包。评估侧（Newton USD 导入器）与训练侧（USD 到求解器派生器）对碰撞排除对、接触摩擦及闭链和开口网格告警的处理存在缺口，导致两侧物理响应不一致，甚至在启动时发生自碰撞。
+1. **外部机器人格式与双侧物理保真度断层**。平台导入接口接受规范 USD `Asset` 包，`.glb` 可由 USD 派生，绑定模板可为空或省略。接口仍无法直接导入 `URDF` 或 `MJCF` 机器人包。评估侧（Newton USD 导入器）与训练侧（USD 到求解器派生器）对碰撞排除对、接触摩擦及闭链和开口网格告警的处理存在缺口，导致两侧物理响应不一致，甚至在启动时发生自碰撞。 [素材包契约](LAB_ASSETS_AND_SCENES_SPEC_V1.md#5-素材包)
 2. **具身资源只读，自定义类型缺乏不可变引用**。`Embodiment`、`Robot Model` 与 `Controller` 缺少用户态写接口。自定义设备类型仅靠测试环境变量注入，`Scene` 引用与 `Evaluation` 可比身份缺少对应的内容哈希，用户无法安全地定义新机器人构型或动作。
 3. **观测资格依赖逐任务白名单**。策略资格审查按 `taskContentHash` 查找仓库内置白名单。用户或 `Agent` 新建的 `Task` 因缺少白名单记录而收到 `observation_source_unverified`，无法晋升。
 4. **并行训练只在空平地运行**。训练任务依赖手工打包的 Python 环境入口，启动并行环境时只把机器人放在无限平地上，忽略 `Scene Version` 中的台阶、斜坡、障碍物与可交互刚体 `Entity`。
@@ -32,7 +32,7 @@
 2. **不可变用户态 `EntityType`、只追加具身目录与统一四模式策略宿主（ADR-0010）**：开放 `u-<slug>/v<N>` 语法的不可变用户态 `EntityType` 发布（`Scene` 绑定与评估可比身份均钉住其内容哈希，自动注入标准状态属性），开放用户库只追加创建 `Embodiment`、`Robot Model` 与 `Controller` 头记录（具体 `Controller` 版本仍仅由人工晋升事务签发），并通过通用 MCP 目录发现暴露动作；在现有通用策略宿主 `embodied.policy` 上统一扩展 `phase_clip`、`posture_recovery`、`command_track`、`waypoint_nav` 四种声明式完成原语。
 3. **平台内确定性训练 `Scene` 编排与多实体入训编译（ADR-0004 修订）**。`Scene Version` 承载确定性烘焙场地布局，包括平面、以盒体分解的台阶、斜坡、与求解器一致的起伏地面、静态碰撞障碍、动态刚体 `Entity` 的初始位姿及 `Waypoint`、`Teach Location`、`Site`。`mjlab` 编译器把场地几何和声明的 `Entity` 完整载入并行环境。`Task` 定义每回合的重置随机化、指令采样与地形难度课程。
 4. **编译器级资格信任根、声明式 `Task` 与纯数学奖励表达式 DSL（ADR-0011）**：将平台声明式 `mjlab` 环境编译器设为自助通道的唯一观测资格信任根（任意 Python `Task` 包限制为内置或人工审计通道）；内置标准 MDP 原语菜单（Layer A）覆盖常规动作，长尾任务通过基于版本化 `lw.reward-state/1` 张量（统一 `Z-up` SI 单位与 `xyzw` 四元数）的非 Python 纯数学表达式 DSL（Layer B，带节点数上限与运行时 `nan_to_num`/限幅防护）表达；在 `Training Plan` 人工审批前自动运行目标环境规模下的**计划校验与耗时剖析 `Job`**，将实测 GPU 小时估算附于审批单。
-5. **绑定 `Goal` 的服务端封存 `Evaluation Suite`（ADR-0011）**。服务端按 `(EntityType 动作, Goal)` 生成 `Evaluation Suite`，在该 `Goal` 首次 `Training Plan` 人工关口处冻结成功判据与扰动参数（默认至少 30 个随机扰动回合），并独立生成和封存 `split: test` 种子，确保多轮奖励调优可比。人工晋升关口将首个达标 `Candidate` 确立为初始 `Reference`。
+5. **绑定 `Goal` 的服务端封存 `Evaluation Suite`（ADR-0011）**。服务端按 `(EntityType 动作, Goal)` 生成 `Evaluation Suite`，在该 `Goal` 首个 `Training Plan` 获人工批准时冻结成功判据、扰动参数与选定的回合数，并独立生成和封存 `split: test` 种子，确保多轮奖励调优可比。人工晋升关口将首个达标 `Candidate` 确立为初始 `Reference`。
 6. **单人视频 `Motion Clip` 与机器人 `Reference Motion` 模仿闭环（ADR-0013）**：在用户接入的 `Compute Node` 上从单人清晰视频提取构型无关的源 `Motion Clip`（保留上游人体模型许可证声明），经显式肢体部位语义映射与可行性体检（无映射自由度拒收、脚底滑移、关节限位饱和度、质心支撑裕度、可选原地模式）生成绑定具体机器人 `Asset` 版本的 `Reference Motion`，经 Web 3D 幽灵预览确认后启动 `mjlab` 平衡模仿训练，并由三方共用金标准规范对齐相位时钟与插值。
 7. **用户自备多 `Compute Node`、安全 `Checkpoint` 与按尝试分段续训（ADR-0012）**：放开认证远程网关模式，签发一次性注册码换取可吊销单节点令牌，剥离耗时剖面中的临时主机名并将本机交互会话 CUDA 锁限定在同机 GPU；训练期间定期回传纯张量 `safetensors` 格式 `Checkpoint`（ONNX 导出与 256 样本原生观测捕获始终在计算节点完成），节点断线后转为可恢复 `suspended` 态，支持在兼容节点续训并按每次尝试分段累加计费。日常保持“批准 `Training Plan`”与“批准 `Controller` 晋升”两道人工关口，同时保留换慢卡续训超出原批预算时的“超预算追加审批”兜底关口。
 8. **内外双价值出口与 `Policy Export` 真机对接包（ADR-0013）**：晋升动作对内供外部 `Agent` 在 `Operation Plan` 中通过通用动作管线自主编排复杂任务；对外提供单 `Policy` 级 `Policy Export`（`lw.policy-export/1`）一键导出，内含 `.onnx` 模型、源 `URDF`/`MJCF` 关节名与正反转符号/零位偏移对照表、四元数顺序、`previous_action` 与双重限位裁剪规则、执行器 SI 参数、许可证声明及零平台依赖参考推理脚本（`float32` `1e-5` 容差一致）。
@@ -90,8 +90,8 @@
 ### 用户态类型、作业与训练契约
 
 - **用户态 `EntityType`**。标识符采用 `u-<slug>/v<N>`，其中 `<slug>` 由小写英文字母、数字和连字符组成，`<N>` 为数字版本号。无 `u-` 前缀的命名空间保留给内置库。类型发布后不可修改，`Scene` 设备绑定用 `typeContentHash` 固定其内容，`Evaluation` 将引用的用户类型内容哈希纳入可比身份。静态预览无需全局失效。
-- **`Job` 状态机与分段账单**。公开状态为 `queued`、`running`、`suspended`、`succeeded`、`failed` 和 `cancelled`。受管作业种类为 `training`、`plan_validation`、`motion_preprocess` 和 `checkpoint_finalize`。每条 `Job` 记录 `attempts[]`，包括单调递增的 `leaseId`、`nodeId`、`instanceId`、硬件摘要、起止迭代步与实耗 GPU 秒。平台按尝试累计实耗。换慢卡续训时，若重估的剩余成本超过 `Training Plan` 的已批预算，复用超预算 `Approval Gate`。
-- **多节点注册与安全 `Checkpoint`**。远程模式须明确启用认证，一次性注册码换取可吊销的节点专属令牌。节点心跳和派发以持久 `nodeId` 路由，每次连接使用自己的 `instanceId`，并兼容默认本机节点。耗时剖面键仅绑定任务与编译器特征、算法超参与标准化 GPU 型号。节点认领前核对锁定的训练框架版本。中间 `Checkpoint` 仅以 `safetensors` 和结构化 JSON 传输，网关与节点均须拒绝反序列化不可信的 pickle，ONNX 导出及 256 样本原生观测捕获只在 `Compute Node` 上执行。
+- **`Job` 状态机与分段账单**。公开状态为 `queued`、`running`、`suspended`、`succeeded`、`failed` 和 `cancelled`。受管作业种类为 `training`、`plan_validation`、`motion_preprocess` 和 `checkpoint_finalize`。每条 `Job` 记录 `attempts[]`，包括单调递增的 `leaseId`、`nodeId`、`instanceId`、硬件摘要、起止迭代步与实耗 GPU 秒。续训前，平台从 `Training Plan` 已批预算中扣除各次既往尝试的累计实耗和其他仍占用额度的预留。如果预计完成剩余训练所需的额外 GPU 用量超过剩余额度，则触发既有超预算 `Approval Gate`。例如，获批 10 GPU 小时、已用 8 小时且无其他预留时，预计还需 4 小时，超过剩余的 2 小时，须追加审批。
+- **多节点注册与安全 `Checkpoint`**。远程模式须明确启用认证，一次性注册码换取可吊销的节点专属令牌。节点心跳和派发以持久 `nodeId` 路由，每次连接使用自己的 `instanceId`，并兼容默认本机节点。耗时剖面键仅绑定任务与编译器特征、算法超参与标准化 GPU 型号。节点认领前核对锁定的训练框架版本。经网关或跨节点传输的中间 `Checkpoint` 只含 `safetensors` 张量与结构化 JSON 元数据。无论来源是否被声明为可信，网关一律禁止对 `Checkpoint` 数据执行 pickle 反序列化。节点本地训练器自行管理仅供内部使用的检查点。`Compute Node` 导出 ONNX 并采集 256 个原生观测样本，网关依据导出的模型和采集证据独立核验观测资格。
 - **声明式 `Task` 与观测资格**。`Task` 锁定 `scene`、`robot`、`implements`、`control`（含控制频率和动作空间）、确定性随机化、地形课程配置及 `ObservationSpec`。平台观测资格档案钉住编译器实现哈希与已验证的 `mjlab`、`rsl_rl` 版本。`lw.obs-spec/2` 与 `lw.policy-native-observation-samples/2` 保持向后兼容，并支持 `motion_phase` 与 `reference_motion_frame`。
 - **奖励表达式**。`Task` 组合 Layer A 原语列表与可选的 Layer B 纯数学表达式 AST。JSON 算子仅限标量或张量算术、范数、点积、裁剪、平滑核函数与比较选择。AST 最多 128 个节点、深度最多 12 层，禁止导入、属性反射和任意形状分配。表达式统一应用 `nan_to_num` 与幅值限幅。`lw.reward-state/1` 对世界坐标系和机体坐标系采用 `Z-up` 右手系、SI 单位与 `xyzw` 四元数顺序。
 ### 动作与导出契约
@@ -108,7 +108,7 @@
 ### 双侧物理模型一致性与 `Goal` 冻结点
 
 - 所有外部机器人导入与标定覆盖均烘焙进 OpenUSD 舞台，使用 `MassAPI`、`FilteredPairsAPI`、`MaterialAPI`、单一规范电枢惯量属性与标准 `UsdPhysics` 关节驱动。根节点须使用单位缩放。训练侧 USD 派生器读取碰撞排除对和材质摩擦，对闭链、球关节、耦合关节以及开口非体积碰撞网格显式报错。导入验证自动比对两侧的模型参数。
-- 该 `Goal` 的首个 `Training Plan` 获人工批准时，冻结机器人的标定 `Asset` 版本及 `Evaluation Suite` 的成功判据、随机扰动维度与最低样本量（至少 30 个随机扰动回合）。后续修改机器人物理标定或动作成功判据时，必须开启新 `Goal` 并重新建立初始 `Reference`。
+- 该 `Goal` 的首个 `Training Plan` 获人工批准时，冻结机器人的标定 `Asset` 版本及 `Evaluation Suite` 的成功判据、随机扰动维度和实际选定的回合数（至少 30 个随机扰动回合）。同一 `Goal` 下修订奖励时，后续评估复用同一回合数、随机扰动维度与成功判据。后续修改机器人物理标定或动作成功判据时，必须开启新 `Goal` 并重新建立初始 `Reference`。
 
 ## Testing Decisions
 
