@@ -669,6 +669,7 @@ class TrainingJobs:
         if (
             timing is None or timing.numEnvs != job["plan"]["hyperparameters"]["num_envs"]
             or report.iteration != VALIDATION_ITERATIONS
+            or report.elapsedSeconds is None
             or not timing.setupSeconds + timing.warmupSeconds + sum(timing.samplesSeconds)
             <= report.elapsedSeconds <= VALIDATION_TIMEOUT
             or now - lease["assignedAt"] > VALIDATION_TIMEOUT
@@ -773,15 +774,22 @@ class TrainingJobs:
                     tails.append((job, report))
                     continue
             data = report.model_dump()
-            if report.validation is None:
-                del data["validation"]
-            if report.tailEnd is None:
-                del data["tailEnd"]
+            for key in ("iteration", "elapsedSeconds", "validation", "tailEnd"):
+                if data[key] is None:
+                    del data[key]
             lease = (node or {}).get("leases", {}).get(job["resourceId"])
+            last_report = job.get("lastNodeReport")
+            # Older terminal receipts serialized missing measurements as zeros. Accept an exact
+            # retry after release without counting it as another observation or reviving a lease.
+            settled_retry = (
+                job["status"] in TERMINAL and report.status in TERMINAL | {"cleaned"}
+                and (not lease or lease["leaseId"] != report.leaseId)
+                and last_report == ({"iteration": 0, "elapsedSeconds": 0.0} | data)
+            )
             if (
                 node and job["nodeId"] == identity
                 and node["instanceId"] == body.instanceId
-                and job.get("lastNodeReport") == data
+                and (last_report == data or settled_retry)
                 and not (lease and lease["quarantined"])
             ):
                 continue
@@ -799,10 +807,11 @@ class TrainingJobs:
                 raise PlanError(
                     "lease_mismatch", "Expired local dispatch requires a cleanup receipt", status=403
                 )
-            checks_elapsed = report.status != "cleaned" and (
-                report.status not in TERMINAL or "elapsedSeconds" in report.model_fields_set
-            )
-            if checks_elapsed and report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
+            elapsed = report.elapsedSeconds
+            if (
+                elapsed is not None and report.status != "cleaned"
+                and elapsed < job["metrics"].get("elapsedSeconds", 0)
+            ):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
             if report.status == "succeeded" and "runtimeIdentity" in lease:
                 try:
@@ -871,12 +880,16 @@ class TrainingJobs:
                 self._append_logs(job, report.logAfter, report.logs)
             sample = {key: data[key] for key in (
                 "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
-            )}
+            ) if key in data}
             metrics = job["metrics"]
-            metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), report.elapsedSeconds)
+            elapsed = report.elapsedSeconds
+            if elapsed is not None:
+                metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), elapsed)
+                if job["executionDevice"] == "cuda":
+                    job["chargedGpuHours"] = max(job["chargedGpuHours"], elapsed / 3600)
             if report.status != "cleaned":
                 measurements = {"memoryUsedMb": report.memoryUsedMb}
-                if report.iteration >= metrics.get("iteration", 0):
+                if report.iteration is not None and report.iteration >= metrics.get("iteration", 0):
                     metrics["iteration"] = report.iteration
                     measurements.update(meanReward=report.meanReward, trainSuccess=report.trainSuccess)
                 for key, value in measurements.items():
@@ -884,11 +897,7 @@ class TrainingJobs:
                         metrics[key] = value
             if report.validation is not None:
                 sample["validation"] = metrics["validation"] = data["validation"]
-                self._record_validation(job, node, report.validation, report.elapsedSeconds, now)
-            job["chargedGpuHours"] = max(
-                job["chargedGpuHours"],
-                report.elapsedSeconds / 3600 if job["executionDevice"] == "cuda" else 0.0,
-            )
+                self._record_validation(job, node, report.validation, elapsed, now)
             if report.status == "running" and job["status"] not in TERMINAL:
                 job.update(status="running", reason=report.reason, startedAt=job["startedAt"] or now)
             elif report.status in TERMINAL or report.status == "cleaned":

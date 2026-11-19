@@ -74,8 +74,8 @@ class JobReport(Schema):
     jobId: Text
     leaseId: Text
     status: Literal["running", "succeeded", "failed", "cancelled", "cleaned"]
-    iteration: int = Field(default=0, ge=0)
-    elapsedSeconds: float = Field(default=0, ge=0)
+    iteration: int | None = Field(default=None, ge=0)
+    elapsedSeconds: float | None = Field(default=None, ge=0)
     meanReward: float | None = None
     trainSuccess: float | None = Field(default=None, ge=0, le=1)
     memoryUsedMb: float | None = Field(default=None, ge=0)

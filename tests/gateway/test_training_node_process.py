@@ -66,13 +66,17 @@ def start_server(settings, app=None):
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX process ownership")
 @pytest.mark.parametrize(
     "recovery",
-    ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish", "retained-normal-finish",
-     "modern-expired", "modern-no-proof"],
+    ["missing-work", "retained-proof", "retained-zero", "expires-after-upgrade", "normal-finish",
+     "retained-normal-finish", "modern-expired", "modern-no-proof"],
 )
 def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     monkeypatch, recovery,
 ):
     normal_finish = recovery.endswith("normal-finish")
+    retry_tail = recovery in ("retained-proof", "retained-zero", "modern-expired")
+    observed_metrics = {"iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128}
+    if recovery == "retained-zero":
+        observed_metrics.update(iteration=0, meanReward=0, trainSuccess=0)
     settings = Settings(node_token=TOKEN)
     old = create_app(settings)
     old.state.jobs.clock = lambda: 100
@@ -96,7 +100,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
         assert job["leaseId"]
         progress = {
             "jobId": job["jobId"], "leaseId": job["leaseId"], "status": "running",
-            "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
+            **observed_metrics,
         }
         assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [progress]}).is_success
         if normal_finish:
@@ -129,7 +133,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 [sys.executable, "-c", program], cwd=work,
                 env={"PATH": ""}, stdout=log, stderr=log,
             )
-            if normal_finish or recovery in ("retained-proof", "modern-expired"):
+            if normal_finish or retry_tail:
                 try:
                     assert owner.process.wait(timeout=5) == 0
                 finally:
@@ -162,7 +166,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
             ):
                 reconciling.set()
             original_instance = request.headers.get("x-node-instance") == NODE["X-Node-Instance"]
-            if recovery in ("retained-proof", "modern-expired") and original_instance:
+            if retry_tail and original_instance:
                 tail = next((report for report in payload.get("reports", []) if "tailEnd" in report), None)
                 if tail and tail["tailEnd"] == 501:
                     if not committed_tail:
@@ -208,7 +212,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 assert first["cursor"] == 500 and not first["complete"]
                 permit_terminal.set()
                 wait_for(read, lambda node: not node["leases"], timeout=7)
-            elif recovery in ("retained-proof", "modern-expired"):
+            elif retry_tail:
                 wait_for(read, lambda node: not node["leases"], timeout=7)
             else:
                 actual = wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
@@ -228,7 +232,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
             if not missing_proof:
                 url = f"/api/v1/jobs/{job['jobId']}/logs"
 
-                if recovery in ("retained-proof", "modern-expired"):
+                if retry_tail:
                     assert committed_tail["logAfter"] == 0 and len(committed_tail["logs"]) == 500
                     assert client.get(url).json()["cursor"] == 500
                     assert client.get(url, params={"after": 500}).json() == {
@@ -277,14 +281,17 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 first = client.get(url).json()
                 assert first["lines"] == [f"[stdout.log] owned line {i}" for i in range(500)]
                 assert first["cursor"] == 500 and not first["complete"]
-                if recovery in ("retained-proof", "modern-expired"):
+                if retry_tail:
                     assert attempts[:2] == [0, 500]
                 settled = client.get(f"/api/v1/jobs/{job['jobId']}").json()
                 assert settled["status"] == ("cancelled" if normal_finish else "failed")
                 assert settled["reason"] == ("owned cancellation" if normal_finish else "node_lost")
-                assert settled["metrics"] | {
-                    "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
-                } == settled["metrics"]
+                assert settled["metrics"] | observed_metrics == settled["metrics"]
+                if recovery == "retained-zero":
+                    history = settled["metricsHistory"]
+                    assert history[0] | observed_metrics == history[0]
+                    assert history[-1]["reportedStatus"] == "cleaned"
+                    assert "iteration" not in committed_tail and "iteration" not in history[-1]
     finally:
         permit_terminal.set()
         if owner is not None and owner.process.poll() is None:

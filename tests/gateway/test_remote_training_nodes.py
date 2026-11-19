@@ -164,6 +164,9 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
             client, first, gpus=[gpu], reports=[report | {"elapsedSeconds": 96.8 if captured else 7.0}],
             **runtime,
         ).status_code == 422
+        for absent in ("elapsedSeconds", "iteration"):
+            incomplete = {key: value for key, value in report.items() if key != absent}
+            assert beat(client, first, gpus=[gpu], reports=[incomplete], **runtime).status_code == 422
         assert beat(client, first, gpus=[gpu], reports=[report], **runtime).is_success
         expected = 123.946857974983 if captured else 107.25
         plan_view = client.get(f"/api/v1/plans/{plan['id']}", headers=operator).json()
