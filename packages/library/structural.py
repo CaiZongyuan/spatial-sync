@@ -705,7 +705,8 @@ def training_scope(payload):
         return None
     if payload["kind"] == "asset" and metadata.get("kind") == "robot" and not metadata.get("dressing"):
         return "/Asset"
-    if payload["kind"] == "scene" and "newton" in metadata["sources"]:
+    # Structural callers may provide projected metadata without a declared source.
+    if payload["kind"] == "scene" and "newton" in metadata.get("sources", ()):
         return "/World/Lab"
     return None
 
