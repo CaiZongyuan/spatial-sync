@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T14:29:39.963948+00:00",
+  "capturedAt": "2026-11-19T16:44:17.738044+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -177,7 +177,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "600c176ffb5d566a814794d7d639587b493e72acb593b5197a2da45b73347463"
+      "sha256": "9d7b0072d608f6ec55ac1b655e394f943c20329e3eaff7065ee67dd23c7d14f2"
     },
     {
       "path": "packages/info/conditions.py",
@@ -217,7 +217,7 @@
     },
     {
       "path": "packages/library/entity_types.py",
-      "sha256": "2ba1bc32435f662578e09cf2fde6d75d74957b8decb5d2002d76d196ef1decb8"
+      "sha256": "01a904a8801ae868a53d4a94130bf092174827e07cab9cb7d6cff064dfda37ce"
     },
     {
       "path": "packages/library/grasp_calibration.py",
@@ -233,7 +233,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "80e2dc9249c841c8b96977dd3754862c1591f9ea30902e1ac6b4e3b49d665e07"
+      "sha256": "1f3a4d3ab8b451aacea22c56846d05f6827f1c65be817dd08eaedf05c16a6dd5"
     },
     {
       "path": "packages/library/python_stages.py",
@@ -257,7 +257,7 @@
     },
     {
       "path": "packages/library/transactions.py",
-      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+      "sha256": "f9e182145dfa95bc7610cb228bc336ef10c304a95e5ade722b088ed7f3be7d92"
     },
     {
       "path": "packages/library/visuals.py",
@@ -373,7 +373,7 @@
     },
     {
       "path": "packages/programs/subjects.py",
-      "sha256": "e94bf7abf1c5f26c7a4b3191acb8a5218264b5d41387f5443756a8e5cdb1ed6e"
+      "sha256": "fbbe71aa4724582dcbd3c8d11d6bcbf0c7440d95744edbd418cc0991df04e941"
     },
     {
       "path": "packages/programs/tube/facts.py",
@@ -477,7 +477,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "f3e6335753b5cbf5bdcbc8eb47c4a42447d859f7dd097f01488aa6670c4712c4"
+      "sha256": "1fe8d17f6c544e46eddfb94f58e6dbb0667f8cdb6bfe4ae7028d54cf00865c53"
     },
     {
       "path": "uv.lock",
@@ -491,10 +491,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "137768fd0c038d705a55fe7a4f25773b80c029b0d1575c7b6379ae59d44d5353",
-    "catalog.json": "6dab3965da9f4d5dc431e25a2b94ad9efee60e20413a68eb87b25e546cd7b71c",
-    "state.json": "f088923d7dfcf9a350abce5a44c68cf26809d00bdba4d24b892741000f617d18",
-    "snapshot.bin": "c44b6d52e018a1a4d81e547d09acd0fbf4672f40bb8d9401eebbe8f5b9736f38",
+    "manifest.json": "f2987ba87a2dd6d2580301803c23a62f24f4ea3e84d57ec2026dcc3c12dfa898",
+    "catalog.json": "c815fdb812e970a7de6a623d4328f76673c508fffd895e91c327bc7c6f923285",
+    "state.json": "cf5a359ae6333da4444d3f376d2ab79492f534c1617ca32c11ca7704a7b268a5",
+    "snapshot.bin": "a0bb3f3471f34b030ea39e1bbb1accee99f4cfd7fc234921ff30fc2039c9d91a",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

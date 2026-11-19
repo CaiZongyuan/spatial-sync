@@ -30,7 +30,7 @@
   ],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-19T14:28:56.783685+00:00",
+  "capturedAt": "2026-11-19T16:43:40.811957+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -234,7 +234,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "600c176ffb5d566a814794d7d639587b493e72acb593b5197a2da45b73347463"
+      "sha256": "9d7b0072d608f6ec55ac1b655e394f943c20329e3eaff7065ee67dd23c7d14f2"
     },
     {
       "path": "packages/info/conditions.py",
@@ -270,11 +270,11 @@
     },
     {
       "path": "packages/library/entity_types.py",
-      "sha256": "2ba1bc32435f662578e09cf2fde6d75d74957b8decb5d2002d76d196ef1decb8"
+      "sha256": "01a904a8801ae868a53d4a94130bf092174827e07cab9cb7d6cff064dfda37ce"
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "80e2dc9249c841c8b96977dd3754862c1591f9ea30902e1ac6b4e3b49d665e07"
+      "sha256": "1f3a4d3ab8b451aacea22c56846d05f6827f1c65be817dd08eaedf05c16a6dd5"
     },
     {
       "path": "packages/library/reports.py",
@@ -290,7 +290,7 @@
     },
     {
       "path": "packages/library/transactions.py",
-      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+      "sha256": "f9e182145dfa95bc7610cb228bc336ef10c304a95e5ade722b088ed7f3be7d92"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -362,7 +362,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "f3e6335753b5cbf5bdcbc8eb47c4a42447d859f7dd097f01488aa6670c4712c4"
+      "sha256": "1fe8d17f6c544e46eddfb94f58e6dbb0667f8cdb6bfe4ae7028d54cf00865c53"
     },
     {
       "path": "uv.lock",
@@ -376,10 +376,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "683f4e939a565d57b5000d8e4a7ea2144262a7720f46014ac0cb4f5b4ba1f8d0",
-    "catalog.json": "badaf8e0dac9e37a55aefde2bba46237bb5fb0e34eecb831ec1ad8d181ce8190",
-    "state.json": "23ee683cff565823163bf7940739423038258c671a05f78236826744abb3fa1a",
-    "snapshot.bin": "c83ef5c4cdf140e14703ca54d5cb3142daca2c7e57f6e905e562ebfb32a79666"
+    "manifest.json": "0bb2bfc66721d52c76ba17a3b79fcb732f2011b6cc914dc06e2a94f93b6c7208",
+    "catalog.json": "ef63d622a21fc779b8970184c860adcc4f69ea0d86500f6c318579c48e4c6051",
+    "state.json": "1c92b1728fd5c30bf7b436ec0101e22b99064d617efc6ae75977745e963c7d9f",
+    "snapshot.bin": "0c2079ed7ab09e8dca9601ca59b9f8d1e37d9e5ead536668b49498b0606a8eda"
   },
   "counts": {
     "physicalEntities": 33,

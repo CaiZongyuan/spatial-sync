@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-19T14:28:55.804243+00:00",
+  "capturedAt": "2026-11-19T16:43:39.904502+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -89,7 +89,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "600c176ffb5d566a814794d7d639587b493e72acb593b5197a2da45b73347463"
+      "sha256": "9d7b0072d608f6ec55ac1b655e394f943c20329e3eaff7065ee67dd23c7d14f2"
     },
     {
       "path": "packages/info/conditions.py",
@@ -125,11 +125,11 @@
     },
     {
       "path": "packages/library/entity_types.py",
-      "sha256": "2ba1bc32435f662578e09cf2fde6d75d74957b8decb5d2002d76d196ef1decb8"
+      "sha256": "01a904a8801ae868a53d4a94130bf092174827e07cab9cb7d6cff064dfda37ce"
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "80e2dc9249c841c8b96977dd3754862c1591f9ea30902e1ac6b4e3b49d665e07"
+      "sha256": "1f3a4d3ab8b451aacea22c56846d05f6827f1c65be817dd08eaedf05c16a6dd5"
     },
     {
       "path": "packages/library/reports.py",
@@ -145,7 +145,7 @@
     },
     {
       "path": "packages/library/transactions.py",
-      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+      "sha256": "f9e182145dfa95bc7610cb228bc336ef10c304a95e5ade722b088ed7f3be7d92"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -217,7 +217,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "f3e6335753b5cbf5bdcbc8eb47c4a42447d859f7dd097f01488aa6670c4712c4"
+      "sha256": "1fe8d17f6c544e46eddfb94f58e6dbb0667f8cdb6bfe4ae7028d54cf00865c53"
     },
     {
       "path": "uv.lock",
@@ -231,10 +231,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "2f500ebb2fc91b9a1d0aa4870c8814ccb5aa358b1b1cd4f22e67ada26737cb07",
-    "catalog.json": "fd044027e75ded0d69a6092a65ee8bd9be5654aaba92c00eb7ae0d3f4fdb09d5",
-    "state.json": "1aa5d13ce065d5a153af0b232c0a80f14d1a79b2c1e54cd2fcf35134f05e9d10",
-    "snapshot.bin": "f930a0cd71a7f77cdb8b7c496d0426159a0202610a192c4c4b751a546d46214b"
+    "manifest.json": "d5c4d96f43db7cd9c6e4cb9b47e60cc1bb012886225b459803c852cefa47d663",
+    "catalog.json": "3f6ffb386fd39f504211c71bfd50284e802bc21e3f295640433de9a6c0e04ab7",
+    "state.json": "8e975700070dfb0b906365059882cb5565123adf85bfd47bb7169aca483f84ba",
+    "snapshot.bin": "8a9f9a7e0e0a6a27dc7b6aab3d884713e58422c1d6359f460b6811b8ea37dfe1"
   },
   "counts": {
     "physicalEntities": 33,
