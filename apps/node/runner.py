@@ -683,6 +683,7 @@ class LocalNode:
     async def run(self):
         view_worker = asyncio.create_task(relay_views(self), name="node-view-relays")
         refresh_recovery = False
+        retiring = set()
         async with httpx.AsyncClient(base_url=self.url, trust_env=False, timeout=10) as http:
             try:
                 while True:
@@ -708,7 +709,15 @@ class LocalNode:
                                     },
                                 )
                             )
-                    reports = [] if refresh_recovery else [owned.report() for owned in self.active.values()]
+                    reports = []
+                    if not refresh_recovery:
+                        for identity, owned in self.active.items():
+                            if identity in retiring:
+                                continue
+                            report = owned.report()
+                            if owned.assignment.get("quarantined") and report["status"] == "running":
+                                continue
+                            reports.append(report)
                     refresh_recovery = False
                     for report in reports:
                         root = self.active[report["jobId"]].root
@@ -734,10 +743,13 @@ class LocalNode:
                         assignments = {
                             row["jobId"]: row for row in (*reply["assignments"], *reply.get("logTails", ()))
                         }
+                        retiring = self.active.keys() - assignments.keys()
                         for identity, owned in list(self.active.items()):
-                            if identity not in assignments and not owned.thread.is_alive():
-                                owned.thread.join()
-                                del self.active[identity]
+                            if identity in retiring:
+                                owned.cancel.set()
+                                if not owned.thread.is_alive():
+                                    owned.thread.join()
+                                    del self.active[identity]
                         for identity, assignment in assignments.items():
                             if identity not in self.active:
                                 self._remember_cleanup(assignment)
@@ -749,10 +761,16 @@ class LocalNode:
                             if assignment["cancel"]:
                                 self.active[identity].cancel.set()
                     except httpx.HTTPStatusError as error:
-                        if self.node_id == "local" and error.response.status_code == 403:
-                            # An ordinary assignment can become fenced while the node is disconnected.
-                            refresh_recovery = bool(self.active)
-                        if error.response.status_code < 500:
+                        if reports and error.response.status_code == 403:
+                            try:
+                                detail = error.response.json()["detail"]
+                            except (ValueError, KeyError, TypeError):
+                                detail = None
+                            # Refresh ownership once without replaying fenced job reports.
+                            refresh_recovery = (
+                                isinstance(detail, dict) and detail.get("code") == "lease_mismatch"
+                            )
+                        if not refresh_recovery and error.response.status_code < 500:
                             for owned in self.active.values():
                                 owned.cancel.set()
                                 if (error.response.status_code == 422 and not owned.thread.is_alive()

@@ -188,7 +188,8 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
             else:
                 actual = wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
                 assert actual["leases"][gpu["id"]]["leaseId"] == job["leaseId"]
-                assert reconciling.wait(5)
+                now[0] += 1
+                wait_for(read, lambda node: node["lastSeen"] == now[0])
                 assert not work.exists()
                 if modern:
                     proofless = {

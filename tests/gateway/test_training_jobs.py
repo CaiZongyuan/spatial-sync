@@ -229,6 +229,64 @@ def test_retained_local_upgrade_requires_original_owner_and_gpu():
         assert client.get(url, headers=NODE | {"X-Lease-Id": job["leaseId"]}).status_code == 403
 
 
+@pytest.mark.parametrize("retained", [True, False], ids=["retained-local", "modern-local"])
+def test_terminal_report_preserves_progress_without_new_metrics(retained):
+    from tests.gateway.test_remote_training_nodes import ISAAC_ENTRY, ISAAC_VERSIONS, node_profile_key
+
+    settings = Settings(node_token=TOKEN)
+    now = [100.0]
+
+    def gateway():
+        app = create_app(settings)
+        app.state.jobs.clock = lambda: now[0]
+        return TestClient(app)
+
+    with gateway() as client:
+        plan, task = setup_plan(client)
+        approve(client, plan["approvalId"])
+        body = heartbeat(plan, task)
+        if not retained:
+            body.update(hardware="node-hardware/2:fixture", trainerVersions=ISAAC_VERSIONS, **ISAAC_ENTRY)
+            body["profiles"][0]["key"] = node_profile_key(
+                plan, task["contentHash"], {"id": "local", **body}, body["gpus"][0], backend="isaaclab",
+            )
+        assert client.post(HEARTBEAT, headers=NODE, json=body).is_success
+        job = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).json()
+        scope = {"jobId": job["jobId"], "leaseId": job["leaseId"]}
+        progress = scope | {
+            "status": "running", "iteration": 4, "meanReward": 2.5, "memoryUsedMb": 128,
+            "elapsedSeconds": 42, "logs": ["previous output"],
+        }
+        assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [progress]}).is_success
+        if retained:
+            now[0] = 161
+            assert client.get(f"/api/v1/jobs/{job['jobId']}").json()["reason"] == "node_lost"
+
+    if retained:
+        path = settings.state_root / "jobs.json"
+        saved = json.loads(path.read_bytes())
+        del saved["nodes"]["local"]["leases"]["gpu-fixture"]["cleanupOnly"]
+        path.write_text(json.dumps(saved), encoding="utf-8")
+
+    with gateway() as client:
+        terminal = scope | {"status": "cancelled", "elapsedSeconds": 45,
+                            "logAfter": 1, "logs": ["last owned line"]}
+        if not retained:
+            del terminal["elapsedSeconds"]
+        response = client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [terminal]})
+        assert response.is_success and response.json()["assignments"] == []
+        view = f"/api/v1/jobs/{job['jobId']}"
+        result = client.get(view).json()
+        assert result["status"] == ("failed" if retained else "cancelled")
+        assert result["reason"] == ("node_lost" if retained else None)
+        retained_metrics = {"iteration": 4, "meanReward": 2.5, "memoryUsedMb": 128}
+        assert result["metrics"] | retained_metrics == result["metrics"]
+        assert result["metrics"]["elapsedSeconds"] == (45 if retained else 42)
+        assert client.get(view + "/logs", params={"after": 1}).json() == {
+            "lines": ["last owned line"], "complete": True, "cursor": 2,
+        }
+
+
 def test_unrelated_measured_profile_never_authorizes_an_estimated_gpu_launch():
     app = create_app(Settings(node_token=TOKEN))
     with TestClient(app) as client:

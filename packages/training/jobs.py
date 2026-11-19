@@ -799,7 +799,10 @@ class TrainingJobs:
                 raise PlanError(
                     "lease_mismatch", "Expired local dispatch requires a cleanup receipt", status=403
                 )
-            if report.status != "cleaned" and report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
+            checks_elapsed = report.status != "cleaned" and (
+                report.status not in TERMINAL or "elapsedSeconds" in report.model_fields_set
+            )
+            if checks_elapsed and report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
             if report.status == "succeeded" and "runtimeIdentity" in lease:
                 try:
@@ -866,7 +869,7 @@ class TrainingJobs:
                 self._append_log_tail(job, report, body.instanceId)
             else:
                 self._append_logs(job, report.logAfter, report.logs)
-            if report.status == "cleaned" or recovering:
+            if report.status in TERMINAL or report.status == "cleaned" or recovering:
                 metrics = job["metrics"]
                 metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), report.elapsedSeconds)
                 if report.status != "cleaned" and report.iteration >= metrics.get("iteration", 0):
