@@ -20,7 +20,7 @@ The external factory workflow and verification targets are in [Lab Scene Factory
 
 ## Amendment (2026-11-19) — Deterministic training and evaluation Scenes
 
-The approved design lets users and external Agents compose deterministic training and evaluation `Scene Draft`s through CLI, MCP or lightweight Web placement controls and publish immutable OpenUSD `Scene Version`s. High-detail laboratory environments remain in the Blender workflow and authoring conversations stay in external `Agent Runtime`s using `Platform Skill`s. [Implementation #298](https://github.com/CaiZongyuan/spatial-sync/issues/298) · [ADR-0001](0001-usd-canonical-scene-format.md) · [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md)
+The approved design lets users and external Agents compose deterministic training and evaluation `Scene Draft`s through CLI, MCP or lightweight Web placement controls and publish immutable OpenUSD `Scene Version`s. High-detail laboratory environments remain in the Blender workflow and authoring conversations stay in external `Agent Runtime`s using `Platform Skill`s. [Scene authoring backend #298](https://github.com/CaiZongyuan/spatial-sync/issues/298) · [Web placement controls #300](https://github.com/CaiZongyuan/spatial-sync/issues/300) · [ADR-0001](0001-usd-canonical-scene-format.md) · [Lab Scene Factory](../spec/LAB_SCENE_FACTORY_SPEC_V1.md)
 
 ### Consequences
 

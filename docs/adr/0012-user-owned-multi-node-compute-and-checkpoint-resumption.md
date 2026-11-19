@@ -5,7 +5,7 @@ date: 2026-11-19
 
 # User-owned Compute Nodes, safetensors Checkpoints and per-attempt accounting
 
-The approved design extends Lab World's self-hosted gateway to accept authenticated remote connections from user-provided `Compute Node`s alongside the existing local node, so teams can use local GPUs, remote Linux servers and ephemeral cloud notebooks. Transfer intermediate `Checkpoint`s as `safetensors` tensors and JSON metadata so a `Job` can suspend after lease loss and resume on a compatible node. Sum actual GPU time across lease attempts and reuse the over-budget `Approval Gate` when the projected additional GPU cost of resuming exceeds the `Training Plan`'s remaining approved budget after prior charges and existing reservations. [Implementation #292](https://github.com/CaiZongyuan/spatial-sync/issues/292)
+The approved design extends Lab World's self-hosted gateway to accept authenticated remote connections from user-provided `Compute Node`s alongside the existing local node, so teams can use local GPUs, remote Linux servers and ephemeral cloud notebooks. Transfer intermediate `Checkpoint`s as `safetensors` tensors and JSON metadata so a `Job` can suspend after lease loss and resume on a compatible node. Sum actual GPU time across lease attempts and reuse the over-budget `Approval Gate` when the projected additional GPU cost of resuming exceeds the `Training Plan`'s remaining approved budget after prior charges and existing reservations. [Remote node registration and authentication #292](https://github.com/CaiZongyuan/spatial-sync/issues/292) · [Checkpoint transfer, suspension, resumption and per-attempt billing #293](https://github.com/CaiZongyuan/spatial-sync/issues/293)
 
 ## Considered Options
 
