@@ -726,9 +726,32 @@ def _check_mjlab_plane_pose(model, name, path):
         raise UnsupportedUsdPhysics(path, "Final mjlab terrain must remain a fixed Z-up plane at height zero")
 
 
-def _mjlab_contact_snapshot(model, names_by_path, plane_path):
+def mujoco_rotation_matrix(quat):
     import mujoco
     import numpy as np
+
+    matrix = np.empty(9)
+    quat = np.asarray(quat, dtype=float)
+    mujoco.mju_quat2Mat(matrix, quat / np.linalg.norm(quat))
+    return matrix.reshape(3, 3)
+
+
+def mujoco_collision_axes(geom_type, rotation):
+    import mujoco
+    import numpy as np
+
+    if geom_type == mujoco.mjtGeom.mjGEOM_SPHERE:
+        return None
+    if geom_type == mujoco.mjtGeom.mjGEOM_PLANE:
+        return rotation[:, 2]
+    if geom_type in (mujoco.mjtGeom.mjGEOM_CAPSULE, mujoco.mjtGeom.mjGEOM_CYLINDER):
+        axis = rotation[:, 2]
+        return np.outer(axis, axis)
+    return rotation
+
+
+def _mjlab_collider_paths(model, names_by_path):
+    import mujoco
 
     paths = {}
     for path, name in names_by_path.items():
@@ -736,6 +759,12 @@ def _mjlab_contact_snapshot(model, names_by_path, plane_path):
         if index < 0:
             raise UnsupportedUsdPhysics(path, f"Missing USD collision geom {name}")
         paths[index] = path
+    return paths
+
+
+def _mjlab_contact_snapshot(model, paths, plane_path):
+    import mujoco
+    import numpy as np
 
     disabled = mujoco.mjtDisableBit.mjDSBL_CONTACT | mujoco.mjtDisableBit.mjDSBL_CONSTRAINT
     if model.opt.disableflags & disabled:
@@ -761,6 +790,75 @@ def _mjlab_contact_snapshot(model, names_by_path, plane_path):
             raise UnsupportedUsdPhysics(pair[0], f"Non-finite contact parameters with {pair[1]}")
         pairs[pair] = parameters
     return pairs
+
+
+def _link_local_collision_geometry(model, index, path):
+    import mujoco
+    import numpy as np
+
+    geom_type = model.geom_type[index]
+    position = model.geom_pos[index].copy()
+    quat = model.geom_quat[index]
+    if not np.isfinite(quat).all() or np.linalg.norm(quat) < 1e-12:
+        raise UnsupportedUsdPhysics(path, "Invalid link-local collider rotation")
+    rotation = mujoco_rotation_matrix(quat)
+    size = model.geom_size[index]
+    points = None
+    if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
+        mesh = model.geom_dataid[index]
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        vertices = model.mesh_vert[start:start + count]
+        graph = model.mesh_graphadr[mesh]
+        if graph >= 0:
+            # MuJoCo's convex graph stores the mesh-local indices of hull vertices.
+            count = model.mesh_graph[graph]
+            offset = graph + 2 + count
+            vertices = vertices[model.mesh_graph[offset:offset + count]]
+        # The compiled geom already compensates for the mesh's principal frame.
+        points = position + vertices @ rotation.T
+        parameters = {}
+    elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
+        # Box corners preserve equivalent permutations and signs of local axes.
+        points = position + (np.array(list(product((-1., 1.), repeat=3))) * size) @ rotation.T
+        parameters = {}
+    else:
+        dimensions = {
+            mujoco.mjtGeom.mjGEOM_SPHERE: 1,
+            mujoco.mjtGeom.mjGEOM_CAPSULE: 2,
+            mujoco.mjtGeom.mjGEOM_CYLINDER: 2,
+        }
+        count = dimensions.get(mujoco.mjtGeom(int(geom_type)))
+        if count is None:
+            raise UnsupportedUsdPhysics(path, "Unsupported compiled collider type")
+        parameters = {"link-local position": position, "dimensions": size[:count].copy()}
+        axes = mujoco_collision_axes(geom_type, rotation)
+        if axes is not None:
+            parameters["link-local orientation"] = axes
+
+    if not all(np.isfinite(values).all() for values in parameters.values()):
+        raise UnsupportedUsdPhysics(path, "Non-finite link-local collider geometry")
+    if points is not None and (not len(points) or not np.isfinite(points).all()):
+        raise UnsupportedUsdPhysics(path, "Invalid link-local collider vertices")
+    owner = model.body(int(model.geom_bodyid[index])).name
+    return owner, geom_type, parameters, points
+
+
+def _same_collider_points(reference, candidate, tolerance):
+    import numpy as np
+
+    if reference.shape == candidate.shape and np.allclose(reference, candidate, atol=tolerance, rtol=0.):
+        return True
+
+    def contains_all(points, pool):
+        # Restrict each tolerance lookup to a window on the widest axis.
+        axis = int(np.argmax(np.ptp(pool, axis=0)))
+        pool = pool[np.argsort(pool[:, axis])]
+        lower = np.searchsorted(pool[:, axis], points[:, axis] - tolerance)
+        upper = np.searchsorted(pool[:, axis], points[:, axis] + tolerance, side="right")
+        return all(np.any(np.all(np.abs(pool[lo:hi] - point) <= tolerance, axis=1))
+                   for point, lo, hi in zip(points, lower, upper, strict=True))
+
+    return contains_all(reference, candidate) and contains_all(candidate, reference)
 
 
 def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
@@ -797,9 +895,15 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     plane_path = plane.GetPath()
     derived = derive_usd_mjcf(stage, prim_path=str(root.GetPath()))
     source_names = derived.collider_names_by_path
-    expected = _mjlab_contact_snapshot(derived.to_mjmodel(), source_names, str(plane_path))
+    source_model = derived.to_mjmodel()
+    source_paths = _mjlab_collider_paths(source_model, source_names)
     prefix = next(iter(scene_cfg.entities)) + "/"
     plane_key = str(plane_path)
+    expected = _mjlab_contact_snapshot(source_model, source_paths, plane_key)
+    expected_geometry = {
+        path: _link_local_collision_geometry(source_model, index, path)
+        for index, path in source_paths.items() if path != plane_key
+    }
     final_names = {path: "terrain" if path == plane_key else prefix + name
                    for path, name in source_names.items()}
     previous = scene_cfg.spec_fn
@@ -817,7 +921,23 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
 
     def verify(model):
         _check_mjlab_plane_pose(model, "terrain", plane_path)
-        actual = _mjlab_contact_snapshot(model, final_names, plane_key)
+        final_paths = _mjlab_collider_paths(model, final_names)
+        for index, path in final_paths.items():
+            if path == plane_key:
+                continue
+            owner, geom_type, parameters, points = expected_geometry[path]
+            if model.body(int(model.geom_bodyid[index])).name != prefix + owner:
+                raise UnsupportedUsdPhysics(path, "Simulation changed collider ownership")
+            if model.geom_type[index] != geom_type:
+                raise UnsupportedUsdPhysics(path, "Simulation changed collider type")
+            _, _, actual_parameters, actual_points = _link_local_collision_geometry(model, index, path)
+            for name, values in parameters.items():
+                if not np.allclose(values, actual_parameters[name], rtol=0., atol=1e-5):
+                    raise UnsupportedUsdPhysics(path, f"Simulation changed collider {name}")
+            if points is not None and not _same_collider_points(points, actual_points, 1e-5):
+                raise UnsupportedUsdPhysics(path, "Simulation changed link-local collider vertices")
+
+        actual = _mjlab_contact_snapshot(model, final_paths, plane_key)
         changed_pairs = expected.keys() ^ actual.keys()
         if changed_pairs:
             first, second = min(changed_pairs)

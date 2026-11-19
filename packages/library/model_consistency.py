@@ -19,7 +19,8 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     import newton
     import numpy as np
 
-    from apps.node.usd_mjcf import mujoco_contact_pairs
+    from apps.node.usd_mjcf import mujoco_collision_axes, mujoco_contact_pairs
+    from apps.node.usd_mjcf import mujoco_rotation_matrix as rotation
 
     model = mujoco.MjModel.from_xml_string(derived.mjcf_xml)
     reference = newton_model
@@ -46,12 +47,6 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
 
     def ids(names, kind):
         return {path: mujoco.mj_name2id(model, kind, name) for path, name in names.items()}
-
-    def rotation(quat):
-        matrix = np.empty(9)
-        normalized = np.asarray(quat, dtype=float)
-        mujoco.mju_quat2Mat(matrix, normalized / np.linalg.norm(normalized))
-        return matrix.reshape(3, 3)
 
     joint_ids = ids({joint.prim_path: joint.name for joint in derived.joints}, mujoco.mjtObj.mjOBJ_JOINT)
     newton_body_rotations = [rotation(pose[[6, 3, 4, 5]]) for pose in newton_body_poses]
@@ -178,14 +173,10 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
                 geom_rotation = geom_rotation @ rotation(model.mesh_quat[mesh]).T
                 geom_position = geom_position - geom_rotation @ model.mesh_pos[mesh]
             close("Collider world position", shape_position - origin, geom_position, path, POSITION_ATOL, 0.)
-            if geom_type == mujoco.mjtGeom.mjGEOM_PLANE:
-                shape_rotation, geom_rotation = shape_rotation[:, 2], geom_rotation[:, 2]
-            elif geom_type in (mujoco.mjtGeom.mjGEOM_CAPSULE, mujoco.mjtGeom.mjGEOM_CYLINDER):
-                # These shapes have an unoriented symmetry axis.
-                axis, other = shape_rotation[:, 2], geom_rotation[:, 2]
-                shape_rotation, geom_rotation = np.outer(axis, axis), np.outer(other, other)
-            if geom_type != mujoco.mjtGeom.mjGEOM_SPHERE:
-                close("Collider world orientation", shape_rotation, geom_rotation, path, ORIENTATION_ATOL, 0.)
+            expected_axes = mujoco_collision_axes(geom_type, shape_rotation)
+            if expected_axes is not None:
+                actual_axes = mujoco_collision_axes(geom_type, geom_rotation)
+                close("Collider world orientation", expected_axes, actual_axes, path, ORIENTATION_ATOL, 0.)
 
     newton_paths = {index: path for path, index in newton_colliders.items()}
     geom_paths = {index: path for path, index in geom_ids.items() if index >= 0}

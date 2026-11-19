@@ -73,6 +73,14 @@ def test_mjlab_simulation_rejects_robot_exclusion_added_by_scene_callback(tmp_pa
     run_pinned_composition(tmp_path, "exclude")
 
 
+def test_mjlab_simulation_rejects_shifted_usd_collider(tmp_path):
+    run_pinned_composition(tmp_path, "geometry")
+
+
+def test_mjlab_simulation_compares_compiled_meshes_in_the_link_frame(tmp_path):
+    run_pinned_composition(tmp_path, "mesh")
+
+
 def run_pinned_composition(tmp_path, case):
     import pytest
 
@@ -273,6 +281,10 @@ def check_final_simulation(path, case):
         callback_calls.append(1)
         spec.add_exclude(bodyname1="robot/A", bodyname2="robot/B")
 
+    def shift_collider(spec):
+        callback_calls.append(1)
+        spec.geom("robot/A_Ball").pos[2] += .5
+
     def build(*, callback=None, disabled=()):
         cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
                        entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
@@ -296,9 +308,14 @@ def check_final_simulation(path, case):
         sim, verify, actual = build(disabled=("contact",))
         assert actual == set()
         assert sim.mj_model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT
-    else:
+    elif case == "exclude":
         sim, verify, actual = build(callback=add_exclusion)
         assert actual == {frozenset(("terrain", "robot/A_Ball"))}
+        assert len(callback_calls) == 1
+    else:
+        sim, verify, actual = build(callback=shift_collider)
+        assert actual == set()
+        assert sim.mj_model.geom("robot/A_Ball").pos[2] == .5
         assert len(callback_calls) == 1
     print(f"{case} original={sorted(map(sorted, original))} final={sorted(map(sorted, actual))} "
           f"disableflags={sim.mj_model.opt.disableflags}", flush=True)
@@ -309,9 +326,91 @@ def check_final_simulation(path, case):
             assert exc.prim_path == "/World/Lab/Floor"
         else:
             assert exc.prim_path == "/World/Lab/Robot/A/Ball"
-            assert "/World/Lab/Robot/B/Ball" in str(exc)
+            if case == "exclude":
+                assert "/World/Lab/Robot/B/Ball" in str(exc)
+            else:
+                assert "link-local position" in str(exc)
     else:
         raise AssertionError(f"Final Simulation accepted {case}")
+
+
+def check_mesh_geometry(path):
+    import mujoco
+    import numpy as np
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # An asymmetric hull on C stays away from the floor and other links.
+    stage = STAGE.replace('def Xform "C" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {', '''
+            def Xform "C" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {
+                def Mesh "Hull" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+                    point3f[] points = [(0.25, 0, 0), (0.29, 0, 0), (0.25, 0.06, 0), (0.25, 0, 0.08)]
+                    int[] faceVertexCounts = [3, 3, 3, 3]
+                    int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+                }
+    ''')
+    path.write_text(stage)
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+
+    def build(callback=None):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        model = Scene(cfg, device="cpu").compile()
+        return Simulation(1, SimulationCfg(), model, device="cpu"), verify
+
+    def reframe_mesh(spec, *, compensate):
+        geom = spec.geom("robot/C_Hull")
+        mesh = spec.mesh(geom.meshname)
+        vertices = np.asarray(mesh.uservert).reshape(-1, 3)
+        # Offsetting mesh authoring coordinates changes the compiler's principal
+        # frame. The inverse geom offset preserves every physical vertex.
+        order = [2, 0, 3, 1]
+        indices = np.argsort(order)
+        offset = np.array([.5, 0., 0.])
+        mesh.uservert = (vertices[order] + offset).ravel()
+        mesh.userface = indices[np.asarray(mesh.userface)].ravel()
+        if compensate:
+            geom.pos[:] -= offset
+            spec.geom("robot/A_Ball").quat[:] *= -1
+
+    def forward_mesh_center(sim):
+        model = sim.mj_model
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        geom = model.geom("robot/C_Hull").id
+        assert all(geom not in (contact.geom1, contact.geom2) for contact in data.contact)
+        mesh = model.geom_dataid[geom]
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        local_center = model.mesh_vert[start:start + count].mean(axis=0)
+        return data.geom_xpos[geom] + data.geom_xmat[geom].reshape(3, 3) @ local_center
+
+    before, verify_before = build()
+    verify_before(before.mj_model)
+    equivalent, verify_equivalent = build(lambda spec: reframe_mesh(spec, compensate=True))
+    verify_equivalent(equivalent.mj_model)
+    center = forward_mesh_center(before)
+    np.testing.assert_allclose(forward_mesh_center(equivalent), center, rtol=0., atol=1e-7)
+    data = mujoco.MjData(equivalent.mj_model)
+    # Model geometry is independent of where a reset or an initial pose puts the root.
+    data.qpos[2] += .75
+    mujoco.mj_forward(equivalent.mj_model, data)
+    verify_equivalent(equivalent.mj_model)
+
+    changed, verify_changed = build(lambda spec: reframe_mesh(spec, compensate=False))
+    np.testing.assert_allclose(forward_mesh_center(changed) - center, [.5, 0, 0], rtol=0., atol=1e-7)
+    try:
+        verify_changed(changed.mj_model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == "/World/Lab/Robot/C/Hull"
+        assert "link-local collider vertices" in str(exc)
+    else:
+        raise AssertionError("Final Simulation accepted a shifted mesh")
+    print("Equivalent mesh frame, vertex order, quaternion sign and root pose accepted", flush=True)
 
 
 if __name__ == "__main__":
@@ -320,5 +419,7 @@ if __name__ == "__main__":
         check_composition(path)
     elif case in ("mask", "friction"):
         check_ground_fidelity(path, case)
+    elif case == "mesh":
+        check_mesh_geometry(path)
     else:
         check_final_simulation(path, case)
