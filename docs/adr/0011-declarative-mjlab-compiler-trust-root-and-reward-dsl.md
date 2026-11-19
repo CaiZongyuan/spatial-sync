@@ -3,16 +3,18 @@ status: accepted
 date: 2026-11-19
 ---
 
-# Compiler-rooted Task qualification, bounded reward expression DSL and Goal-bound Evaluation Suites
+# Compiler-rooted Task qualification, bounded rewards and Goal-bound Evaluation Suites
 
-Self-service `Task` creation uses a **declarative `mjlab` environment compiler** as the sole unreviewed authoring channel for users and Agents; arbitrary Python `Task` archives (`pyproject.toml` entry points) are restricted to built-in or human-audited operator packages because the platform does not provide an OS-level sandbox. Correspondingly, observation-qualification trust moves from per-`taskContentHash` files under `library/observation-profiles/` to a **platform-owned compiler observation profile** that pins the declarative compiler implementation hash and verified `mjlab`/`rsl_rl` package versions while validating each `Task` purely as structured data (extending `lw.obs-spec` and `lw.policy-native-observation-samples` backward-compatibly for phase and reference-frame channels).
-
-Each declarative `Task` locks its `Scene Version`, robot entity, `EntityType` action, control rate, action space, episode randomization/curriculum and `ObservationSpec`, while combining built-in MDP primitives (Layer A) with an optional **non-Python expression DSL** (Layer B) evaluated over versioned `lw.reward-state/1` tensors (`xyzw` quaternions, canonical `Z-up` SI units, bounded AST depth/node count, no imports/attribute traversal/unbounded tensor allocations, plus runtime `nan_to_num` and magnitude clamping). Before a `Training Plan` reaches its human `Approval Gate`, a compute-node **plan validation and profiling `Job`** compiles and steps the environment at the target `num_envs` to verify DSL finiteness/memory and attach a measured GPU-hour estimate directly to the approval request.
-
-To preserve RSI comparability across iterative reward revisions, server-generated embodied `Evaluation Suite`s bind to `(EntityType action, Goal)` rather than regenerating on every `Task` edit: success predicates, perturbation dimensions and minimum sample count (at least 30 perturbed episodes) freeze at the `Goal`'s first `Training Plan` `Approval Gate`, with `split: test` seeds generated and sealed exclusively by the gateway. Agents may trigger `split: train` `Evaluation`s freely; `split: test` runs only during human `Controller` promotion, where the first qualified `Candidate` establishes the initial `Reference`.
+Use the platform-owned declarative `mjlab` environment compiler as the sole observation-qualification trust root for self-service `Task`s, and reserve Python `Task` archives for built-in or human-audited operator use. Combine built-in MDP primitives with a bounded mathematical expression DSL over versioned `lw.reward-state/1` tensors so users can define rewards and terminations as data. To preserve RSI comparability across reward revisions, the server generates embodied `Evaluation Suite`s by `(EntityType action, Goal)` and freezes their criteria and perturbations at the first approved `Training Plan` for the `Goal`.
 
 ## Considered Options
 
-- **Per-Task repository observation profiles**: blocks every user-created `Task` with `observation_source_unverified` unless an engineer commits a profile file.
-- **Python AST whitelisting for custom rewards**: vulnerable to attribute/module escape paths whenever `torch` objects are reachable.
-- **Per-Task auto-generated `Evaluation Suite`s**: changes `suiteContentHash` on every reward tweak, making `Candidate` and `Reference` non-comparable under Wilson lower-bound rules.
+- **Per-Task repository observation profiles** block a user-created `Task` with `observation_source_unverified` until an engineer commits a profile.
+- **Python AST whitelisting for custom rewards** exposes attribute and module escape paths when `torch` objects are reachable.
+- **Per-Task auto-generated `Evaluation Suite`s** change `suiteContentHash` on reward edits, making `Candidate` and `Reference` incomparable under Wilson lower-bound rules.
+
+## Consequences
+
+- Self-service trust follows the verified compiler and trainer versions. Python archives require a trusted channel because the platform has no OS-level sandbox for them. [Task and observation contracts](../spec/LAB_SELF_SERVICE_EMBODIED_SPEC_V1.md#implementation-decisions)
+- A `plan_validation` `Job` steps the environment at the target `num_envs` before the human gate, checking reward finiteness and memory use and attaching a measured GPU-hour estimate to the approval request.
+- Agents can run `split: train` independently. The gateway generates and seals `split: test` seeds for human `Controller` promotion, when the first qualified `Candidate` establishes the initial `Reference`.

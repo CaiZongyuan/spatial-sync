@@ -142,11 +142,11 @@ _Avoid_: Decoration, background entity
 ## Training
 
 **Job** (作业):
-A long-running piece of work the platform launches outside the gateway and tracks through queued, running, suspended, succeeded, failed or cancelled; training, plan validation and motion preprocessing are managed kinds.
+A unit of work the platform tracks for execution on a Compute Node, such as training, plan validation, motion preprocessing or checkpoint finalization (`checkpoint_finalize`).
 _Avoid_: Run (when meaning the managed unit), process, experiment
 
 **Compute Node** (计算节点):
-A user-attached GPU or CPU machine—colocated with the gateway, on a remote server, or in an ephemeral cloud session—registered to claim and execute Jobs by polling the gateway.
+A user-provided compute resource registered with Lab World to run Jobs.
 _Avoid_: Runner, worker, Agent Runtime
 
 **Checkpoint** (检查点):
@@ -166,7 +166,7 @@ A Plan whose steps are action calls, waits and checks on Entities, each with an 
 _Avoid_: Procedure, recipe, protocol (wet-lab sense)
 
 **Training Plan** (训练计划):
-A Plan for one round of training that a person must approve before any Job starts: goal, hypotheses, algorithm, model architecture, Task changes and budget.
+A Plan for one round of training that records the goal, hypotheses, algorithm, model architecture, Task changes and budget. Human approval authorizes training to start.
 _Avoid_: Experiment, sweep, config
 
 **Hypothesis** (假设):

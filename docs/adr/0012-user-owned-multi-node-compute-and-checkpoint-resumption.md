@@ -3,13 +3,17 @@ status: accepted
 date: 2026-11-19
 ---
 
-# User-attached multi-node Compute Nodes, safetensors Checkpoints and per-attempt resumption
+# User-owned Compute Nodes, safetensors Checkpoints and per-attempt accounting
 
-Lab World operates under a **self-hosted / user-supplied compute model**: users run their own gateway and attach their own `Compute Node`s—including gateway-colocated GPUs, user-owned remote Linux GPU servers, and user-operated ephemeral cloud notebooks such as Google Colab—rather than sharing a multi-tenant public compute pool. To support remote and NAT-restricted user nodes cleanly, the gateway adds an authenticated remote-node mode (lifting the loopback-only `node_gateway_url` restriction when explicit auth is configured), issues one-time registration codes exchanged for scoped, revocable per-node tokens, separates persistent `nodeId` from per-connection `instanceId`, decouples hardware timing profiles from ephemeral hostnames, and scopes local-session CUDA locks solely to colocated GPUs.
-
-Both RL training `Job`s, plan-validation/profiling `Job`s and motion-preprocessing `Job`s schedule across compatible registered `Compute Node`s (verifying pinned trainer dependency versions on claim). Running training `Job`s periodically upload intermediate `Checkpoint`s in **tensor-only `safetensors` plus JSON metadata format** (never unpickling untrusted `.pt` code on the gateway or peer nodes; ONNX export and 256-sample `NativeObservationCapture` verification always execute on a `Compute Node`, including via a dedicated checkpoint-finalize `Job` when evaluating an intermediate `Checkpoint`). When a `Compute Node` disconnects past lease TTL, its monotonic `leaseId` epoch is fenced and the `Job` transitions to `suspended` rather than terminal `failed/node_lost`, allowing resumption from the latest `Checkpoint` on another compatible `Compute Node` (statistical continuation across GPU architectures, not bitwise identity). Resource accounting records additive GPU-hours per lease attempt, and retains the existing over-budget `Approval Gate` whenever re-estimated remaining cost on a slower replacement GPU exceeds the approved `Training Plan` budget.
+Lab World uses a self-hosted gateway with authenticated, user-provided `Compute Node`s so teams can attach local GPUs, remote Linux servers and ephemeral cloud notebooks. Training `Job`s return intermediate `Checkpoint`s as tensor-only `safetensors` with JSON metadata so a lost lease can suspend training and a compatible node can resume it. Account for actual GPU time per lease attempt and reuse the over-budget `Approval Gate` when rescheduling exceeds the approved `Training Plan` budget.
 
 ## Considered Options
 
-- **Single hardcoded `"local"` node with terminal `node_lost`**: loses all elapsed progress when ephemeral Colab sessions disconnect and prevents attaching remote user GPU servers cleanly.
-- **Multi-tenant untrusted node sandboxing and privacy consent tiers**: unnecessary complexity while all attached `Compute Node`s belong to the self-hosting user or team; revisited only if a hosted multi-tenant SaaS offering is introduced later.
+- **One hardcoded `local` node with terminal `node_lost`** loses training progress when an ephemeral session disconnects and prevents remote GPU access.
+- **Multi-tenant untrusted node sandboxing and privacy consent tiers** add complexity outside the self-hosting scope.
+
+## Consequences
+
+- Explicit authentication enables non-loopback node connections using revocable per-node credentials. The local CUDA lock covers only colocated GPUs, and timing profiles remain usable across host renames.
+- At lease expiry the gateway fences the old `leaseId` before a compatible node can resume. Cross-architecture resumption guarantees statistical continuation only.
+- Model export and 256-sample `NativeObservationCapture` verification run on a `Compute Node`. A `checkpoint_finalize` `Job` can prepare an intermediate `Checkpoint` for evaluation on a compatible node. [Job and Checkpoint contracts](../spec/LAB_SELF_SERVICE_EMBODIED_SPEC_V1.md#implementation-decisions)
