@@ -514,6 +514,8 @@ COMMANDS = (
                 Argument("seed", ("--seed",), int | None, "One of the declared seeds", None),
                 Argument("planRevision", ("--revision",), int | None, "Expected approved revision", None),
                 Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
+                Argument("kind", ("--kind",), Literal["training", "plan_validation"], "Job kind", "training"),
+                Argument("targetNodeId", ("--node",), str | None, "Target Compute Node", None),
             ), mcp_name="job_start", actor=True),
     Command(path=("job", "ls"), help="List retained jobs and their real queue/approval state.",
             method="job_list", arguments=(
@@ -533,6 +535,16 @@ COMMANDS = (
             mcp_name="job_logs"),
     Command(path=("node", "ls"), help="Read actual node capabilities, profiles, leases and queue.",
             method="node_list", output_type=list[dict[str, Any]], mcp_name="node_ls"),
+    Command(path=("node", "issue"), help="Issue a single-use Compute Node registration code.",
+            method="node_issue", actor=True, arguments=(
+                Argument("nodeId", ("--node-id",), str | None, "Persistent node ID", None),
+                Argument("ttlSeconds", ("--ttl",), int, "Validity in seconds", 600),
+                Argument("colocated", ("--colocated",), bool, "Share gateway GPUs with Sessions", False),
+            )),
+    Command(path=("node", "show"), help="Inspect a Compute Node.", method="node_show",
+            arguments=(Argument("id", ("id",), str, "Compute Node ID"),)),
+    Command(path=("node", "revoke"), help="Revoke a Compute Node token and fence its leases.",
+            method="node_revoke", actor=True, arguments=(Argument("id", ("id",), str, "Compute Node ID"),)),
     Command(
         path=("task", "push"), help="Snapshot an Isaac Lab Task source package without executing it.",
         method="task_push",

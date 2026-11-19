@@ -7,14 +7,24 @@ imports from ``packages.*`` or ``apps.*`` so isolated trainer environments can r
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.metadata
 import json
+import math
 import os
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+
+
+def compiler_hash():
+    digest = hashlib.sha256()
+    for name in ("mjlab_launcher.py", "usd_mjcf.py"):
+        digest.update(Path(__file__).with_name(name).read_bytes())
+    return digest.hexdigest()
 
 
 def build_mjlab_launcher_parser() -> argparse.ArgumentParser:
@@ -38,6 +48,7 @@ def build_mjlab_launcher_parser() -> argparse.ArgumentParser:
     parser.add_argument("--critic_hidden_dims", default=None)
     parser.add_argument("--activation", default=None)
     parser.add_argument("--obs_normalization", default=None)
+    parser.add_argument("--validation-iterations", type=int, choices=(3,))
     return parser
 
 
@@ -80,6 +91,71 @@ def _load_registered_mjlab_tasks(target_task: str) -> None:
         raise ValueError(f"mjlab task {target_task!r} was not registered by any mjlab.tasks entry point")
 
 
+def profile_training(runner, env, *, device, num_envs, iterations, synchronize, setup_started):
+    import torch
+
+    def check_batch(observations, rewards=None):
+        if tuple(observations.batch_size) != (num_envs,) or (
+            rewards is not None and tuple(rewards.shape) != (num_envs,)
+        ):
+            raise ValueError("Validation did not step the requested number of environments")
+        tensors = list(observations.values(include_nested=True, leaves_only=True))
+        if not tensors:
+            raise ValueError("Validation received no observations")
+        if rewards is not None:
+            tensors.append(rewards)
+        checks.extend(torch.isfinite(tensor).all() for tensor in tensors)
+
+    def act(observations):
+        nonlocal started
+        if steps == 0:
+            synchronize()
+            if not samples:
+                check_batch(observations)
+                check_finite()
+            started = time.perf_counter()
+        return original_act(observations)
+
+    def step(actions):
+        nonlocal steps
+        observations, rewards, dones, extras = original_step(actions)
+        check_batch(observations, rewards)
+        steps += 1
+        return observations, rewards, dones, extras
+
+    def check_finite():
+        if checks and not bool(torch.stack(checks).all().item()):
+            raise ValueError("Validation produced non-finite observations or rewards")
+        checks.clear()
+
+    def log(**values):
+        nonlocal steps
+        synchronize()
+        samples.append(time.perf_counter() - started)
+        if steps != runner.cfg["num_steps_per_env"] or steps < 1:
+            raise ValueError("Validation did not complete a full PPO rollout")
+        check_finite()
+        losses = values["loss_dict"]
+        if not losses or not all(math.isfinite(loss) for loss in losses.values()):
+            raise ValueError("Validation produced invalid PPO losses")
+        steps = 0
+
+    checks, samples = [], []
+    steps, started = 0, 0.0
+    original_act, original_step = runner.alg.act, env.step
+    runner.alg.act, env.step, runner.logger.log = act, step, log
+    synchronize()
+    setup_seconds = time.perf_counter() - setup_started
+    runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+    if len(samples) != iterations or steps:
+        raise ValueError("Validation did not complete the bounded PPO iterations")
+    return {
+        "numEnvs": num_envs, "setupSeconds": setup_seconds, "warmupSeconds": samples[0],
+        "samplesSeconds": samples[1:],
+        "peakMemoryMb": torch.cuda.max_memory_allocated(device) / (1024 * 1024) if device != "cpu" else None,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_mjlab_launcher_args(argv)
     device = args.device
@@ -89,7 +165,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         os.environ.setdefault("MUJOCO_GL", "egl")
         os.environ.setdefault("MUJOCO_EGL_DEVICE_ID", "0")
 
-    callback_module = _invoke_callback(args.external_callback)
+    validation = args.validation_iterations is not None
+    if validation:
+        from lw_training_bridge import verify_trainer_versions
+
+        inputs = json.loads(Path(os.environ["LW_NODE_INPUTS"]).read_text(encoding="utf-8"))
+        verify_trainer_versions(inputs, True)
+        callback_module = None
+    else:
+        callback_module = _invoke_callback(args.external_callback)
+    setup_started = time.perf_counter()
     _seed_everything(args.seed, device)
     _load_registered_mjlab_tasks(args.task)
 
@@ -152,6 +237,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
     try:
         agent_dict = asdict(agent_cfg)
+        if validation:
+            def synchronize():
+                if device != "cpu":
+                    import torch
+                    import warp
+
+                    warp.synchronize_device(device)
+                    torch.cuda.synchronize(device)
+
+            runner = runner_cls(vec_env, agent_dict, None, device=device)
+            timing = profile_training(
+                runner, vec_env, device=device, num_envs=args.num_envs, iterations=args.validation_iterations,
+                synchronize=synchronize, setup_started=setup_started,
+            )
+            (Path(os.environ["LW_NODE_OUTPUT"]) / "validation.json").write_text(
+                json.dumps(timing, allow_nan=False), encoding="utf-8"
+            )
+            return
         dump_yaml(log_dir / "params" / "env.yaml", asdict(env_cfg))
         dump_yaml(log_dir / "params" / "agent.yaml", agent_dict)
         runner = runner_cls(vec_env, agent_dict, str(log_dir), device=device)

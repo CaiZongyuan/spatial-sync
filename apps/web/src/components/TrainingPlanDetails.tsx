@@ -3,7 +3,8 @@ import { ProgramReview } from './training/ProgramReview';
 import '../training-plans.css';
 
 type TrainingContent = Pick<TrainingPlanDocument, 'goal' | 'task' | 'algorithm' | 'model' | 'hyperparameters'
-  | 'program' | 'jobs' | 'budget' | 'evaluation' | 'rationale' | 'hypotheses' | 'notebookRead' | 'interview' | 'previous'>;
+  | 'program' | 'jobs' | 'budget' | 'evaluation' | 'rationale' | 'hypotheses' | 'notebookRead' | 'interview' | 'previous'
+  | 'estimatedGpuHours' | 'estimatedWallSeconds'>;
 const value = (item: unknown) => item == null ? '—' : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
 
 function Interview({ transcript }: { transcript: string }) {
@@ -30,6 +31,9 @@ export function TrainingPlanDetails({ plan, changes = [] }: { plan: TrainingCont
         <div><dt>规模与超参</dt><dd><pre>{value(plan.hyperparameters)}</pre></dd></div></>}
         <div><dt>作业种子</dt><dd>{plan.jobs.seeds.join(', ') || '无训练作业'}</dd></div>
         {plan.program ? <div><dt>评估回合预算</dt><dd>{plan.budget.episodes} 回合</dd></div> : <div><dt>GPU 预算</dt><dd>{plan.budget.gpuHours} 小时</dd></div>}
+        {plan.estimatedGpuHours != null && <div><dt>校验后预计用量</dt><dd>
+          {Number(plan.estimatedGpuHours.toPrecision(3))} GPU 小时 · {Math.round(plan.estimatedWallSeconds ?? 0)} 秒
+        </dd></div>}
         <div><dt>成功标准</dt><dd>{plan.evaluation.scene} · {plan.evaluation.episodes} 回合
           {plan.evaluation.threshold != null && ` · 至少 ${plan.evaluation.threshold} 次成功`}</dd></div>
       </dl>

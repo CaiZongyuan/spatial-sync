@@ -17,7 +17,7 @@ export function ComputeNodes({ nodes, jobs, compact = false }: {
       <header><div><h3>{node.id}</h3><span className={`job-status is-${node.state}`}>{node.state === 'online' ? '已连接' : '已失联'}</span>
         {leases.length > 0 && <span className="resource-tag">{leases.length} 个租约</span>}</div>
         {compact && <Link to="/resources/gpu">查看算力 →</Link>}</header>
-      <div className="resource-panel-body"><p className="compute-hardware">{node.hardware}</p>
+      <div className="resource-panel-body">{(node.hostname || node.hardware) && <p className="compute-hardware">{node.hostname || node.hardware}</p>}
         <p className="resource-note">最近心跳 {localTime(node.lastSeen)} · {node.cpuAvailable ? '支持 CPU 作业' : '未提供 CPU 算力'}</p>
         {node.state === 'offline' && <p className="resource-note">节点未在时限内上报；已有租约保留至作业清理，不能视为空闲。</p>}
         {!node.gpus.length && <p className="resource-note">节点未报告 GPU 设备。</p>}

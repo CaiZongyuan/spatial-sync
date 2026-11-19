@@ -75,6 +75,8 @@ class GatewayClient:
             raise GatewayError(f"Gateway connection failed ({type(exc).__name__})") from exc
         if response_headers is not None:
             response_headers.update(response.headers)
+        if response.status_code == 204:
+            return None
         if response_bytes and not response.is_error:
             return response.content
         try:
@@ -1225,10 +1227,13 @@ class GatewayClient:
             raise ValueError("plan submit requires kind: training")
         return await self.request("POST", "/api/v1/plans", actor=actor, json=document)
 
-    async def job_start(self, planId, seed=None, planRevision=None, requestId=None, *, actor="cli:lw"):
+    async def job_start(self, planId, seed=None, planRevision=None, requestId=None,
+                        kind="training", targetNodeId=None, *, actor="cli:lw"):
         return await self.request("POST", "/api/v1/jobs", actor=actor, json={
             "planId": planId, "seed": seed, "planRevision": planRevision,
             "requestId": requestId or uuid.uuid4().hex,
+            **({"kind": kind} if kind != "training" else {}),
+            **({"targetNodeId": targetNodeId} if targetNodeId else {}),
         })
 
     async def job_list(self, plan=None, status=None, kind=None):
@@ -1251,6 +1256,17 @@ class GatewayClient:
 
     async def node_list(self):
         return (await self.request("GET", "/api/v1/nodes"))["nodes"]
+
+    async def node_issue(self, nodeId=None, ttlSeconds=600, colocated=False, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/nodes/registrations", actor=actor,
+                                  json={"nodeId": nodeId, "ttlSeconds": ttlSeconds, "colocated": colocated})
+
+    async def node_show(self, id):
+        return await self.request("GET", "/api/v1/nodes/" + quote(id, safe=""))
+
+    async def node_revoke(self, id, *, actor="cli:lw"):
+        await self.request("DELETE", "/api/v1/nodes/" + quote(id, safe=""), actor=actor)
+        return {"nodeId": id, "revoked": True}
 
     async def policy_create(self, checkpoint, *, actor="cli:lw"):
         return await self.request("POST", "/api/v1/policies", actor=actor, json={"checkpoint": checkpoint})

@@ -76,15 +76,9 @@ def _file_hash(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
-def store_artifacts(manager, job, stream):
-    with manager.library_assets._lock:
-        return _store_artifacts(manager, job, stream)
-
-
-def _store_artifacts(manager, job, stream):
+def store_artifacts(manager, job, stream, verify_lease, trainer_versions):
     root = manager.library_assets.roots["user"]
-    directory = destination_parent(root, ("jobs", job["jobId"]), create=True)
-    with tempfile.TemporaryDirectory(prefix=".upload-", dir=directory) as temporary:
+    with manager.library_assets._lock, tempfile.TemporaryDirectory(prefix=".upload-", dir=root) as temporary:
         stage = Path(temporary)
         extract_package(stream, stage)
         files = package_files(stage)
@@ -112,6 +106,9 @@ def _store_artifacts(manager, job, stream):
                 for name in required_versions
             ):
                 raise ValueError("Required runtime versions are missing")
+            expected_versions = trainer_versions or {}
+            if any(versions["versions"].get(name) != version for name, version in expected_versions.items()):
+                raise ValueError("Artifact trainer versions differ from the leased Compute Node capabilities")
             if job["executionDevice"] == "cpu" and versions["hardware"].get("gpu") is not None:
                 raise ValueError("CPU execution cannot claim a GPU model")
             if job["executionDevice"] == "cuda" and versions["hardware"].get("gpu") != {
@@ -163,6 +160,7 @@ def _store_artifacts(manager, job, stream):
             {"path": name, "size": (stage / name).stat().st_size, "sha256": _file_hash(stage / name)}
             for name in sorted(files)
         ]
+        directory = destination_parent(root, ("jobs", job["jobId"]), create=True)
         destination = directory / "artifacts"
         if destination.exists():
             existing = [
@@ -175,6 +173,10 @@ def _store_artifacts(manager, job, stream):
             ]
             if existing != records:
                 raise PlanError("artifact_conflict", "This dispatch already has different artifacts")
+            with manager._resource_lock:
+                verify_lease()
             return existing, versions
-        os.rename(stage, destination)
+        with manager._resource_lock:
+            verify_lease()
+            os.rename(stage, destination)
         return records, versions

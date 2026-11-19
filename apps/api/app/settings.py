@@ -66,10 +66,14 @@ class Settings:
 
     def __post_init__(self):
         node_url = urlsplit(self.node_gateway_url)
+        if self.remote and (not self.operator_token or not self.allowed_origins):
+            raise ValueError("remote mode requires an operator token and explicit allowed origins")
         if (node_url.scheme not in ("http", "https")
-                or node_url.hostname not in ("127.0.0.1", "localhost", "::1")
+                or not node_url.hostname
                 or node_url.username or node_url.password or node_url.query or node_url.fragment):
-            raise ValueError("The local node gateway URL must be an explicit loopback HTTP(S) address")
+            raise ValueError("The node gateway URL must be an explicit HTTP(S) address")
+        if not self.remote and node_url.hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError("A non-loopback node gateway URL requires authenticated remote mode")
         if not 0 < self.node_interval <= 30 or self.node_job_timeout <= 0:
             raise ValueError("Node heartbeat interval and job timeout must be positive and bounded")
         if self.recordings_keep < 1:
@@ -80,7 +84,5 @@ class Settings:
             raise ValueError(
                 "SPATIAL_CATALOG_METADATA_ROOT must be an absolute directory path"
             )
-        if self.remote and (not self.operator_token or not self.allowed_origins):
-            raise ValueError("remote mode requires an operator token and explicit allowed origins")
         if min(self.heartbeat_interval_seconds, self.send_timeout_seconds, self.reliable_queue_size) <= 0:
             raise ValueError("heartbeat, send timeout and queue capacity must be positive")

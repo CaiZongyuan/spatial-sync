@@ -35,7 +35,7 @@ export interface JobVersions {
 }
 export interface TrainingJob {
   jobId: string;
-  kind: 'training';
+  kind: 'training' | 'plan_validation';
   status: JobStatus;
   planId: string;
   planRevision: number;
@@ -103,11 +103,12 @@ export interface NodeGPU {
 }
 export interface TrainingNode {
   id: string;
-  instanceId: string;
-  hardware: string;
+  instanceId: string | null;
+  hardware: string | null;
+  hostname?: string | null;
   state: 'online' | 'offline';
-  lastSeen: number;
-  reconnectDeadline: number;
+  lastSeen?: number;
+  reconnectDeadline?: number;
   cpuAvailable: boolean;
   gpus: NodeGPU[];
   leases: Record<string, NodeLease>;
@@ -116,7 +117,7 @@ export interface TrainingNode {
 }
 
 export async function listJobs(
-  filters: { plan?: string; status?: JobStatus; kind?: 'training' } = {},
+  filters: { plan?: string; status?: JobStatus; kind?: TrainingJob['kind'] } = {},
   signal?: AbortSignal,
 ): Promise<TrainingJob[]> {
   const query = new URLSearchParams();

@@ -14,9 +14,14 @@ from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.transactions import durable_json
+from packages.training.job_contract import MJLAB_VERSIONS, VALIDATION_ITERATIONS, VALIDATION_TIMEOUT
 from packages.training.node_telemetry import NodeTelemetryHistory
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
+
+
+def _secret_digest(secret):
+    return hashlib.sha256(secret.encode()).hexdigest()
 
 
 def profile_key(plan, task_hash, hardware, gpu_id):
@@ -29,12 +34,29 @@ def profile_key(plan, task_hash, hardware, gpu_id):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
+def node_profile_key(plan, task_hash, node, resource):
+    hardware = node["hardware"]
+    if node["id"] == "local" and not hardware.startswith("node-hardware/2:"):
+        return profile_key(plan, task_hash, hardware, resource["id"])
+    device = {"kind": "cpu"} if resource["id"] == "cpu" else {
+        "model": " ".join(resource["name"].lower().split()),
+        "memoryMb": resource.get("memoryTotalMb"),
+        "computeCapability": resource.get("computeCapability"),
+    }
+    return profile_key(plan, task_hash, {
+        "class": hardware, "compiler": node.get("compilerHash"), "versions": node.get("trainerVersions"),
+    }, device)
+
+
 class TrainingJobs:
     def __init__(self, manager, *, clock=time.time):
         self.manager, self.clock = manager, clock
         self.telemetry = NodeTelemetryHistory()
         self.path = manager.settings.state_root / "jobs.json"
         self.records, self.nodes = {}, {}
+        self.registrations, self.node_credentials = {}, {}
+        self.lease_sequence = 0
+        self.validation_profiles = {}
         self._worker = None
         self.node_token = manager.settings.node_token
         self._failure = False
@@ -54,6 +76,9 @@ class TrainingJobs:
         if self.path.exists():
             saved = json.loads(self.path.read_text(encoding="utf-8"))
             self.records, self.nodes = saved["jobs"], saved["nodes"]
+            self.registrations = saved.get("registrations", {})
+            self.node_credentials = saved.get("nodeCredentials", {})
+            self.lease_sequence = saved.get("leaseSequence", 0)
         self.manager.costs.prepare(self.records)
         # Retain leases while a live node reconnects; a restart never invents an idle GPU.
         for node in self.nodes.values():
@@ -66,9 +91,12 @@ class TrainingJobs:
             ):
                 self.manager.approvals.set_status(approval.approvalId, "unavailable")
         self.manager.training_plans.job_in_use = self.plan_in_use
+        self.manager.training_plans.validation_estimate = self.validation_estimate
         self._started = True
         self.node.start()
         for job in self.records.values():
+            if job.get("validationEstimate"):
+                self.validation_profiles[job["profileKey"]] = job["profile"]
             self._event(job)
 
     def _require_available(self):
@@ -79,7 +107,10 @@ class TrainingJobs:
         self._require_available()
         try:
             self.manager.costs.capture(self.records, self.clock())
-            durable_json(self.path, {"jobs": self.records, "nodes": self.nodes})
+            durable_json(self.path, {
+                "jobs": self.records, "nodes": self.nodes, "registrations": self.registrations,
+                "nodeCredentials": self.node_credentials, "leaseSequence": self.lease_sequence,
+            })
         except (OSError, ValueError) as exc:
             self._failure = True
             raise PlanError("jobs_persistence_unavailable", "Job ownership save failed", status=503) from exc
@@ -113,11 +144,60 @@ class TrainingJobs:
             for job in self.records.values()
         )
 
-    def authenticated_node(self, headers):
+    def _require_remote_nodes(self):
+        self._require_available()
+        if not self.manager.settings.remote:
+            raise PlanError("remote_nodes_disabled", "Enable authenticated remote mode", status=403)
+
+    def issue_registration(self, body):
+        self._require_remote_nodes()
+        identity = body.nodeId or "node-" + uuid.uuid4().hex[:12]
+        if identity == "local" or identity in self.node_credentials:
+            raise PlanError("node_id_taken", "This node ID is already in use")
+        now = self.clock()
+        self.registrations = {key: record for key, record in self.registrations.items()
+                              if record["expiresAt"] > now and record["nodeId"] != identity}
+        code = secrets.token_urlsafe(32)
+        record = {"nodeId": identity, "expiresAt": now + body.ttlSeconds, "colocated": body.colocated}
+        self.registrations[_secret_digest(code)] = record
+        self._save()
+        return {**record, "code": code}
+
+    def register_node(self, code):
+        self._require_remote_nodes()
+        digest = _secret_digest(code)
+        record = self.registrations.get(digest)
+        if record is None or record["expiresAt"] <= self.clock():
+            raise PlanError("registration_invalid", "Registration code is invalid or expired", status=403)
+        identity = record["nodeId"]
+        token = secrets.token_urlsafe(32)
+        self.node_credentials[identity] = {"digest": _secret_digest(token), "colocated": record["colocated"]}
+        del self.registrations[digest]
+        self._save()
+        return {"nodeId": identity, "token": token}
+
+    def revoke_node(self, identity):
+        self._require_remote_nodes()
+        with self.manager._resource_lock:
+            if identity not in self.node_credentials:
+                raise PlanError("unknown_node", "Unknown registered Compute Node", status=404)
+            del self.node_credentials[identity]
+            node = self.nodes.pop(identity, None)
+            if node:
+                self._fence_node(node, "node_revoked", self.clock())
+            self._save()
+
+    def authenticated_node(self, headers, identity=None):
+        claimed = headers.get("x-node-id", "local")
+        if self._failure or (identity is not None and identity != claimed):
+            return False
         token = headers.get("x-node-token", "")
-        return bool(
-            self.node_token and token and hmac.compare_digest(token.encode(), self.node_token.encode())
-        )
+        if not token:
+            return False
+        if claimed == "local":
+            return bool(self.node_token and hmac.compare_digest(token.encode(), self.node_token.encode()))
+        record = self.node_credentials.get(claimed) if self.manager.settings.remote else None
+        return bool(record and hmac.compare_digest(_secret_digest(token), record["digest"]))
 
     def _has_lease(self, job):
         return any(
@@ -148,12 +228,14 @@ class TrainingJobs:
             raise PlanError("plan_not_approved", "The current training plan revision must be approved")
         return value
 
-    def request(self, plan_id, seed, actor, request_id, revision=None):
+    def request(self, plan_id, seed, actor, request_id, revision=None, *, kind="training", target_node=None):
         self._require_available()
         for job in self.records.values():
             if job["requestId"] == request_id and job["requestedBy"] == actor.model_dump():
                 if (
                     job["planId"] != plan_id
+                    or job["kind"] != kind
+                    or job.get("targetNodeId") != target_node
                     or seed is not None
                     and job["seed"] != seed
                     or revision is not None
@@ -161,13 +243,15 @@ class TrainingJobs:
                 ):
                     raise PlanError("idempotency_conflict", "Request ID belongs to different job inputs")
                 return self.document(job)
-        plan = self._approved_plan(plan_id)
-        if revision is not None and plan["revision"] != revision:
+        validation = kind == "plan_validation"
+        plan = self._validation_plan(plan_id, revision) if validation else self._approved_plan(plan_id)
+        if not validation and revision is not None and plan["revision"] != revision:
             raise PlanError("plan_not_approved", "Select the current approved plan revision")
         if seed is None:
-            if len(plan["jobs"]["seeds"]) != 1:
+            seeds = plan["jobs"]["seeds"]
+            if not seeds or not validation and len(seeds) != 1:
                 raise PlanError("invalid_job", "Choose one of the plan's declared seeds", status=422)
-            seed = plan["jobs"]["seeds"][0]
+            seed = seeds[0]
         if seed not in plan["jobs"]["seeds"]:
             raise PlanError("invalid_job", "Seed is outside the approved plan", status=422)
         iterations = plan["hyperparameters"].get("max_iterations")
@@ -178,6 +262,24 @@ class TrainingJobs:
         task = self.manager.tasks.show(plan["task"])
         scene = self.manager.library.resolve(task["task"]["scene"])
         backend = task["task"].get("mjlab") or task["task"].get("isaaclab") or {}
+        is_mjlab = task["task"].get("mjlab") is not None
+        if target_node is not None and target_node != "local":
+            if not self.manager.settings.remote or target_node not in self.node_credentials:
+                raise PlanError("unknown_node", "Select a registered Compute Node", status=404)
+        if validation:
+            hyper = plan["hyperparameters"]
+            if not is_mjlab or type(hyper.get("num_envs")) is not int or hyper["num_envs"] < 1:
+                raise PlanError(
+                    "invalid_job", "Validation requires an mjlab Task and positive num_envs", status=422
+                )
+            if iterations > 2**31 - 1:
+                raise PlanError("invalid_job", "max_iterations exceeds the supported range", status=422)
+            if any(
+                item["kind"] == kind and item["planId"] == plan_id
+                and item["planRevision"] == plan["revision"] and item["status"] not in TERMINAL
+                for item in self.records.values()
+            ):
+                raise PlanError("validation_in_progress", "This revision already has a validation Job")
         if (
             scene.metadata["stage"].startswith("python:")
             and backend.get("sceneInput", "usd") != "scene-package"
@@ -191,7 +293,7 @@ class TrainingJobs:
         )
         job = {
             "jobId": "job-" + uuid.uuid4().hex,
-            "kind": "training",
+            "kind": kind,
             "status": "queued",
             "planId": plan_id,
             "planRevision": plan["revision"],
@@ -231,12 +333,47 @@ class TrainingJobs:
             "metrics": {},
             "metricsHistory": [],
             "artifacts": [],
+            "targetNodeId": target_node,
+            "backend": "mjlab" if is_mjlab else "isaaclab",
         }
+        if validation:
+            job["validationLimits"] = {
+                "iterations": VALIDATION_ITERATIONS, "timeoutSeconds": VALIDATION_TIMEOUT,
+            }
         self.records[job["jobId"]] = job
         self.reconcile()
         self._save()
         self._event(job)
         return self.document(job)
+
+    def _validation_plan(self, plan_id, revision):
+        store = self.manager.training_plans
+        plan = store.document(store.get(plan_id))
+        if plan["status"] not in ("submitted", "approved") or revision not in (None, plan["revision"]):
+            raise PlanError("plan_not_available", "Select the current submitted or approved training plan")
+        return plan
+
+    def validation_estimate(self, approval_id):
+        if approval_id is None:
+            return {}
+        for job in reversed(self.records.values()):
+            if job["planApprovalId"] == approval_id and job.get("validationEstimate"):
+                return deepcopy(job["validationEstimate"])
+        return {}
+
+    def _compatible_trainer(self, job, node):
+        backend = job.get("backend")
+        if backend is None:
+            backend = "mjlab" if self.manager.tasks.show(job["task"])["task"].get("mjlab") else "isaaclab"
+        if backend != "mjlab":
+            return True
+        reported = node.get("trainerVersions")
+        if reported is None and node["id"] == "local" and job["kind"] == "training":
+            return True  # Older local runners check the installed RSL-RL version in the trainer bridge.
+        expected = MJLAB_VERSIONS | {"rsl_rl": job["plan"]["algorithm"].get("version")}
+        return bool(expected["rsl_rl"] and reported and all(
+            reported.get(name, "").split("+", 1)[0] == version for name, version in expected.items()
+        ))
 
     def _budget(self, job):
         plan = job["plan"]
@@ -284,71 +421,115 @@ class TrainingJobs:
         self._require_available()
         now = self.clock()
         for node in self.nodes.values():
-            if now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0)):
-                for lease in node["leases"].values():
-                    job = self.records[lease["jobId"]]
-                    if job["status"] not in TERMINAL:
-                        job.update(status="failed", reason="node_lost", finishedAt=now)
-                        job["chargedGpuHours"] = max(
-                            job["chargedGpuHours"],
-                            (now - lease["assignedAt"]) / 3600 if job["executionDevice"] == "cuda" else 0.0,
-                        )
-                        self._event(job)
+            offline = now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
+            for lease in node["leases"].values():
+                job = self.records[lease["jobId"]]
+                timed_out = (
+                    job["kind"] == "plan_validation" and now - lease["assignedAt"] > VALIDATION_TIMEOUT
+                )
+                if offline or timed_out:
+                    self._fail_lease(lease, "node_lost" if offline else "validation_timeout", now)
                     lease["quarantined"] = True
         for job in self.records.values():
             if job["status"] != "queued" or job["leaseId"]:
                 continue
+            validation = job["kind"] == "plan_validation"
             try:
-                plan = self._approved_plan(job["planId"], job["planRevision"])
+                if validation:
+                    plan = self._validation_plan(job["planId"], job["planRevision"])
+                else:
+                    plan = self._approved_plan(job["planId"], job["planRevision"])
                 if plan["approvalId"] != job["planApprovalId"]:
                     raise PlanError("plan_not_approved", "Plan approval changed")
             except PlanError:
                 job.update(status="cancelled", reason="plan_not_approved", finishedAt=now)
                 self._event(job)
                 continue
-            for node in self.nodes.values():
-                resources = node["gpus"] + ([{"id": "cpu"}] if node.get("cpuAvailable") else [])
-                for gpu in sorted(resources, key=lambda item: item["id"] in node["leases"]):
-                    if (gpu["id"] == "cpu") != (job["executionDevice"] == "cpu"):
-                        continue
-                    key = profile_key(job["plan"], job["taskContentHash"], node["hardware"], gpu["id"])
-                    measured = node["profiles"].get(key)
-                    if measured is None or job["profileKey"] not in (None, key):
-                        continue
-                    if job["estimatedGpuHours"] is None:
-                        job["estimatedWallSeconds"] = (
-                            measured["setupSeconds"]
-                            + measured["iterationSeconds"] * job["plan"]["hyperparameters"]["max_iterations"]
-                        )
-                        job["estimatedGpuHours"] = (
-                            job["estimatedWallSeconds"] / 3600 if job["executionDevice"] == "cuda" else 0.0
-                        )
-                        job.update(profileKey=key, profile=deepcopy(measured))
-                    if not self._budget(job):
-                        break
-                    if now > node["lastSeen"] + 60:
-                        job["reason"] = "node_unavailable"
-                        break
-                    if self._reserve_resource(job, node, gpu, now):
-                        break
-                if job["leaseId"]:
-                    break
+            target = job.get("targetNodeId")
+            if target and target != "local" and target not in self.node_credentials:
+                job.update(status="cancelled", reason="node_revoked", finishedAt=now)
+                self._event(job)
+                continue
+            self._schedule(job, now, validation)
+
+    def _schedule(self, job, now, validation):
+        target = job.get("targetNodeId")
+        reason = "estimate_unavailable"
+        if validation or target and target not in self.nodes:
+            reason = "node_unavailable"
+        candidates = []
+        for node in self.nodes.values():
+            if node["id"] != "local" and not self.manager.settings.remote:
+                continue
+            if target and node["id"] != target:
+                continue
+            resources = node["gpus"] if job["executionDevice"] == "cuda" else (
+                [{"id": "cpu"}] if node.get("cpuAvailable") else []
+            )
+            if not resources:
+                continue
+            if not self._compatible_trainer(job, node):
+                reason = "trainer_version_mismatch"
+                continue
+            for resource in resources:
+                key = node_profile_key(job["plan"], job["taskContentHash"], node, resource)
+                measured = self.validation_profiles.get(key) or node["profiles"].get(key)
+                if not validation and node.get("legacyHardware") and (
+                    not measured or job["approvalId"] and job["profileKey"] != key
+                ):
+                    old_key = profile_key(
+                        job["plan"], job["taskContentHash"], node["legacyHardware"], resource["id"]
+                    )
+                    if old_key in node["profiles"]:
+                        key, measured = old_key, node["profiles"][old_key]
+                if not validation and (not measured or job["approvalId"] and job["profileKey"] != key):
+                    continue
+                with self.manager._resource_lock:
+                    blocker = self._resource_blocker(node, resource, now)
+                candidates.append((blocker, node, resource, key, measured))
+        if not candidates:
+            job["reason"] = reason
+            return
+        blocker, node, resource, key, measured = min(candidates, key=lambda item: item[0] is not None)
+        if not validation:
+            if job["profileKey"] != key:
+                job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
+            if not self._budget(job):
+                return
+        if blocker:
+            job["reason"] = blocker
+        elif self._reserve_resource(job, node, resource, now) and validation:
+            job["profileKey"] = key
+
+    def _resource_blocker(self, node, resource, now):
+        if now > node["lastSeen"] + 60:
+            return "node_unavailable"
+        if resource["id"] != "cpu" and self._colocated(node) and any(
+            session.kind == "newton" and session.options.device != "cpu"
+            and (session.holds_resources or session is self.manager._starting_session)
+            for session in self.manager.platform_sessions()
+        ):
+            return "session_gpu_busy"
+        if resource["id"] in node["leases"] or (
+            resource["id"] != "cpu" and self._colocated(node)
+            and any(self._colocated(peer) and resource["id"] in peer["leases"]
+                    for peer in self.nodes.values())
+        ):
+            return "gpu_busy"
+        return None
 
     def _reserve_resource(self, job, node, resource, now):
         # This boundary shares ownership with the registration thread, without I/O or library locks.
         with self.manager._resource_lock:
-            if job["executionDevice"] == "cuda" and any(
-                session.kind == "newton" and session.options.device != "cpu"
-                and (session.holds_resources or session is self.manager._starting_session)
-                for session in self.manager.platform_sessions()
-            ):
-                job["reason"] = "session_gpu_busy"
+            if reason := self._resource_blocker(node, resource, now):
+                job["reason"] = reason
                 return False
-            if resource["id"] in node["leases"]:
-                job["reason"] = "gpu_busy"
-                return False
-            lease = {"jobId": job["jobId"], "leaseId": uuid.uuid4().hex, "assignedAt": now,
+            self.lease_sequence += 1
+            lease = {"jobId": job["jobId"], "leaseId": str(self.lease_sequence), "assignedAt": now,
                      "quarantined": False}
+            if job.get("backend") == "mjlab" and node.get("trainerVersions") is not None:
+                lease["trainerVersions"] = node["trainerVersions"]
+                lease["compilerHash"] = node.get("compilerHash")
             node["leases"][resource["id"]] = lease
             job.update(nodeId=node["id"], resourceId=resource["id"], leaseId=lease["leaseId"],
                        resourceModel=resource.get("name") if job["executionDevice"] == "cuda" else None,
@@ -358,46 +539,127 @@ class TrainingJobs:
     def holds_gpu(self):
         with self.manager._resource_lock:
             return self._failure or any(any(key != "cpu" for key in node["leases"])
-                                        for node in tuple(self.nodes.values()))
+                                        for node in self.nodes.values() if self._colocated(node))
 
-    def heartbeat(self, body):
+    def _colocated(self, node):
+        return node["id"] == "local" or self.node_credentials.get(node["id"], {}).get("colocated", False)
+
+    def _fence_node(self, node, reason, now):
+        for lease in node["leases"].values():
+            self._fail_lease(lease, reason, now)
+        node["leases"].clear()
+
+    def _fail_lease(self, lease, reason, now):
+        job = self.records[lease["jobId"]]
+        if job["status"] not in TERMINAL:
+            job.update(status="failed", reason=reason, finishedAt=now)
+            if job["executionDevice"] == "cuda":
+                job["chargedGpuHours"] = max(job["chargedGpuHours"], (now - lease["assignedAt"]) / 3600)
+            self._event(job)
+
+    def _estimate(self, job, profile):
+        iterations = job["plan"]["hyperparameters"]["max_iterations"]
+        wall = profile["setupSeconds"] + profile["iterationSeconds"] * iterations
+        return {"estimatedWallSeconds": wall,
+                "estimatedGpuHours": wall / 3600 if job["executionDevice"] == "cuda" else 0.0}
+
+    def _check_validation(self, job, lease, report, now):
+        timing = report.validation
+        if job["kind"] != "plan_validation" or report.status != "succeeded":
+            if timing is not None:
+                raise PlanError(
+                    "invalid_validation", "Only successful validation reports include timings", status=422
+                )
+            return
+        if (
+            timing is None or timing.numEnvs != job["plan"]["hyperparameters"]["num_envs"]
+            or report.iteration != VALIDATION_ITERATIONS
+            or not timing.setupSeconds + timing.warmupSeconds + sum(timing.samplesSeconds)
+            <= report.elapsedSeconds <= VALIDATION_TIMEOUT
+            or now - lease["assignedAt"] > VALIDATION_TIMEOUT
+            or lease["quarantined"] or job["cancelRequested"] or job["status"] in TERMINAL
+        ):
+            raise PlanError(
+                "invalid_validation", "Timing does not cover the assigned bounded validation", status=422
+            )
+
+    def _record_validation(self, job, node, timing, now):
+        iteration = max(timing.samplesSeconds)
+        profile = {
+            "key": job["profileKey"],
+            "setupSeconds": timing.setupSeconds + max(0, timing.warmupSeconds - iteration),
+            "iterationSeconds": iteration, "samples": len(timing.samplesSeconds),
+            "measuredAt": now, "evidence": job["jobId"],
+        }
+        estimate = self._estimate(job, profile)
+        job.update(estimate, profile=profile, validationEstimate={
+            **estimate, "validationJobId": job["jobId"], "profileKey": profile["key"],
+        })
+        node["profiles"][profile["key"]] = self.validation_profiles[profile["key"]] = profile
+
+    def heartbeat(self, body, identity="local"):
         self._require_available()
         now = self.clock()
-        node = self.nodes.get("local")
-        if node and node["instanceId"] != body.instanceId and node["leases"]:
-            raise PlanError("node_owner_conflict", "The previous node still owns a GPU lease")
+        node = self.nodes.get(identity)
+        changed_instance = node is not None and node["instanceId"] != body.instanceId
+        if changed_instance and (
+            body.instanceId in node.get("retiredInstances", [])
+            or identity == "local" and node["leases"]
+        ):
+            raise PlanError("node_owner_conflict", "The instance cannot take ownership of this node")
         if len({gpu.id for gpu in body.gpus}) != len(body.gpus):
             raise PlanError("invalid_node_report", "GPU identities must be distinct", status=422)
+        if any(gpu.id == "cpu" for gpu in body.gpus):
+            raise PlanError("invalid_node_report", "The CPU resource ID is reserved", status=422)
         if len({report.jobId for report in body.reports}) != len(body.reports):
             raise PlanError("invalid_node_report", "Job reports must be distinct", status=422)
-        replayed = set()
+        fresh = []
         for report in body.reports:
             job = self.get(report.jobId)
+            data = report.model_dump()
+            if report.validation is None:
+                del data["validation"]
             if (
-                node
+                node and job["nodeId"] == identity
                 and node["instanceId"] == body.instanceId
-                and job.get("lastNodeReport") == report.model_dump()
+                and job.get("lastNodeReport") == data
             ):
-                replayed.add(report.jobId)
                 continue
             lease = (node or {}).get("leases", {}).get(job["resourceId"])
             if (
                 not lease
                 or lease["leaseId"] != report.leaseId
-                or job["nodeId"] != "local"
+                or job["nodeId"] != identity
                 or node["instanceId"] != body.instanceId
+                or identity != "local" and (
+                    now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
+                    or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
+                )
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
             if report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
-            if report.status == "succeeded" and not job["artifacts"]:
+            if report.status == "succeeded" and "trainerVersions" in lease and (
+                lease["trainerVersions"] != body.trainerVersions
+                or lease.get("compilerHash") != body.compilerHash
+            ):
+                raise PlanError("trainer_version_mismatch", "Trainer changed on the leased node", status=422)
+            self._check_validation(job, lease, report, now)
+            if report.status == "succeeded" and job["kind"] == "training" and not job["artifacts"]:
                 raise PlanError(
                     "artifacts_incomplete", "Upload verified artifacts before success", status=422
                 )
             self._log_suffix(job, report.logAfter, report.logs)
-        if node is None or node["instanceId"] != body.instanceId:
-            node = {"id": "local", "instanceId": body.instanceId, "leases": {}, "profiles": {}}
-            self.nodes["local"] = node
+            fresh.append((job, report, data))
+        if node is None:
+            node = {"id": identity, "instanceId": body.instanceId, "leases": {}, "profiles": {}}
+            with self.manager._resource_lock:
+                self.nodes[identity] = node
+        elif changed_instance:
+            with self.manager._resource_lock:
+                self._fence_node(node, "node_instance_replaced", now)
+                node.setdefault("retiredInstances", []).append(node["instanceId"])
+                node["instanceId"] = body.instanceId
         if node["leases"] and node.get("hardware", body.hardware) != body.hardware:
             raise PlanError("node_owner_conflict", "Hardware changed while a lease is retained")
         node.update(
@@ -406,16 +668,20 @@ class TrainingJobs:
             reconnectDeadline=0,
             gpus=[gpu.model_dump() for gpu in body.gpus],
             cpuAvailable=body.cpuAvailable,
+            hostname=body.hostname,
+            trainerVersions=body.trainerVersions,
+            compilerHash=body.compilerHash,
+            legacyHardware=body.legacyHardware if identity == "local" else None,
         )
         node["profiles"].update({profile.key: profile.model_dump() for profile in body.profiles})
-        for report in body.reports:
-            job = self.get(report.jobId)
-            if report.jobId in replayed:
-                continue
+        for job, report, data in fresh:
             self._append_logs(job, report.logAfter, report.logs)
-            job["metrics"] = report.model_dump(
-                exclude={"jobId", "leaseId", "status", "reason", "logs", "logAfter"}
-            )
+            job["metrics"] = {key: data[key] for key in (
+                "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
+            )}
+            if report.validation is not None:
+                job["metrics"]["validation"] = data["validation"]
+                self._record_validation(job, node, report.validation, now)
             job["chargedGpuHours"] = max(
                 job["chargedGpuHours"],
                 report.elapsedSeconds / 3600 if job["executionDevice"] == "cuda" else 0.0,
@@ -431,7 +697,7 @@ class TrainingJobs:
                     )
                 with self.manager._resource_lock:
                     del node["leases"][job["resourceId"]]
-            job["lastNodeReport"] = report.model_dump()
+            job["lastNodeReport"] = data
             history = job.setdefault("metricsHistory", [])
             history.append({
                 "receivedAt": now, "reportedStatus": report.status, "reason": report.reason,
@@ -443,7 +709,7 @@ class TrainingJobs:
         self._save()
         self.telemetry.observe(node["id"], node["instanceId"], node["gpus"], now)
         return {
-            "nodeId": "local",
+            "nodeId": identity,
             "logCursors": {report.jobId: len(self.read_logs(report.jobId)) for report in body.reports},
             "assignments": [
                 {
@@ -453,15 +719,32 @@ class TrainingJobs:
                     "gpuId": gpu if gpu != "cpu" else None,
                     "cancel": self.records[lease["jobId"]]["cancelRequested"]
                     or self.records[lease["jobId"]]["status"] in TERMINAL,
+                    **({"timeoutSeconds": VALIDATION_TIMEOUT}
+                       if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
                 }
                 for gpu, lease in node["leases"].items()
             ],
         }
 
     def list_nodes(self):
-        return [
-            {
-                **deepcopy(node),
+        identities = dict.fromkeys((*self.nodes, *self.node_credentials) if self.manager.settings.remote
+                                   else (identity for identity in self.nodes if identity == "local"))
+        return [self.node_document(identity) for identity in identities]
+
+    def node_document(self, identity):
+        node = self.nodes.get(identity)
+        if identity != "local" and not self.manager.settings.remote:
+            node = None
+        if node is None:
+            if self.manager.settings.remote and identity in self.node_credentials:
+                return {"id": identity, "nodeId": identity, "instanceId": None, "state": "offline",
+                        "hardware": None, "colocated": self.node_credentials[identity]["colocated"],
+                        "gpus": [], "leases": {}, "profiles": {}, "queue": [], "cpuAvailable": False}
+            raise PlanError("unknown_node", "Unknown Compute Node", status=404)
+        return {
+                **deepcopy({key: value for key, value in node.items() if key != "retiredInstances"}),
+                "nodeId": identity,
+                "colocated": self._colocated(node),
                 "gpus": [
                     {**gpu, "history": self.telemetry.for_gpu(
                         node["id"], node["instanceId"], gpu["id"], self.clock()
@@ -469,9 +752,7 @@ class TrainingJobs:
                 ],
                 "state": "online" if self.clock() <= node["lastSeen"] + 60 else "offline",
                 "queue": [job["jobId"] for job in self.records.values() if job["status"] == "queued"],
-            }
-            for node in self.nodes.values()
-        ]
+        }
 
     def reference_snapshot(self):
         # Pinned fields never change; copy membership once for the library worker thread.

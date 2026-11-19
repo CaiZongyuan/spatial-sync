@@ -524,7 +524,7 @@ def create_app(
         if app.state.metadata_worker_auth(request):
             return await call_next(request)
         if manager.jobs.authenticated_node(request.headers) and re.fullmatch(
-            r"/api/v1/(?:nodes/local/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
+            r"/api/v1/(?:nodes/[a-z0-9-]+/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
             request.url.path,
         ):
             return await call_next(request)
@@ -538,12 +538,14 @@ def create_app(
                 return JSONResponse(
                     {"detail": {"code": "unauthorized", "message": "Origin is not allowed"}}, status_code=403
                 )
+            exchange = request.method == "POST" and request.url.path == "/api/v1/nodes/register"
             role = _role(request.headers, settings)
-            if role is None:
+            if role is None and not exchange:
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=401)
             if (
                 request.method in ("POST", "DELETE", "PUT", "PATCH")
                 and role != "operator"
+                and not exchange
                 and not request.url.path.endswith("/actions")
             ):
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=403)

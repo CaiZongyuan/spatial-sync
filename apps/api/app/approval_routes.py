@@ -49,8 +49,13 @@ def install_approval_routes(app, manager, role_for):
                                and all(step.status == "pending" for step in plan.plan.steps))
         promotion = record.details.get("controllerPromotionId")
         promotion_revoke = bool(promotion and manager.controller_promotions.can_revoke(record))
+        value = record.model_dump(mode="json")
+        if training:
+            estimate = manager.jobs.validation_estimate(record.approvalId)
+            value["details"].update(estimate)
+            value["details"]["plan"].update(estimate)
         return {
-            **record.model_dump(mode="json"),
+            **value,
             "canRevoke": promotion_revoke or (
                           record.subject == "job" and manager.jobs.can_revoke(record)) or (
                           training

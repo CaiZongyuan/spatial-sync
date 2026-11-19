@@ -73,7 +73,7 @@ class LocalNodeSupervisor:
         )
 
     async def close(self):
-        if any(node["leases"] for node in self.jobs.nodes.values()):
+        if self.jobs.nodes.get("local", {}).get("leases"):
             return  # The node retains its process handles and re-reports after gateway restart.
         if self._owner() is None:
             return

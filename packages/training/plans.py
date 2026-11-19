@@ -38,6 +38,7 @@ class TrainingPlanStore:
         self._lock = threading.RLock()
         self.job_in_use = lambda identity, revision: False
         self.additional_in_use = lambda identity, revision: False
+        self.validation_estimate = lambda approval_id: {}
         self.loop_budgets = None
 
     def startup(self):
@@ -93,6 +94,7 @@ class TrainingPlanStore:
                 "requestedBy": record.requestedBy.model_dump(), "createdAtMs": record.createdAtMs,
                 "approvalId": record.approvalId, "approvalStatus": approval.status if approval else None,
                 "approvalMode": "human", "changes": record.changes}
+        document.update(self.validation_estimate(record.approvalId))
         if record.goalContext is not None:
             from copy import deepcopy
 

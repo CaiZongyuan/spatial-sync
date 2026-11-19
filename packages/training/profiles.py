@@ -5,7 +5,7 @@ import json
 import math
 
 from packages.info.schema_subset import json_equal
-from packages.training.jobs import profile_key
+from packages.training.jobs import node_profile_key
 
 
 def measured_profile(raw, job, plan, node, resource_id):
@@ -20,7 +20,9 @@ def measured_profile(raw, job, plan, node, resource_id):
         {key: receipt.get(key) for key in expected}, expected
     ):
         raise ValueError("Measurement does not match this exact Task, plan configuration and node resource")
-    resources = {gpu["id"] for gpu in node["gpus"]} | ({"cpu"} if node.get("cpuAvailable") else set())
+    resources = {gpu["id"]: gpu for gpu in node["gpus"]}
+    if node.get("cpuAvailable"):
+        resources["cpu"] = {"id": "cpu"}
     if resource_id not in resources:
         raise ValueError("Measurement resource is not advertised by this node")
     samples = receipt.get("samplesSeconds")
@@ -41,8 +43,9 @@ def measured_profile(raw, job, plan, node, resource_id):
     ):
         raise ValueError("Measurement setup duration and timestamp are required")
     digest = hashlib.sha256(raw).hexdigest()
+    key = node_profile_key(plan, job["taskContentHash"], {"id": "local", **node}, resources[resource_id])
     return {
-        "key": profile_key(plan, job["taskContentHash"], node["hardware"], resource_id),
+        "key": key,
         "iterationSeconds": max(samples),
         "setupSeconds": setup,
         "samples": len(samples),
