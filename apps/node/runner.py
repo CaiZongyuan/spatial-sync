@@ -19,6 +19,8 @@ from urllib.parse import urlsplit
 import httpx
 import psutil
 
+from apps.node.bridge_callback import trainer_distributions
+from apps.node.mjlab_launcher import compiler_hash
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
 from packages.library.archive import extract_package, import_lock, relative_path
@@ -335,6 +337,9 @@ class OwnedRun:
                                 bridge / "lw_usd_mjcf.py")
                 shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
                                 bridge / "lw_mjlab_launcher.py")
+                leased_compiler = inputs.get("compilerHash")
+                if leased_compiler and compiler_hash(bridge, prefix="lw_") != leased_compiler:
+                    raise RuntimeError("Bundled mjlab compiler differs from the leased compiler digest")
                 if not validation:
                     self.view_directory.mkdir()
                     self.view_active.set()
@@ -744,12 +749,13 @@ def run_node(args):
                 capabilities["profiles"] = previous.get("profiles", [])
         if node_id != "local" or not capabilities["profiles"]:
             capabilities.pop("legacyHardware", None)
-    versions = trainer_versions(mjlab_trainer)
-    if "mjlab" in versions or node_id != "local" or not args.capabilities:
-        capabilities["trainerVersions"] = versions
-    if capabilities.get("trainerVersions"):
-        from apps.node.mjlab_launcher import compiler_hash
-
+    mjlab_versions = trainer_versions(mjlab_trainer, is_mjlab=True)
+    isaaclab_versions = trainer_versions(trainer, is_mjlab=False)
+    modern = "mjlab" in mjlab_versions or "isaaclab" in isaaclab_versions
+    if modern or node_id != "local" or not args.capabilities:
+        capabilities["trainerVersions"] = mjlab_versions or isaaclab_versions
+        capabilities["isaaclabVersions"] = isaaclab_versions
+    if "mjlab" in (capabilities.get("trainerVersions") or {}):
         capabilities["compilerHash"] = compiler_hash()
     if not args.capabilities:
         durable_json(capabilities_path, capabilities)
@@ -768,15 +774,15 @@ def run_node(args):
     asyncio.run(node.run())
 
 
-def trainer_versions(prefix):
+def trainer_versions(prefix, *, is_mjlab):
     if not prefix:
         return {}
     script = """
 import importlib.metadata
 import json
+import sys
 versions = {}
-for name, distribution in (("mjlab", "mjlab"), ("rsl_rl", "rsl-rl-lib"),
-                           ("mujoco_warp", "mujoco-warp"), ("torch", "torch")):
+for name, distribution in json.loads(sys.argv[1]).items():
     try:
         versions[name] = importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
@@ -785,7 +791,8 @@ print(json.dumps(versions))
 """
     try:
         result = subprocess.run(
-            [prefix[0], "-c", script], capture_output=True, text=True, timeout=10, check=True,
+            [prefix[0], "-c", script, json.dumps(trainer_distributions(is_mjlab))],
+            capture_output=True, text=True, timeout=10, check=True,
             env=trainer_environment(),
         )
         return json.loads(result.stdout)

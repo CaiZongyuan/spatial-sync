@@ -14,7 +14,12 @@ from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.transactions import durable_json
-from packages.training.job_contract import MJLAB_VERSIONS, VALIDATION_ITERATIONS, VALIDATION_TIMEOUT
+from packages.training.job_contract import (
+    ISAACLAB_VERSIONS,
+    MJLAB_VERSIONS,
+    VALIDATION_ITERATIONS,
+    VALIDATION_TIMEOUT,
+)
 from packages.training.node_telemetry import NodeTelemetryHistory
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
@@ -34,9 +39,17 @@ def profile_key(plan, task_hash, hardware, gpu_id):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def node_profile_key(plan, task_hash, node, resource):
+def _trainer_versions(node, backend):
+    if backend == "isaaclab" and node.get("isaaclabVersions") is not None:
+        return node["isaaclabVersions"]
+    return node.get("trainerVersions")
+
+
+def node_profile_key(plan, task_hash, node, resource, *, backend=None):
     hardware = node["hardware"]
-    if node["id"] == "local" and not hardware.startswith("node-hardware/2:"):
+    versions = _trainer_versions(node, backend)
+    compiler = node.get("compilerHash") if backend != "isaaclab" else None
+    if node["id"] == "local" and versions is None and not hardware.startswith("node-hardware/2:"):
         return profile_key(plan, task_hash, hardware, resource["id"])
     device = {"kind": "cpu"} if resource["id"] == "cpu" else {
         "model": " ".join(resource["name"].lower().split()),
@@ -44,7 +57,7 @@ def node_profile_key(plan, task_hash, node, resource):
         "computeCapability": resource.get("computeCapability"),
     }
     return profile_key(plan, task_hash, {
-        "class": hardware, "compiler": node.get("compilerHash"), "versions": node.get("trainerVersions"),
+        "class": hardware, "compiler": compiler, "versions": versions,
     }, device)
 
 
@@ -361,19 +374,21 @@ class TrainingJobs:
                 return deepcopy(job["validationEstimate"])
         return {}
 
-    def _compatible_trainer(self, job, node):
-        backend = job.get("backend")
-        if backend is None:
-            backend = "mjlab" if self.manager.tasks.show(job["task"])["task"].get("mjlab") else "isaaclab"
-        if backend != "mjlab":
-            return True
-        reported = node.get("trainerVersions")
-        if reported is None and node["id"] == "local" and job["kind"] == "training":
-            return True  # Older local runners check the installed RSL-RL version in the trainer bridge.
-        expected = MJLAB_VERSIONS | {"rsl_rl": job["plan"]["algorithm"].get("version")}
-        return bool(expected["rsl_rl"] and reported and all(
-            reported.get(name, "").split("+", 1)[0] == version for name, version in expected.items()
-        ))
+    def _trainer_blocker(self, job, node, backend):
+        reported = _trainer_versions(node, backend)
+        if (reported is None and node["id"] == "local" and job["kind"] == "training"
+                and not node["hardware"].startswith("node-hardware/2:")):
+            return None  # Retained local capability files predate the version handshake.
+        rsl = job["plan"]["algorithm"].get("version")
+        expected = MJLAB_VERSIONS if backend == "mjlab" else ISAACLAB_VERSIONS
+        if not rsl or not reported or (backend == "mjlab" and rsl != "5.0.1") or any(
+            reported.get(name, "").split("+", 1)[0] != version
+            for name, version in (expected | {"rsl_rl": rsl}).items()
+        ):
+            return "trainer_version_mismatch"
+        if backend == "mjlab" and not node.get("compilerHash"):
+            return "compiler_digest_required"
+        return None
 
     def _budget(self, job):
         plan = job["plan"]
@@ -458,6 +473,9 @@ class TrainingJobs:
         if validation or target and target not in self.nodes:
             reason = "node_unavailable"
         candidates = []
+        backend = job.get("backend")
+        if backend is None:
+            backend = "mjlab" if self.manager.tasks.show(job["task"])["task"].get("mjlab") else "isaaclab"
         for node in self.nodes.values():
             if node["id"] != "local" and not self.manager.settings.remote:
                 continue
@@ -468,11 +486,11 @@ class TrainingJobs:
             )
             if not resources:
                 continue
-            if not self._compatible_trainer(job, node):
-                reason = "trainer_version_mismatch"
+            if trainer_blocker := self._trainer_blocker(job, node, backend):
+                reason = trainer_blocker
                 continue
             for resource in resources:
-                key = node_profile_key(job["plan"], job["taskContentHash"], node, resource)
+                key = node_profile_key(job["plan"], job["taskContentHash"], node, resource, backend=backend)
                 measured = self.validation_profiles.get(key) or node["profiles"].get(key)
                 if not validation and node.get("legacyHardware") and (
                     not measured or job["approvalId"] and job["profileKey"] != key
@@ -498,7 +516,7 @@ class TrainingJobs:
                 return
         if blocker:
             job["reason"] = blocker
-        elif self._reserve_resource(job, node, resource, now) and validation:
+        elif self._reserve_resource(job, node, resource, now, backend) and validation:
             job["profileKey"] = key
 
     def _resource_blocker(self, node, resource, now):
@@ -518,7 +536,7 @@ class TrainingJobs:
             return "gpu_busy"
         return None
 
-    def _reserve_resource(self, job, node, resource, now):
+    def _reserve_resource(self, job, node, resource, now, backend):
         # This boundary shares ownership with the registration thread, without I/O or library locks.
         with self.manager._resource_lock:
             if reason := self._resource_blocker(node, resource, now):
@@ -527,9 +545,10 @@ class TrainingJobs:
             self.lease_sequence += 1
             lease = {"jobId": job["jobId"], "leaseId": str(self.lease_sequence), "assignedAt": now,
                      "quarantined": False}
-            if job.get("backend") == "mjlab" and node.get("trainerVersions") is not None:
-                lease["trainerVersions"] = node["trainerVersions"]
-                lease["compilerHash"] = node.get("compilerHash")
+            if versions := _trainer_versions(node, backend):
+                lease.update(trainerVersions=versions, backend=backend)
+                if backend == "mjlab":
+                    lease["compilerHash"] = node["compilerHash"]
             node["leases"][resource["id"]] = lease
             job.update(nodeId=node["id"], resourceId=resource["id"], leaseId=lease["leaseId"],
                        resourceModel=resource.get("name") if job["executionDevice"] == "cuda" else None,
@@ -614,6 +633,7 @@ class TrainingJobs:
         if len({report.jobId for report in body.reports}) != len(body.reports):
             raise PlanError("invalid_node_report", "Job reports must be distinct", status=422)
         fresh = []
+        runtimes = {"trainerVersions": body.trainerVersions, "isaaclabVersions": body.isaaclabVersions}
         for report in body.reports:
             job = self.get(report.jobId)
             data = report.model_dump()
@@ -639,11 +659,14 @@ class TrainingJobs:
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
             if report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
-            if report.status == "succeeded" and "trainerVersions" in lease and (
-                lease["trainerVersions"] != body.trainerVersions
-                or lease.get("compilerHash") != body.compilerHash
-            ):
-                raise PlanError("trainer_version_mismatch", "Trainer changed on the leased node", status=422)
+            if report.status == "succeeded" and "trainerVersions" in lease:
+                reported = _trainer_versions(runtimes, lease.get("backend", "mjlab"))
+                if lease["trainerVersions"] != reported or (
+                    "compilerHash" in lease and lease["compilerHash"] != body.compilerHash
+                ):
+                    raise PlanError(
+                        "trainer_version_mismatch", "Trainer changed on the leased node", status=422
+                    )
             self._check_validation(job, lease, report, now)
             if report.status == "succeeded" and job["kind"] == "training" and not job["artifacts"]:
                 raise PlanError(
@@ -670,6 +693,7 @@ class TrainingJobs:
             cpuAvailable=body.cpuAvailable,
             hostname=body.hostname,
             trainerVersions=body.trainerVersions,
+            isaaclabVersions=body.isaaclabVersions,
             compilerHash=body.compilerHash,
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )

@@ -14,16 +14,18 @@ import json
 import math
 import os
 import time
+from contextlib import ExitStack
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
 
-def compiler_hash():
+def compiler_hash(directory=None, *, prefix=""):
+    directory = directory or Path(__file__).parent
     digest = hashlib.sha256()
     for name in ("mjlab_launcher.py", "usd_mjcf.py"):
-        digest.update(Path(__file__).with_name(name).read_bytes())
+        digest.update((directory / (prefix + name)).read_bytes())
     return digest.hexdigest()
 
 
@@ -128,25 +130,68 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
             raise ValueError("Validation produced non-finite observations or rewards")
         checks.clear()
 
-    def log(**values):
-        nonlocal steps
-        synchronize()
-        samples.append(time.perf_counter() - started)
-        if steps != runner.cfg["num_steps_per_env"] or steps < 1:
+    def optimizer_step(optimizer, args, kwargs):
+        if updating and any(
+            param.grad is not None for group in optimizer.param_groups for param in group["params"]
+        ):
+            optimizer_steps[optimizer] += 1
+
+    def update():
+        nonlocal updating, updated
+        if updated or steps != runner.cfg["num_steps_per_env"] or steps < 1:
             raise ValueError("Validation did not complete a full PPO rollout")
+        for optimizer in optimizer_steps:
+            optimizer_steps[optimizer] = 0
+        updating = True
+        try:
+            losses = original_update()
+        finally:
+            updating = False
+        if any(count != expected_updates for count in optimizer_steps.values()):
+            raise ValueError(
+                f"Validation did not complete {expected_updates} gradient-bearing PPO optimizer steps"
+            )
+        updated = True
+        return losses
+
+    def log(**values):
+        nonlocal steps, updated
+        synchronize()
+        elapsed = time.perf_counter() - started
+        if not updated:
+            raise ValueError("Validation did not complete PPO optimization before logging")
         check_finite()
         losses = values["loss_dict"]
         if not losses or not all(math.isfinite(loss) for loss in losses.values()):
             raise ValueError("Validation produced invalid PPO losses")
+        samples.append(elapsed)
+        updated = False
         steps = 0
 
+    alg = runner.alg
+    expected_updates = alg.num_learning_epochs * alg.num_mini_batches
+    if alg.num_learning_epochs < 1 or alg.num_mini_batches < 1:
+        raise ValueError("Validation requires positive PPO optimizer epochs and mini-batches")
+    optimizer_steps = {alg.optimizer: 0}
+    if rnd_optimizer := getattr(alg, "rnd_optimizer", None):
+        optimizer_steps[rnd_optimizer] = 0
     checks, samples = [], []
+    updating = updated = False
     steps, started = 0, 0.0
-    original_act, original_step = runner.alg.act, env.step
-    runner.alg.act, env.step, runner.logger.log = act, step, log
-    synchronize()
-    setup_seconds = time.perf_counter() - setup_started
-    runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+    original_act, original_step = alg.act, env.step
+    original_update, original_log = alg.update, runner.logger.log
+    with ExitStack() as hooks:
+        for optimizer in optimizer_steps:
+            hooks.callback(optimizer.register_step_post_hook(optimizer_step).remove)
+        try:
+            alg.act, env.step, alg.update, runner.logger.log = act, step, update, log
+            synchronize()
+            setup_seconds = time.perf_counter() - setup_started
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+        finally:
+            alg.act, env.step, alg.update, runner.logger.log = (
+                original_act, original_step, original_update, original_log,
+            )
     if len(samples) != iterations or steps:
         raise ValueError("Validation did not complete the bounded PPO iterations")
     return {

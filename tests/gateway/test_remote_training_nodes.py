@@ -7,6 +7,10 @@ from apps.api.app.settings import Settings
 
 OPERATOR = {"Authorization": "Bearer operator-fixture"}
 VIEWER = {"Authorization": "Bearer viewer-fixture"}
+ISAAC_VERSIONS = {
+    "isaaclab": "3.0.0", "newton": "1.6.0rc1", "warp": "1.17.0", "torch": "2.11.0+cu128", "rsl_rl": "5.4.1",
+}
+COMPILER = "a" * 64
 
 
 def remote_settings(**kwargs):
@@ -90,12 +94,15 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         job = validation.json()
         assert job["reason"] == "trainer_version_mismatch" and job["leaseId"] is None
 
-        (assignment,) = beat(client, first, gpus=[gpu], trainerVersions=versions, hostname="temp-a").json()[
-            "assignments"
-        ]
+        assert beat(client, first, gpus=[gpu], trainerVersions=versions).json()["assignments"] == []
+        invalid = beat(client, first, gpus=[gpu], trainerVersions=versions, compilerHash="invalid")
+        assert invalid.status_code == 422
+        runtime = {"trainerVersions": versions, "compilerHash": COMPILER}
+        (assignment,) = beat(client, first, gpus=[gpu], hostname="temp-a", **runtime).json()["assignments"]
         lease = first | {"X-Lease-Id": assignment["leaseId"]}
         inputs = f"/api/v1/jobs/{job['jobId']}/inputs"
         dispatch = client.get(inputs, headers=lease).json()
+        assert dispatch["compilerHash"] == COMPILER
         assert dispatch["plan"]["hyperparameters"]["num_envs"] == 128
         assert dispatch["job"]["validationLimits"] == {"iterations": 3, "timeoutSeconds": 180}
         assert client.get(inputs, headers=second | {"X-Lease-Id": assignment["leaseId"]}).status_code == 403
@@ -114,8 +121,8 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
             },
         }
         wrong = report | {"validation": report["validation"] | {"numEnvs": 8}}
-        assert beat(client, first, gpus=[gpu], trainerVersions=versions, reports=[wrong]).status_code == 422
-        assert beat(client, first, gpus=[gpu], trainerVersions=versions, reports=[report]).is_success
+        assert beat(client, first, gpus=[gpu], reports=[wrong], **runtime).status_code == 422
+        assert beat(client, first, gpus=[gpu], reports=[report], **runtime).is_success
         plan_view = client.get(f"/api/v1/plans/{plan['id']}", headers=operator).json()
         assert plan_view["estimatedWallSeconds"] == 105
         assert plan_view["estimatedGpuHours"] == 105 / 3600
@@ -126,15 +133,18 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         assert client.post("/api/v1/jobs", headers=operator, json=request).status_code == 409
 
         # A fresh machine with the same model can use the receipt despite a new hostname and GPU UUID.
-        assert beat(
-            client, second, hostname="temp-b", trainerVersions=versions, gpus=[gpu | {"id": "GPU-b"}]
-        ).is_success
+        second_gpu = [gpu | {"id": "GPU-b"}]
+        other_runtime = runtime | {"compilerHash": "b" * 64}
+        assert beat(client, second, gpus=second_gpu, **other_runtime).is_success
         assert client.post(
             f"{approval_url}/decision", headers=OPERATOR, json={"decision": "approve"}
         ).is_success
         training = client.post(
             "/api/v1/jobs", headers=operator, json=request | {"targetNodeId": "gpu-b"}
         ).json()
+        assert training["leaseId"] is None and training["reason"] == "estimate_unavailable"
+        assert beat(client, second, hostname="temp-b", gpus=second_gpu, **runtime).is_success
+        training = client.get(f"/api/v1/jobs/{training['jobId']}", headers=operator).json()
         assert training["nodeId"] == "gpu-b" and training["estimatedGpuHours"] == 105 / 3600
         assert int(training["leaseId"]) > int(assignment["leaseId"])
         old_lease = second | {"X-Lease-Id": training["leaseId"]}
@@ -142,7 +152,7 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         assert client.get(training_inputs, headers=old_lease).is_success
 
         restarted = second | {"X-Node-Instance": "test-2"}
-        assert beat(client, restarted, gpus=[gpu | {"id": "GPU-b"}], trainerVersions=versions).is_success
+        assert beat(client, restarted, gpus=second_gpu, **runtime).is_success
         assert beat(client, second).status_code == 409
         assert client.get(training_inputs, headers=old_lease).status_code == 403
         stale = report | {
@@ -202,14 +212,26 @@ def test_gateway_cuda_session_does_not_block_automatic_remote_scheduling():
         worker = register(client, "gpu-a")
         gpu = {"id": "GPU-remote", "name": "Remote GPU"}
         measured = {
-            "key": node_profile_key(plan, task["contentHash"], {"id": "gpu-a", "hardware": "fixture"}, gpu),
             "iterationSeconds": 2.0,
             "samples": 2,
             "measuredAt": 10,
             "evidence": "contract double",
         }
-        reply = beat(client, worker, gpus=[gpu], profiles=[measured])
-        assert [lease["jobId"] for lease in reply.json()["assignments"]] == [job["jobId"]]
+
+        def announce(**versions):
+            identity = {"id": "gpu-a", "hardware": "fixture", **versions}
+            key = node_profile_key(plan, task["contentHash"], identity, gpu, backend="isaaclab")
+            return beat(client, worker, gpus=[gpu], profiles=[measured | {"key": key}], **versions).json()
+
+        assert announce()["assignments"] == []
+        assert announce(trainerVersions=ISAAC_VERSIONS | {"newton": "1.7.0"})["assignments"] == []
+        both = announce(trainerVersions={"mjlab": "1.3.0"}, isaaclabVersions=ISAAC_VERSIONS)
+        (lease,) = both["assignments"]
+        assert lease["jobId"] == job["jobId"]
+        loaded = client.get(
+            f"/api/v1/jobs/{job['jobId']}/inputs", headers=worker | {"X-Lease-Id": lease["leaseId"]}
+        )
+        assert loaded.json()["trainerVersions"] == ISAAC_VERSIONS
         assert (
             client.get(f"/api/v1/jobs/{job['jobId']}", headers=OPERATOR).json()["estimatedWallSeconds"] == 20
         )

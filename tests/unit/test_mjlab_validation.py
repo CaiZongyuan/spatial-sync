@@ -9,7 +9,9 @@ import pytest
 from apps.node.mjlab_launcher import profile_training
 
 
-@pytest.mark.parametrize("bad_output", [None, "observation", "reward", "loss", "short_rollout"])
+@pytest.mark.parametrize(
+    "bad_output", [None, "observation", "reward", "loss", "short_rollout", "zero_updates", "partial_update"],
+)
 def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, bad_output):
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(isfinite=np.isfinite, stack=np.stack))
     events = []
@@ -29,9 +31,32 @@ def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, 
         return obs, rewards, None, {}
 
     env = SimpleNamespace(step=step)
+    hooks = []
+    class Optimizer:
+        param_groups = [{"params": [SimpleNamespace(grad=1.0)]}]
+
+    optimizer = Optimizer()
+
+    def register_step_post_hook(hook):
+        hooks.append(hook)
+        return SimpleNamespace(remove=lambda: hooks.remove(hook))
+
+    optimizer.register_step_post_hook = register_step_post_hook
+    optimizer.step = lambda: [hook(optimizer, (), {}) for hook in hooks]
+
+    def update():
+        updates = {"zero_updates": 0, "partial_update": 5}.get(bad_output, 6)
+        for _ in range(updates):
+            optimizer.step()
+        events.append("update")
+        return {"value": float("inf") if bad_output == "loss" else 0.25}
+
     runner = SimpleNamespace(
         cfg={"num_steps_per_env": 2},
-        alg=SimpleNamespace(act=lambda obs: np.full((num_envs, 2), 1.0)),
+        alg=SimpleNamespace(
+            act=lambda obs: np.full((num_envs, 2), 1.0),
+            optimizer=optimizer, num_learning_epochs=2, num_mini_batches=3, update=update,
+        ),
         logger=SimpleNamespace(log=None),
     )
 
@@ -41,19 +66,21 @@ def test_profile_runs_full_ppo_iterations_and_rejects_invalid_work(monkeypatch, 
         for _ in range(num_learning_iterations):
             for _ in range(1 if bad_output == "short_rollout" else 2):
                 obs, *_ = env.step(runner.alg.act(obs))
-            events.append("update")
-            runner.logger.log(loss_dict={"value": float("inf") if bad_output == "loss" else 0.25})
+            runner.logger.log(loss_dict=runner.alg.update())
 
     runner.learn = learn
     options = {"device": "cpu", "num_envs": num_envs, "iterations": 3,
                "synchronize": lambda: events.append("synchronize"), "setup_started": 0}
 
+    original_act = runner.alg.act
     if bad_output:
-        with pytest.raises(ValueError, match="non-finite|invalid PPO losses|full PPO rollout"):
+        with pytest.raises(ValueError, match="non-finite|invalid PPO losses|full PPO rollout|PPO optimizer"):
             profile_training(runner, env, **options)
-        return
-
-    result = profile_training(runner, env, **options)
-    assert result["numEnvs"] == 8 and len(result["samplesSeconds"]) == 2
-    assert events == ["synchronize"] + ["synchronize", "step", "step", "update", "synchronize"] * 3
-    assert result["setupSeconds"] > 0 and result["warmupSeconds"] > 0
+    else:
+        result = profile_training(runner, env, **options)
+        assert result["numEnvs"] == 8 and len(result["samplesSeconds"]) == 2
+        assert events == ["synchronize"] + ["synchronize", "step", "step", "update", "synchronize"] * 3
+        assert result["setupSeconds"] > 0 and result["warmupSeconds"] > 0
+    assert not hooks
+    assert env.step is step and runner.alg.act is original_act and runner.alg.update is update
+    assert runner.logger.log is None

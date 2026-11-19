@@ -10,6 +10,7 @@ NodeId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
 VALIDATION_ITERATIONS = 3
 VALIDATION_TIMEOUT = 180
 MJLAB_VERSIONS = {"mjlab": "1.3.0", "mujoco_warp": "3.8.1", "torch": "2.9.1"}
+ISAACLAB_VERSIONS = {"isaaclab": "3.0.0", "newton": "1.6.0rc1", "warp": "1.17.0", "torch": "2.11.0"}
 
 
 class NodeRegistration(Schema):
@@ -84,6 +85,7 @@ class NodeHeartbeat(Schema):
     cpuAvailable: bool = False
     hostname: Text | None = None
     trainerVersions: dict[str, Text] | None = Field(default=None, max_length=16)
+    isaaclabVersions: dict[str, Text] | None = Field(default=None, max_length=16)
     compilerHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     profiles: list[TimingProfile] = Field(default_factory=list, max_length=128)
     reports: list[JobReport] = Field(default_factory=list, max_length=16)

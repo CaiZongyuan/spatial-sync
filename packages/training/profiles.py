@@ -43,7 +43,10 @@ def measured_profile(raw, job, plan, node, resource_id):
     ):
         raise ValueError("Measurement setup duration and timestamp are required")
     digest = hashlib.sha256(raw).hexdigest()
-    key = node_profile_key(plan, job["taskContentHash"], {"id": "local", **node}, resources[resource_id])
+    key = node_profile_key(
+        plan, job["taskContentHash"], {"id": "local", **node}, resources[resource_id],
+        backend=job.get("backend"),
+    )
     return {
         "key": key,
         "iterationSeconds": max(samples),

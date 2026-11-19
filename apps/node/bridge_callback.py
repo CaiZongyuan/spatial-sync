@@ -57,9 +57,9 @@ def ensure_runner_bridged(runner_cls):
     return runner_cls
 
 
-def verify_trainer_versions(inputs, is_mjlab):
+def trainer_distributions(is_mjlab):
     if is_mjlab:
-        names = {
+        return {
             "mjlab": "mjlab",
             "mujoco": "mujoco",
             "mujoco_warp": "mujoco-warp",
@@ -67,15 +67,20 @@ def verify_trainer_versions(inputs, is_mjlab):
             "torch": "torch",
             "rsl_rl": "rsl-rl-lib",
         }
-    else:
-        names = {
-            "isaaclab": "isaaclab",
-            "newton": "newton",
-            "warp": "warp-lang",
-            "torch": "torch",
-            "rsl_rl": "rsl-rl-lib",
-        }
-    actual = {name: importlib.metadata.version(distribution) for name, distribution in names.items()}
+    return {
+        "isaaclab": "isaaclab",
+        "newton": "newton",
+        "warp": "warp-lang",
+        "torch": "torch",
+        "rsl_rl": "rsl-rl-lib",
+    }
+
+
+def verify_trainer_versions(inputs, is_mjlab):
+    actual = {
+        name: importlib.metadata.version(distribution)
+        for name, distribution in trainer_distributions(is_mjlab).items()
+    }
     if actual["rsl_rl"] != inputs["plan"]["algorithm"]["version"]:
         raise RuntimeError("Installed RSL-RL version differs from the approved plan")
     if any(actual.get(name) != version for name, version in (inputs.get("trainerVersions") or {}).items()):
