@@ -1,4 +1,4 @@
-"""Public job intent and separately authenticated local-node callbacks."""
+"""Public job intent and separately authenticated Compute Node callbacks."""
 
 import tempfile
 import uuid
@@ -10,7 +10,13 @@ from fastapi.responses import Response
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
 from packages.training.inputs import export_input, input_packages, store_artifacts
-from packages.training.job_contract import NodeHeartbeat, StartJob
+from packages.training.job_contract import (
+    CleanupReceipt,
+    ExchangeRegistration,
+    NodeHeartbeat,
+    NodeRegistration,
+    StartJob,
+)
 
 
 def install_job_routes(app, manager, role_for, views=None):
@@ -22,18 +28,21 @@ def install_job_routes(app, manager, role_for, views=None):
             raise PlanError("not_permitted", "Operator permission is required", status=403)
         return actor_from_headers(request.headers)
 
-    def node(request, identity=None):
-        if not jobs.authenticated_node(request.headers):
-            raise PlanError("node_auth_required", "A local node token is required", status=403)
+    def node(request, identity=None, *, node_id=None):
+        if not jobs.authenticated_node(request.headers, node_id):
+            raise PlanError("node_auth_required", "This Compute Node's token is required", status=403)
+        jobs._require_available()
         if identity:
             job = jobs.get(identity)
             owner = jobs.nodes.get(job["nodeId"])
             lease = owner and owner["leases"].get(job["resourceId"])
             if (
                 not lease
+                or job["nodeId"] != request.headers.get("x-node-id", "local")
                 or lease["jobId"] != identity
                 or lease["leaseId"] != request.headers.get("x-lease-id")
                 or owner["instanceId"] != request.headers.get("x-node-instance")
+                or jobs.dispatch_expired(owner, lease)
             ):
                 raise PlanError("lease_mismatch", "Node does not own this dispatch", status=403)
             return job
@@ -42,11 +51,13 @@ def install_job_routes(app, manager, role_for, views=None):
     async def start(body: StartJob, request: Request):
         actor = operator(request)
         return jobs.request(
-            body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision
+            body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision,
+            kind=body.kind, target_node=body.targetNodeId,
         )
 
     @app.get("/api/v1/jobs")
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):
+        jobs._require_available()
         return {
             "jobs": [
                 jobs.document(job)
@@ -76,34 +87,76 @@ def install_job_routes(app, manager, role_for, views=None):
     async def nodes():
         return {"nodes": jobs.list_nodes()}
 
-    @app.post("/api/v1/nodes/local/heartbeat")
-    async def heartbeat(body: NodeHeartbeat, request: Request):
-        node(request)
-        return jobs.heartbeat(body)
+    @app.post("/api/v1/nodes/registrations", status_code=201)
+    async def issue_registration(body: NodeRegistration, request: Request, response: Response):
+        operator(request)
+        response.headers["Cache-Control"] = "no-store"
+        return jobs.issue_registration(body)
+
+    @app.post("/api/v1/nodes/register", status_code=201)
+    async def register(body: ExchangeRegistration, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return jobs.register_node(body.code)
+
+    @app.post("/api/v1/nodes/cleanup", status_code=204)
+    async def cleanup(body: CleanupReceipt, request: Request):
+        jobs.clean_gpu(body, request.headers.get("x-node-cleanup-token", ""))
+
+    @app.get("/api/v1/nodes/{node_id}")
+    async def show_node(node_id: str):
+        return jobs.node_document(node_id)
+
+    @app.delete("/api/v1/nodes/{node_id}", status_code=204)
+    async def revoke_node(node_id: str, request: Request):
+        operator(request)
+        jobs.revoke_node(node_id)
+
+    @app.post("/api/v1/nodes/{node_id}/heartbeat")
+    async def heartbeat(node_id: str, body: NodeHeartbeat, request: Request):
+        node(request, node_id=node_id)
+        instance = request.headers.get("x-node-instance")
+        if node_id != "local" and instance != body.instanceId:
+            raise PlanError("node_owner_conflict", "Heartbeat instance must match the caller", status=403)
+        return jobs.heartbeat(body, node_id, owner_instance=instance)
 
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):
         job = node(request, identity)
-        return {
+        lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
+        value = {
             "schemaVersion": 1,
             "job": jobs.document(job),
             "plan": job["plan"],
-            "nativeObservationProfile": manager.policy_evidence.native_profiles.for_task(
-                job["taskContentHash"], job["plan"]["algorithm"]["version"]
-            ),
+            "trainerVersions": lease.get("trainerVersions"),
+            **({"runtimeIdentity": lease["runtimeIdentity"]} if lease.get("runtimeIdentity") else {}),
+            **({"compilerHash": lease["compilerHash"]} if lease.get("compilerHash") else {}),
+            "nativeObservationProfile": None,
             "packages": await anyio.to_thread.run_sync(input_packages, manager, job),
-            **({"view": await views.inputs_hint(job)} if views is not None else {}),
         }
+        if job["kind"] == "training":
+            value["nativeObservationProfile"] = manager.policy_evidence.native_profiles.for_task(
+                job["taskContentHash"], job["plan"]["algorithm"]["version"]
+            )
+            if views is not None:
+                value["view"] = await views.inputs_hint(job)
+        node(request, identity)
+        return value
 
     @app.get("/api/v1/jobs/{identity}/inputs/packages/{index}")
     async def package(identity: str, index: int, request: Request):
         job = node(request, identity)
         data = await anyio.to_thread.run_sync(export_input, manager, job, index)
+        node(request, identity)
         return Response(data, media_type="application/x-tar")
 
     @app.post("/api/v1/jobs/{identity}/artifacts")
     async def artifacts(identity: str, request: Request):
         job = node(request, identity)
+        if job["kind"] != "training":
+            raise PlanError(
+                "artifacts_unsupported", "Validation submits timing in its terminal report", status=422
+            )
+        lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
         with tempfile.TemporaryFile() as stream:
             size = 0
             async for chunk in request.stream():
@@ -112,7 +165,11 @@ def install_job_routes(app, manager, role_for, views=None):
                     raise PlanError("artifacts_invalid", "Artifacts exceed 128 MiB", status=422)
                 stream.write(chunk)
             stream.seek(0)
-            records, versions = await anyio.to_thread.run_sync(store_artifacts, manager, job, stream)
+            node(request, identity)
+            records, versions = await anyio.to_thread.run_sync(
+                store_artifacts, manager, job, stream, lambda: node(request, identity),
+                lease.get("trainerVersions"),
+            )
             node(request, identity)
             job.update(artifacts=records, versions=versions)
             jobs._save()

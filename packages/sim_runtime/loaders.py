@@ -21,7 +21,9 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
     """Apply stage axis conversion once and make labels independent of importer naming."""
     import newton
     from newton.usd import SchemaResolverMjc, SchemaResolverNewton, SchemaResolverPhysx
-    from pxr import Usd, UsdGeom, UsdPhysics
+    from pxr import Sdf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import bound_contact_material, filtered_collider_pairs, joint_armature
 
     from .usd_articulations import root_import
 
@@ -53,6 +55,32 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
         labels = getattr(builder, f"{kind}_label")
         for prim_path, index in paths[f"path_{kind}_map"].items():
             labels[index] = str(prim_path)
+    for joint_path, index in paths["path_joint_map"].items():
+        if builder.joint_type[index] in (newton.JointType.REVOLUTE, newton.JointType.PRISMATIC):
+            dof = builder.joint_qd_start[index]
+            builder.joint_armature[dof] = joint_armature(
+                stage.GetPrimAtPath(joint_path), builder.joint_armature[dof]
+            )
+
+    # The native reader covers individual bodies and shapes. Include authored
+    # filters with containing scopes as endpoints once real shape IDs are known.
+    shapes = {Sdf.Path(str(path)): index for path, index in paths["path_shape_map"].items()
+              if builder.shape_flags[index] & newton.ShapeFlags.COLLIDE_SHAPES}
+    for collider_path, index in shapes.items():
+        material = bound_contact_material(stage.GetPrimAtPath(collider_path))
+        if material is not None:
+            builder.shape_material_mu[index], builder.shape_material_restitution[index] = material
+    prims = list(stage.Traverse(Usd.TraverseInstanceProxies()))
+    if any(prim.HasRelationship("physics:filteredPairs") for prim in prims):
+        body_paths = {index: Sdf.Path(str(path)) for path, index in paths["path_body_map"].items()}
+        owners = {path: body_paths.get(builder.shape_body[index], Sdf.Path.absoluteRootPath)
+                  for path, index in shapes.items()}
+        existing = set(builder.shape_collision_filter_pairs)
+        for first, second in sorted(filtered_collider_pairs(prims, owners)):
+            pair = tuple(sorted((shapes[first], shapes[second])))
+            if pair not in existing:
+                builder.add_shape_collision_filter_pair(*pair)
+                existing.add(pair)
     compatibility.extend(
         {"code": "usd_articulation_root_compatibility", "entityKey": row["label"],
          "message": "Recovered explicit single-body articulation membership omitted by the pinned USD reader"}

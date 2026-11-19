@@ -596,6 +596,7 @@ class ExternalEvaluations:
                             verify_identity,
                             run.get("identitySnapshot"),
                             directory=self.evaluator.store.root / "identity-inputs",
+                            user_root=self.evaluator.suites.roots["user"],
                         )
                     except (OSError, ValueError):
                         raise PlanError(
@@ -663,6 +664,7 @@ class ExternalEvaluations:
                             verify_identity,
                             run.get("identitySnapshot"),
                             directory=self.evaluator.store.root / "identity-inputs",
+                            user_root=self.evaluator.suites.roots["user"],
                         )
                     except (OSError, ValueError):
                         raise PlanError(

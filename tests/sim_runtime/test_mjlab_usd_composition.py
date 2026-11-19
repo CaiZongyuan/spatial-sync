@@ -1,0 +1,728 @@
+"""CPU scene compilation against the pinned trainer SDK, including real contacts."""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+STAGE = """#usda 1.0
+(defaultPrim = "World"; metersPerUnit = 1; upAxis = "Z")
+def Xform "World" {
+    def Xform "Lab" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    ) {
+        rel material:binding:physics = </World/Lab/Grip>
+        def Material "Grip" (prepend apiSchemas = ["PhysicsMaterialAPI"]) {
+            float physics:dynamicFriction = 0.37
+        }
+        def Plane "Floor" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+            uniform token axis = "Z"
+        }
+        def Xform "Robot" (prepend apiSchemas = ["PhysicsArticulationRootAPI"]) {
+            def Xform "A" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsFilteredPairsAPI"]) {
+                rel physics:filteredPairs = </World/Lab/Robot/C>
+                double3 xformOp:translate = (0, 0, 1)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+                def Sphere "Ball" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+                    double radius = 0.1
+                }
+            }
+            def Xform "B" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {
+                def Sphere "Ball" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+                    double radius = 0.1
+                }
+            }
+            def Xform "C" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {
+                def Sphere "Ball" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+                    double radius = 0.1
+                }
+            }
+            def PhysicsRevoluteJoint "AB" {
+                rel physics:body0 = </World/Lab/Robot/A>
+                rel physics:body1 = </World/Lab/Robot/B>
+                point3f physics:localPos0 = (0.1, 0, 0)
+                bool physics:collisionEnabled = true
+            }
+            def PhysicsRevoluteJoint "BC" {
+                rel physics:body0 = </World/Lab/Robot/B>
+                rel physics:body1 = </World/Lab/Robot/C>
+            }
+        }
+    }
+}
+"""
+
+
+def test_final_mjlab_scene_preserves_usd_contacts(tmp_path):
+    run_pinned_composition(tmp_path, "parent")
+
+
+def test_final_mjlab_scene_rejects_lost_ground_pairs(tmp_path):
+    run_pinned_composition(tmp_path, "mask")
+
+
+def test_final_mjlab_scene_rejects_lost_ground_friction(tmp_path):
+    run_pinned_composition(tmp_path, "friction")
+
+
+def test_mjlab_simulation_rejects_contact_disabled_after_scene_composition(tmp_path):
+    run_pinned_composition(tmp_path, "disable")
+
+
+def test_mjlab_simulation_rejects_robot_exclusion_added_by_scene_callback(tmp_path):
+    run_pinned_composition(tmp_path, "exclude")
+
+
+def test_mjlab_simulation_rejects_shifted_usd_collider(tmp_path):
+    run_pinned_composition(tmp_path, "geometry")
+
+
+def test_mjlab_simulation_rejects_shifted_articulation_link(tmp_path):
+    run_pinned_composition(tmp_path, "link")
+
+
+def test_mjlab_simulation_preserves_root_placement_and_checks_joint_frames(tmp_path):
+    run_pinned_composition(tmp_path, "joint-frames")
+
+
+def test_mjlab_simulation_compares_compiled_meshes_in_the_link_frame(tmp_path):
+    run_pinned_composition(tmp_path, "mesh")
+
+
+def pytest_generate_tests(metafunc):
+    if "joint_or_body_case" in metafunc.fixturenames:
+        metafunc.parametrize("joint_or_body_case", [
+            "range", "margin", "unlimited", "limits-disabled", "order", "armature",
+            "mass", "inertia", "com", "attached-mass", "equivalent",
+        ])
+
+
+def test_mjlab_simulation_preserves_usd_joint_and_inertial_properties(tmp_path, joint_or_body_case):
+    run_pinned_composition(tmp_path, joint_or_body_case)
+
+
+def run_pinned_composition(tmp_path, case):
+    trainer = os.environ.get("SPATIAL_MJLAB_TEST_PYTHON")
+    if not trainer:
+        import pytest
+
+        pytest.importorskip("mjlab")
+        trainer = sys.executable
+    path = tmp_path / "stage.usda"
+    path.write_text(STAGE)
+    root = Path(__file__).resolve().parents[2]
+    environment = os.environ | {"PYTHONPATH": str(root), "CUDA_VISIBLE_DEVICES": "", "MUJOCO_GL": "disable"}
+    result = subprocess.run([trainer, str(Path(__file__).resolve()), str(path), case], cwd=tmp_path,
+                            env=environment, capture_output=True, text=True, timeout=60)
+    print(result.stdout)
+    assert result.returncode == 0, result.stderr
+
+
+def check_composition(path):
+    import math
+
+    import mujoco
+    import mujoco_warp
+    import warp as wp
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    derived = usd_mjcf.derive_usd_mjcf(
+        path, prim_path="/World/Lab/Robot", include_static_colliders=False
+    )
+
+    def contacts(model):
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        return {
+            frozenset(model.geom(int(i)).name.rsplit("/", 1)[-1] for i in (contact.geom1, contact.geom2))
+            for contact in data.contact
+        }
+
+    def callback(spec):
+        spec.option.gravity[2] = -8
+        # Translation and rotation within an infinite plane are physically equivalent.
+        spec.geom("terrain").pos = (.3, -.4, 0.)
+        spec.geom("terrain").quat = (math.sqrt(.5), 0., 0., math.sqrt(.5))
+        spec.add_sensor(name="floor-position", type=mujoco.mjtSensor.mjSENS_FRAMEPOS,
+                        objtype=mujoco.mjtObj.mjOBJ_GEOM, objname="terrain")
+
+    terrain = TerrainEntityCfg(terrain_type="plane")
+    cfg = SceneCfg(
+        terrain=terrain, entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback,
+    )
+    expected = {frozenset(("A_Ball", "B_Ball"))}
+    assert contacts(derived.to_mjmodel()) == expected
+    old_model = Scene(cfg, device="cpu").compile()
+    assert contacts(old_model) == set()
+    original_origin = old_model.site("env_origin_0").pos.copy()
+    verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+    final = Scene(cfg, device="cpu").compile()
+    verify(final)
+    assert contacts(final) == expected
+    assert math.isclose(final.geom("terrain").friction[0], .37, abs_tol=1e-7)
+    assert final.sensor("floor-position").objid[0] == final.geom("terrain").id
+    assert (final.site("env_origin_0").pos == original_origin).all()
+    assert final.opt.gravity[2] == -8
+    with wp.ScopedDevice("cpu"):
+        compiled = mujoco_warp.put_model(final)
+        pairs = compiled.nxn_geom_pair_filtered.numpy()
+        enabled = compiled.nxn_pairid_filtered.numpy()[:, 0] > -2
+    robot_pairs = {
+        frozenset(final.geom(int(index)).name for index in pair)
+        for pair in pairs[enabled]
+        if all(final.geom(int(index)).name.startswith("robot/") for index in pair)
+    }
+    assert robot_pairs == {frozenset(("robot/A_Ball", "robot/B_Ball"))}
+    print("Measured allowed pairs", contacts(final), "and ground friction", final.geom("terrain").friction[0])
+
+    def move_parent(spec):
+        spec.body("terrain").pos = (0., 0., .25)
+
+    def tilt_plane(spec):
+        spec.geom("terrain").quat = (math.sqrt(.5), math.sqrt(.5), 0., 0.)
+
+    def disable_contacts(spec):
+        spec.geom("terrain").contype = spec.geom("terrain").conaffinity = 2
+
+    for override in (move_parent, tilt_plane, disable_contacts):
+        altered = SceneCfg(terrain=terrain, entities=cfg.entities, spec_fn=override)
+        verify = usd_mjcf.configure_mjlab_usd_scene(altered, path)
+        try:
+            verify(Scene(altered, device="cpu").compile())
+        except usd_mjcf.UnsupportedUsdPhysics as exc:
+            assert exc.prim_path == "/World/Lab/Floor"
+        else:
+            raise AssertionError(f"Final scene accepted ground override {override.__name__}")
+
+
+def check_ground_fidelity(path, case):
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # Keep the second collider above the ground to test eligibility independently of current contact.
+    path.write_text(STAGE.replace("(0, 0, 1)", "(0, 0, .075)").replace("(0.1, 0, 0)", "(0.3, 0, .3)"))
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+
+    def scene(callback=None, *, validate=True):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path) if validate else None
+        model = Scene(cfg, device="cpu").compile()
+        if verify is not None:
+            verify(model)
+        return model
+
+    def ground_contacts(model):
+        ground = model.geom("terrain").id
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        return [(int(contact.dim), float(contact.friction[0])) for contact in data.contact
+                if ground in (contact.geom1, contact.geom2)]
+
+    def mutation(spec):
+        ground = spec.geom("terrain")
+        ground.friction = (.37, .005, .0001)
+        if case == "mask":
+            geom = spec.geom("robot/A_Ball")
+            geom.contype = geom.conaffinity = 2
+        else:
+            ground.priority = 1
+            ground.condim = 1
+
+    original = ground_contacts(scene())
+    altered = ground_contacts(scene(mutation, validate=False))
+    assert len(original) == 1 and original[0][0] == 3
+    if case == "mask":
+        assert altered == []
+    else:
+        assert altered == [(1, .37)]
+    print(f"{case} baseline {original}, mutation {altered}", flush=True)
+    try:
+        scene(mutation)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == "/World/Lab/Floor"
+        assert ("eligibility" if case == "mask" else "contact parameters") in str(exc)
+    else:
+        raise AssertionError(f"Final scene accepted {case} mutation")
+
+    def reencode(spec):
+        for geom in spec.geoms:
+            if geom.contype or geom.conaffinity:
+                geom.contype = geom.conaffinity = 2
+        spec.geom("terrain").priority = 1
+
+    equivalent = ground_contacts(scene(reencode))
+    assert equivalent == original
+
+    def remove_separated_pair(spec):
+        # The unchecked specimen uses the same ground material.
+        spec.geom("terrain").friction = (.37, .005, .0001)
+        geom = spec.geom("robot/B_Ball")
+        geom.contype = geom.conaffinity = 2
+
+    if case == "mask":
+        assert ground_contacts(scene(remove_separated_pair, validate=False)) == original
+        try:
+            scene(remove_separated_pair)
+        except usd_mjcf.UnsupportedUsdPhysics as exc:
+            assert exc.prim_path == "/World/Lab/Floor"
+            assert "/World/Lab/Robot/B/Ball" in str(exc)
+        else:
+            raise AssertionError("Final scene accepted removal of a separated ground pair")
+
+
+def check_final_simulation(path, case):
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import MujocoCfg, Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # A touches the floor and overlaps B above it. C remains initially separated.
+    path.write_text(STAGE.replace("(0, 0, 1)", "(0, 0, .075)")
+                    .replace("(0.1, 0, 0)", "(0.1, 0, .10)")
+                    .replace('rel physics:body1 = </World/Lab/Robot/C>',
+                             'rel physics:body1 = </World/Lab/Robot/C>\n'
+                             '                point3f physics:localPos0 = (0.5, 0, 0)'))
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+    callback_calls = []
+
+    def add_exclusion(spec):
+        callback_calls.append(1)
+        spec.add_exclude(bodyname1="robot/A", bodyname2="robot/B")
+
+    def shift_collider(spec):
+        callback_calls.append(1)
+        spec.geom("robot/A_Ball").pos[2] += .5
+
+    def shift_link(spec):
+        callback_calls.append(1)
+        spec.body("robot/B").pos[0] += .5
+
+    def build(*, callback=None, disabled=()):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        scene = Scene(cfg, device="cpu")
+        settings = MujocoCfg(timestep=.005, iterations=13, cone="elliptic", disableflags=disabled)
+        sim = Simulation(1, SimulationCfg(mujoco=settings), scene.compile(), device="cpu")
+        assert sim.mj_model.opt.timestep == .005 and sim.mj_model.opt.iterations == 13
+        assert sim.mj_model.opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC
+        data = mujoco.MjData(sim.mj_model)
+        mujoco.mj_forward(sim.mj_model, data)
+        contacts = {frozenset(sim.mj_model.geom(i).name for i in (row.geom1, row.geom2))
+                    for row in data.contact}
+        return sim, verify, contacts
+
+    expected = {frozenset(("terrain", "robot/A_Ball")), frozenset(("robot/A_Ball", "robot/B_Ball"))}
+    good_sim, good_verify, original = build()
+    assert original == expected
+    good_verify(good_sim.mj_model)
+    if case == "disable":
+        sim, verify, actual = build(disabled=("contact",))
+        assert actual == set()
+        assert sim.mj_model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT
+    elif case == "exclude":
+        sim, verify, actual = build(callback=add_exclusion)
+        assert actual == {frozenset(("terrain", "robot/A_Ball"))}
+        assert len(callback_calls) == 1
+    elif case == "link":
+        sim, verify, actual = build(callback=shift_link)
+        assert actual == {frozenset(("terrain", "robot/A_Ball"))}
+        assert sim.mj_model.geom("robot/B_Ball").pos.tolist() == [0., 0., 0.]
+        assert abs(sim.mj_model.body("robot/B").pos[0] - good_sim.mj_model.body("robot/B").pos[0] - .5) < 1e-7
+        assert len(callback_calls) == 1
+    else:
+        sim, verify, actual = build(callback=shift_collider)
+        assert actual == set()
+        assert sim.mj_model.geom("robot/A_Ball").pos[2] == .5
+        assert len(callback_calls) == 1
+    print(f"{case} original={sorted(map(sorted, original))} final={sorted(map(sorted, actual))} "
+          f"disableflags={sim.mj_model.opt.disableflags}", flush=True)
+    try:
+        verify(sim.mj_model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        if case == "disable":
+            assert exc.prim_path == "/World/Lab/Floor"
+        elif case == "link":
+            assert exc.prim_path == "/World/Lab/Robot/B"
+            assert "parent-relative" in str(exc)
+        else:
+            assert exc.prim_path == "/World/Lab/Robot/A/Ball"
+            if case == "exclude":
+                assert "/World/Lab/Robot/B/Ball" in str(exc)
+            else:
+                assert "link-local position" in str(exc)
+    else:
+        raise AssertionError(f"Final Simulation accepted {case}")
+
+
+def check_mesh_geometry(path):
+    import mujoco
+    import numpy as np
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # An asymmetric hull on C stays away from the floor and other links.
+    stage = STAGE.replace('def Xform "C" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {', '''
+            def Xform "C" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {
+                def Mesh "Hull" (prepend apiSchemas = ["PhysicsCollisionAPI"]) {
+                    point3f[] points = [(0.25, 0, 0), (0.29, 0, 0), (0.25, 0.06, 0), (0.25, 0, 0.08)]
+                    int[] faceVertexCounts = [3, 3, 3, 3]
+                    int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+                }
+    ''')
+    path.write_text(stage)
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+
+    def build(callback=None):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        model = Scene(cfg, device="cpu").compile()
+        return Simulation(1, SimulationCfg(), model, device="cpu"), verify
+
+    def reframe_mesh(spec, *, compensate):
+        geom = spec.geom("robot/C_Hull")
+        mesh = spec.mesh(geom.meshname)
+        vertices = np.asarray(mesh.uservert).reshape(-1, 3)
+        # Offsetting mesh authoring coordinates changes the compiler's principal
+        # frame. The inverse geom offset preserves every physical vertex.
+        order = [2, 0, 3, 1]
+        indices = np.argsort(order)
+        offset = np.array([.5, 0., 0.])
+        mesh.uservert = (vertices[order] + offset).ravel()
+        mesh.userface = indices[np.asarray(mesh.userface)].ravel()
+        if compensate:
+            geom.pos[:] -= offset
+            spec.geom("robot/A_Ball").quat[:] *= -1
+
+    def forward_mesh_center(sim):
+        model = sim.mj_model
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        geom = model.geom("robot/C_Hull").id
+        assert all(geom not in (contact.geom1, contact.geom2) for contact in data.contact)
+        mesh = model.geom_dataid[geom]
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        local_center = model.mesh_vert[start:start + count].mean(axis=0)
+        return data.geom_xpos[geom] + data.geom_xmat[geom].reshape(3, 3) @ local_center
+
+    before, verify_before = build()
+    verify_before(before.mj_model)
+    equivalent, verify_equivalent = build(lambda spec: reframe_mesh(spec, compensate=True))
+    verify_equivalent(equivalent.mj_model)
+    center = forward_mesh_center(before)
+    np.testing.assert_allclose(forward_mesh_center(equivalent), center, rtol=0., atol=1e-7)
+    data = mujoco.MjData(equivalent.mj_model)
+    # Model geometry is independent of where a reset or an initial pose puts the root.
+    data.qpos[2] += .75
+    mujoco.mj_forward(equivalent.mj_model, data)
+    verify_equivalent(equivalent.mj_model)
+
+    changed, verify_changed = build(lambda spec: reframe_mesh(spec, compensate=False))
+    np.testing.assert_allclose(forward_mesh_center(changed) - center, [.5, 0, 0], rtol=0., atol=1e-7)
+    try:
+        verify_changed(changed.mj_model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == "/World/Lab/Robot/C/Hull"
+        assert "link-local collider vertices" in str(exc)
+    else:
+        raise AssertionError("Final Simulation accepted a shifted mesh")
+    print("Equivalent mesh frame, vertex order, quaternion sign and root pose accepted", flush=True)
+
+
+def check_joint_frames(path):
+    import math
+
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+    from pxr import Usd, UsdPhysics
+
+    from apps.node import usd_mjcf
+
+    for root_mode in ("free", "mocap", "fixed"):
+        # Use an owned layer per model so OpenUSD does not reuse a previous fixture.
+        stage_path = path.with_name(root_mode + ".usda")
+        stage_path.write_text(STAGE)
+        stage = Usd.Stage.Open(str(stage_path))
+        if root_mode != "free":
+            fixed = UsdPhysics.FixedJoint.Define(stage, "/World/Lab/Robot/Fixed")
+            fixed.CreateBody1Rel().SetTargets(["/World/Lab/Robot/A"])
+            fixed.CreateLocalPos0Attr((0., 0., 1.))
+        if root_mode == "fixed":
+            stage.GetPrimAtPath("/World/Lab/Robot/A").RemoveProperty("physics:filteredPairs")
+            for name in ("B", "C", "AB", "BC"):
+                stage.RemovePrim("/World/Lab/Robot/" + name)
+        stage.GetRootLayer().Save()
+        derived = usd_mjcf.derive_usd_mjcf(
+            stage_path, prim_path="/World/Lab/Robot", include_static_colliders=False,
+        )
+
+        def build(callback=None):
+            initial = EntityCfg.InitialStateCfg(
+                pos=(.25, .35, 1.1), rot=(math.sqrt(.5), 0., 0., math.sqrt(.5)),
+                joint_pos={".*": .3},
+            )
+            entity = EntityCfg(spec_fn=derived.to_mjspec, init_state=initial)
+            cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                           entities={"robot": entity}, spec_fn=callback)
+            verify = usd_mjcf.configure_mjlab_usd_scene(cfg, stage_path)
+            sim = Simulation(1, SimulationCfg(), Scene(cfg, device="cpu").compile(), device="cpu")
+            return sim.mj_model, verify
+
+        def along_hinge_axis(spec):
+            # The same hinge line can be represented by any point on its axis.
+            joint = spec.joint("robot/AB")
+            joint.pos[:] += .25 * joint.axis
+
+        model, verify = build(None if root_mode == "fixed" else along_hinge_axis)
+        verify(model)
+        data = mujoco.MjData(model)
+        mujoco.mj_resetDataKeyframe(model, data, model.key("init_state").id)
+        if root_mode == "free":
+            assert abs(data.qpos[0] - .25) < 1e-7
+            data.qpos[2] += .4
+        else:
+            root_name = "robot/mocap_base" if root_mode == "fixed" else "robot/A"
+            index = model.body_mocapid[model.body(root_name).id]
+            assert index >= 0
+            data.mocap_pos[index, 2] += .4
+        mujoco.mj_forward(model, data)
+        verify(model)
+        print(f"{root_mode} placement and reset accepted", flush=True)
+
+        if root_mode == "mocap":
+            def move_anchor(spec):
+                joint = spec.joint("robot/AB")
+                transverse = min(range(3), key=lambda index: abs(joint.axis[index]))
+                joint.pos[transverse] += .05
+
+            changed, verify_changed = build(move_anchor)
+            try:
+                verify_changed(changed)
+            except usd_mjcf.UnsupportedUsdPhysics as exc:
+                assert exc.prim_path == "/World/Lab/Robot/AB"
+                assert "hinge anchor" in str(exc)
+            else:
+                raise AssertionError("Final Simulation accepted a changed hinge anchor")
+        if root_mode == "fixed":
+            def shift_welded_link(spec):
+                spec.body("robot/A").pos[0] += .5
+
+            changed, verify_changed = build(shift_welded_link)
+            try:
+                verify_changed(changed)
+            except usd_mjcf.UnsupportedUsdPhysics as exc:
+                assert exc.prim_path == "/World/Lab/Robot/A"
+                assert "parent-relative" in str(exc)
+            else:
+                raise AssertionError("Final Simulation accepted a changed fixed attachment")
+
+
+def check_joint_and_body_parameters(path, case):
+    import math
+    import xml.etree.ElementTree as ET
+
+    import mujoco
+    import numpy as np
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import MujocoCfg, Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    path.write_text(STAGE.replace(
+        'def Xform "B" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {',
+        'def Xform "B" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '                float physics:mass = 2\n'
+        '                point3f physics:centerOfMass = (.02, -.03, .04)\n'
+        '                float3 physics:diagonalInertia = (.01, .02, .025)\n'
+        '                quatf physics:principalAxes = (.70710678, 0, 0, .70710678)',
+    ).replace(
+        'bool physics:collisionEnabled = true',
+        'bool physics:collisionEnabled = true\n'
+        '                float physics:lowerLimit = -20\n'
+        '                float physics:upperLimit = 20\n'
+        '                custom float newton:armature = .03',
+    ).replace(
+        'rel physics:body0 = </World/Lab/Robot/B>', 'rel physics:body0 = </World/Lab/Robot/A>',
+    ))
+    robot = "/World/Lab/Robot"
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path=robot, include_static_colliders=False)
+    position = .25 if case == "margin" else .55
+
+    def mutate(spec):
+        joint = spec.joint("robot/AB")
+        body = spec.body("robot/B")
+        if case == "range":
+            joint.range[:] = [-.9, .9]
+        elif case == "margin":
+            joint.margin = .2
+        elif case == "unlimited":
+            joint.limited = mujoco.mjtLimited.mjLIMITED_FALSE
+        elif case == "armature":
+            joint.armature += .1
+        elif case == "mass":
+            body.mass += .5
+        elif case == "inertia":
+            body.iquat[:] = [1., 0., 0., 0.]
+        elif case == "com":
+            body.ipos[0] += .1
+        elif case == "attached-mass":
+            # No joint or geom is needed to change the articulated mass matrix.
+            body.add_body(name="ballast", mass=.25, inertia=[.01] * 3, explicitinertial=True)
+        elif case == "equivalent":
+            body.iquat[:] = [-1., 0., 0., 0.]
+            body.inertia[:] = [.02, .01, .025]
+            body.add_body(name="marker_frame")
+            # An unlimited joint ignores both stored endpoints and margin.
+            unlimited = spec.joint("robot/BC")
+            unlimited.range[:] = [-.8, .8]
+            unlimited.margin = .2
+            joint.solref_limit[:] = [.03, .9]
+            joint.solimp_limit[:] = [.85, .9, .001, .5, 2.]
+
+    def build(changed):
+        def robot_spec():
+            if not (changed and case == "order"):
+                return derived.to_mjspec()
+            xml = ET.fromstring(derived.mjcf_xml)
+            root = xml.find("worldbody/body")
+            link_b = root.find("body[@name='B']")
+            root.remove(link_b)
+            root.append(link_b)
+            return mujoco.MjSpec.from_string(ET.tostring(xml, encoding="unicode"))
+
+        initial = EntityCfg.InitialStateCfg(pos=(.25, .35, 1.1), rot=(math.sqrt(.5), 0., 0., math.sqrt(.5)),
+                                            joint_pos={".*": .1})
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=robot_spec, init_state=initial)},
+                       spec_fn=mutate if changed else None)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        disabled = ("limit",) if changed and case == "limits-disabled" else ()
+        settings = MujocoCfg(
+            timestep=.005, iterations=13, cone="elliptic", solver="cg", disableflags=disabled,
+        )
+        model = Scene(cfg, device="cpu").compile()
+        sim = Simulation(1, SimulationCfg(mujoco=settings), model, device="cpu")
+        assert sim.mj_model.opt.solver == mujoco.mjtSolver.mjSOL_CG
+        return sim.mj_model, verify
+
+    def observe(model):
+        joint = model.joint("robot/AB")
+        body = model.body("robot/B")
+        data = mujoco.MjData(model)
+        mujoco.mj_resetDataKeyframe(model, data, model.key("init_state").id)
+        data.qpos[joint.qposadr[0]] = position
+        mujoco.mj_forward(model, data)
+        has_limit = int(np.count_nonzero((data.efc_type == mujoco.mjtConstraint.mjCNSTR_LIMIT_JOINT)
+                                         & (data.efc_id == joint.id)))
+        axes = data.ximat[body.id].reshape(3, 3)
+        rotation = data.xmat[body.id].reshape(3, 3)
+        tensor = (axes * model.body_inertia[body.id]) @ axes.T
+        result = {
+            "limit": has_limit,
+            "order": sorted(("AB", "BC"), key=lambda name: model.joint("robot/" + name).qposadr[0]),
+            "mass": model.body_mass[body.id],
+            "inertia": rotation.T @ tensor @ rotation,
+            "armature": model.dof_armature[joint.dofadr[0]],
+            "world_com": data.xipos[body.id].copy(),
+            "com": rotation.T @ (data.xipos[body.id] - data.xpos[body.id]),
+            "total_mass": model.body_mass.sum(),
+        }
+        print(f"{case} q={position} range={joint.range.tolist()} margin={joint.margin[0]} "
+              f"solver={model.opt.solver} {result}", flush=True)
+        return result
+
+    source, verify_source = build(False)
+    expected = observe(source)
+    verify_source(source)
+    assert expected["limit"] == (0 if case == "margin" else 1)
+    assert expected["order"] == ["AB", "BC"]
+    assert expected["mass"] == 2. and np.isclose(expected["armature"], .03)
+    np.testing.assert_allclose(expected["com"], [.02, -.03, .04], atol=1e-7)
+    np.testing.assert_allclose(expected["inertia"], np.diag([.02, .01, .025]), atol=1e-7)
+    # The hinge first rotates the authored COM about X and the placed robot
+    # then turns it 90° about Z. The B anchor is .1 m along the robot's X.
+    c, s = math.cos(position), math.sin(position)
+    np.testing.assert_allclose(expected["world_com"], [.25 + .03 * c + .04 * s, .47, 1.1 - .03 * s + .04 * c],
+                               rtol=0., atol=1e-7)
+    model, verify = build(True)
+    actual = observe(model)
+    diagnostics = {
+        "range": ("AB", "joint limit"), "margin": ("AB", "activation margin"),
+        "unlimited": ("AB", "joint limit"), "limits-disabled": ("AB", "joint limit"),
+        "order": ("AB", "joint coordinate order"),
+        "armature": ("AB", "joint armature"), "mass": ("B", "link mass"),
+        "inertia": ("B", "link inertia"), "com": ("B", "link center of mass"),
+        "attached-mass": ("B", "attached body"),
+    }
+    if case == "equivalent":
+        np.testing.assert_allclose(actual["world_com"], expected["world_com"], atol=1e-7)
+        np.testing.assert_allclose(actual["inertia"], expected["inertia"], atol=1e-7)
+        assert actual["limit"] == expected["limit"]
+        verify(model)
+        return
+    if case in ("range", "unlimited", "limits-disabled"):
+        assert actual["limit"] == 0
+    elif case == "margin":
+        np.testing.assert_array_equal(model.joint("robot/AB").range, source.joint("robot/AB").range)
+        assert actual["limit"] == 1
+    elif case == "order":
+        assert actual["order"] == ["BC", "AB"]
+    elif case == "armature":
+        assert np.isclose(actual["armature"], .13)
+    elif case == "mass":
+        assert actual["mass"] == 2.5
+    elif case == "inertia":
+        np.testing.assert_allclose(actual["inertia"], np.diag([.01, .02, .025]), atol=1e-7)
+    elif case == "com":
+        assert actual["mass"] == expected["mass"]
+        np.testing.assert_allclose(actual["inertia"], expected["inertia"], atol=1e-7)
+        assert np.isclose(np.linalg.norm(actual["world_com"] - expected["world_com"]), .1)
+    else:
+        assert np.isclose(actual["total_mass"] - expected["total_mass"], .25)
+
+    prim, diagnostic = diagnostics[case]
+    try:
+        verify(model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == f"{robot}/{prim}"
+        assert diagnostic in str(exc)
+    else:
+        raise AssertionError(f"Final Simulation accepted {case}")
+
+
+if __name__ == "__main__":
+    path, case = Path(sys.argv[1]), sys.argv[2]
+    if case == "parent":
+        check_composition(path)
+    elif case in ("mask", "friction"):
+        check_ground_fidelity(path, case)
+    elif case == "mesh":
+        check_mesh_geometry(path)
+    elif case == "joint-frames":
+        check_joint_frames(path)
+    elif case in ("disable", "exclude", "geometry", "link"):
+        check_final_simulation(path, case)
+    else:
+        check_joint_and_body_parameters(path, case)

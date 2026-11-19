@@ -21,6 +21,8 @@ from pydantic import (
     model_validator,
 )
 
+from packages.library.common import LibraryError
+from packages.library.entity_types import USER_TYPE, ContentHash, EntityTypes
 from packages.library.read_cache import ReadCache, stamps, tree_paths
 from packages.library.scenes import REPO_ROOT, content_hash
 from packages.library.templates import template_id
@@ -32,6 +34,7 @@ DEPENDENCY_DIGEST = "sha256-text-lf-v1"
 CODE_ROOTS = (
     "packages/", "apps/api/app/sources/", "apps/api/app/recordings.py", "tools/capture_scene_preview.py",
 )
+PHYSICS_CODE = "apps/node/usd_mjcf.py"
 DATA_ROOTS = ("assets/", "devices/types/", "examples/usd-lab/", "library/")
 
 _NonemptyString = Annotated[str, Field(min_length=1)]
@@ -62,6 +65,12 @@ class _TemplateAsset(BaseModel):
         return template_id(value)
 
 
+class _EntityTypeInput(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    id: Annotated[str, Field(pattern=f"^{USER_TYPE.pattern}$")]
+    contentHash: ContentHash
+
+
 class _CaptureMetadata(BaseModel):
     """Validate every field exposed by describe before a cache can be selected."""
 
@@ -76,7 +85,9 @@ class _CaptureMetadata(BaseModel):
     templateAssets: list[_TemplateAsset] = Field(default_factory=list)
     libraryAssets: list[_TemplateAsset] = Field(default_factory=list)
 
-    @field_validator("templateAssets", "libraryAssets")
+    entityTypes: list[_EntityTypeInput] = Field(default_factory=list)
+
+    @field_validator("templateAssets", "libraryAssets", "entityTypes")
     @classmethod
     def unique_templates(cls, value):
         if len({item.id for item in value}) != len(value):
@@ -116,10 +127,14 @@ def relative_file(root, name):
     return path
 
 
+def is_code_input(name):
+    return name == PHYSICS_CODE or name.startswith(CODE_ROOTS)
+
+
 def dependency_path(dependency):
     name = dependency["path"]
     if not isinstance(name, str) or not (
-        name == "uv.lock" or name.startswith(CODE_ROOTS) or name.startswith(DATA_ROOTS)
+        name == "uv.lock" or is_code_input(name) or name.startswith(DATA_ROOTS)
     ) or name.startswith("assets/scene-previews/"):
         raise ValueError("Capture dependency is outside supported source inputs")
     return relative_file(REPO_ROOT, name)
@@ -178,6 +193,16 @@ class PreviewRepository:
         for snapshot in (*version.template_assets.values(), *version.runtime_assets.values()):
             path = Path(snapshot["path"])
             paths.update(tree_paths(path, path.parents[3]))
+        if version.user_root:
+            types = EntityTypes(version.user_root)
+            for binding in version.bindings["entities"]:
+                identifier = binding.get("type") or ""
+                if USER_TYPE.fullmatch(identifier):
+                    try:
+                        path = types.path(identifier)
+                        paths.update((path.parent.parent, path.parent, path))
+                    except LibraryError:
+                        pass  # _inspect will reject the unconfined or invalid input.
         paths = tuple(sorted(paths))
         recorded = stamps(paths)
         result = self._inspect(version, source)
@@ -234,6 +259,9 @@ class PreviewRepository:
                     item["id"]: item["contentHash"] for item in expected_assets
                 }:
                     raise ValueError("Preview USD asset dependencies are incomplete or differ; recapture")
+                snapshots = version.entity_type_snapshots()
+                if value["entityTypes"] != [snapshots[name].identity for name in sorted(snapshots)]:
+                    raise ValueError("Preview EntityType dependencies differ; recapture")
                 dependencies = value["dependencies"]
                 if not dependencies:
                     raise ValueError("预览的构建输入已变化，需要重新捕获")
@@ -285,7 +313,7 @@ class PreviewRepository:
                 if value["counts"] != counts:
                     raise ValueError("预览统计与真实快照不一致")
                 return directory, value, stale
-            except (OSError, KeyError, TypeError, ValueError) as exc:
+            except (OSError, KeyError, TypeError, ValueError, LibraryError) as exc:
                 reason = str(exc)
         raise ValueError(reason)
 

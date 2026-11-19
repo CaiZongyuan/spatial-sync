@@ -114,7 +114,7 @@ def _require_target(subject):
 def validate_base_catalog(catalog: Catalog, subject: SimulationSubject):
     """Require every original binding before any target replacement."""
     _require_target(subject)
-    actual = {key: fingerprint(binding) for key, binding in catalog.entities.items()}
+    actual = {key: fingerprint(binding) for key, binding in catalog.binding_documents().items()}
     if actual != subject.baseBindings:
         raise _invalid("subject_base_binding_changed", "Actual simulation base bindings differ")
 
@@ -124,7 +124,7 @@ def validate_applied_catalog(catalog: Catalog, subject: Subject) -> Subject:
     _require_target(subject)
     expected = dict(subject.baseBindings)
     expected[subject.target.entityKey] = subject.bindingHash
-    actual = {key: fingerprint(binding) for key, binding in catalog.entities.items()}
+    actual = {key: fingerprint(binding) for key, binding in catalog.binding_documents().items()}
     if actual != expected:
         raise _invalid("subject_binding_not_applied", "Actual target replacement is missing or differs")
     return subject

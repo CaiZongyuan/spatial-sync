@@ -134,6 +134,11 @@ def resolve(document, source, assets, expected=()):
         program = implementation["programs"][source]
         if binding.get("program") is not None and binding["program"] != program:
             raise TemplateError("Scene program conflicts with the template's selected source program")
+        type_pin = implementation.get("typeContentHash")
+        if type_pin is not None:
+            if binding.get("typeContentHash", type_pin) != type_pin:
+                raise TemplateError("Scene and Asset template EntityType content hashes differ")
+            binding["typeContentHash"] = type_pin
         binding.update(type=implementation["type"], program=program)
         declarations.append(Declaration(binding, deepcopy(implementation.get("config", {}))))
     return ResolvedBindings(document["scene"], tuple(declarations))

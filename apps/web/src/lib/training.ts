@@ -28,5 +28,8 @@ export interface TrainingPlanDocument {
   approvalStatus: string | null;
   approvalMode: 'human';
   changes: TrainingPlanChange[];
+  estimatedGpuHours?: number;
+  estimatedWallSeconds?: number;
+  validationJobId?: string;
 }
 export interface TrainingPlanChange { field: string; before: unknown; after: unknown }

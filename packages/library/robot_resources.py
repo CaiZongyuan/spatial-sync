@@ -8,10 +8,11 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from packages.library.archive import destination_parent
+from packages.library.archive import destination_parent, import_lock
 from packages.library.common import NAME, LibraryError
 from packages.library.templates import TemplateError
 from packages.library.templates import resolve as resolve_templates
+from packages.library.transactions import METADATA_MAX_BYTES, durable_bytes, json_bytes
 from packages.programs.metadata import ProgramIntent
 
 ActionKey = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9]*$")]
@@ -49,6 +50,13 @@ class Controller(Document):
     title: str = Field(min_length=1, max_length=256)
     embodiment: Name
     currentVersion: int | None = Field(ge=1)
+
+
+class ControllerRegistration(Document):
+    id: Name
+    title: str = Field(min_length=1, max_length=256)
+    embodiment: Name
+    currentVersion: None = None
 
 
 class Action(Document):
@@ -199,7 +207,7 @@ class RobotResources:
         path = destination_parent(root, relative.parts[:-1]) / relative.name
         try:
             if (path.is_symlink() or path.is_junction() or not path.is_file()
-                    or path.stat().st_nlink != 1 or path.stat().st_size > 256 * 1024):
+                    or path.stat().st_nlink != 1 or path.stat().st_size > METADATA_MAX_BYTES):
                 raise ValueError
             content = path.read_bytes()
             value = schema.model_validate(yaml.safe_load(content)).model_dump()
@@ -220,16 +228,22 @@ class RobotResources:
                 values[identifier] = record | {"root": origin}
         return values
 
+    def embodiment_metadata(self):
+        return self._documents("embodiments", Embodiment)
+
+    def _validate_model(self, value, embodiments):
+        if any(name not in embodiments for name in value["embodiments"]):
+            raise LibraryError("unknown_embodiment", "Robot Model references an unknown Embodiment", 409)
+        if value["runnable"]:
+            definition = self.programs.get(value["capability"]["program"])
+            if definition is None or value["capability"]["sources"] != [definition["source"]]:
+                raise LibraryError("robot_program_unavailable", "Robot Model Program is unsupported", 409)
+
     def models(self):
         values = self._documents("robot-models", RobotModel)
-        embodiments = self._documents("embodiments", Embodiment)
+        embodiments = self.embodiment_metadata()
         for value in values.values():
-            if any(name not in embodiments for name in value["embodiments"]):
-                raise LibraryError("unknown_embodiment", "Robot Model references an unknown Embodiment", 409)
-            if value["runnable"]:
-                definition = self.programs.get(value["capability"]["program"])
-                if definition is None or value["capability"]["sources"] != [definition["source"]]:
-                    raise LibraryError("robot_program_unavailable", "Robot Model Program is unsupported", 409)
+            self._validate_model(value, embodiments)
         return sorted(values.values(), key=lambda value: value["id"])
 
     def model(self, identifier):
@@ -244,7 +258,7 @@ class RobotResources:
 
     def controller(self, identifier):
         metadata = self._find(list(self._documents("controllers", Controller).values()), identifier)
-        embodiments = self._documents("embodiments", Embodiment)
+        embodiments = self.embodiment_metadata()
         if metadata["embodiment"] not in embodiments:
             raise LibraryError("unknown_embodiment", "Controller references an unknown robot", 409)
         models = {value["id"]: value for value in self.models()}
@@ -279,58 +293,130 @@ class RobotResources:
 
     def embodiments(self):
         models = self.models()
-        values = self._documents("embodiments", Embodiment)
-        result = []
-        for value in values.values():
-            asset = self.assets.resolve(value["asset"])
-            summary = asset.summary()
-            bindings = []
-            for binding in value["bindings"]:
-                scene = self.scenes.resolve(binding["scene"], source=binding["source"])
-                self.scenes.indexed_file(scene.root, f"scenes/{scene.name}/{scene.rev}/scene.yaml")
-                try:
-                    declarations = resolve_templates(scene.bindings, binding["source"], scene.template_assets)
-                except TemplateError:
-                    raise LibraryError(
-                        "robot_binding_mismatch", "Robot Scene templates unavailable", 409
-                    ) from None
-                match = next((item for item in declarations.declarations
-                              if item.binding.get("key") == binding["entity"]), None)
-                authored = next((item for item in scene.bindings["entities"]
-                                 if item.get("key") == binding["entity"]), None)
-                authored_template = authored.get("template") if authored is not None else None
-                matches_asset = authored_template == value["asset"] or (
-                    authored is not None
-                    and authored_template is None
-                    and _scene_references_robot_asset(
-                        scene, binding["entity"], value["asset"], summary["contentHash"]
-                    )
+        values = self.embodiment_metadata()
+        controllers = self._documents("controllers", Controller)
+        return [self._describe_embodiment(values[key], models, controllers) for key in sorted(values)]
+
+    def _describe_embodiment(self, value, models, controllers):
+        asset = self.assets.resolve(value["asset"])
+        summary = asset.summary()
+        bindings = []
+        for binding in value["bindings"]:
+            scene = self.scenes.resolve(binding["scene"], source=binding["source"])
+            self.scenes.indexed_file(scene.root, f"scenes/{scene.name}/{scene.rev}/scene.yaml")
+            try:
+                declarations = resolve_templates(scene.bindings, binding["source"], scene.template_assets)
+            except TemplateError:
+                raise LibraryError(
+                    "robot_binding_mismatch", "Robot Scene templates unavailable", 409
+                ) from None
+            match = next((item for item in declarations.declarations
+                          if item.binding.get("key") == binding["entity"]), None)
+            authored = next((item for item in scene.bindings["entities"]
+                             if item.get("key") == binding["entity"]), None)
+            authored_template = authored.get("template") if authored is not None else None
+            matches_asset = authored_template == value["asset"] or (
+                authored is not None
+                and authored_template is None
+                and _scene_references_robot_asset(
+                    scene, binding["entity"], value["asset"], summary["contentHash"]
                 )
-                if match is None or not matches_asset:
-                    raise LibraryError("robot_binding_mismatch", "Scene does not bind this robot asset", 409)
-                program = match.binding["program"]
-                model = next(
-                    (
-                        item
-                        for item in models
-                        if item["capability"]["program"] == program
-                        and value["id"] in item["embodiments"]
-                    ),
-                    None,
-                )
-                config = (match.template_config or {}) | match.binding.get("config", {})
-                bindings.append(binding | {"sceneContentHash": scene.content_hash, "program": program,
-                                           "robotModel": model["id"] if model else None,
-                                           "graspMode": config.get("graspMode")})
-            controller = self.controller(value["controller"]) if value["controller"] else None
-            if controller and controller["embodiment"] != value["id"]:
-                raise LibraryError("controller_embodiment_mismatch", "Controller robot identity differs", 409)
-            result.append(value | {"bindings": bindings, "visualUrl": summary["visualUrl"],
-                                   "assetContentHash": summary["contentHash"],
-                                   "connection": "not-connected" if value["kind"] == "real" else "simulation",
-                                   "currentController": controller["current"] if controller else None,
-                                   "controllerHistory": controller["versions"] if controller else []})
-        return sorted(result, key=lambda value: value["id"])
+            )
+            if match is None or not matches_asset:
+                raise LibraryError("robot_binding_mismatch", "Scene does not bind this robot asset", 409)
+            program = match.binding["program"]
+            model = next(
+                (
+                    item
+                    for item in models
+                    if item["capability"]["program"] == program
+                    and value["id"] in item["embodiments"]
+                ),
+                None,
+            )
+            config = (match.template_config or {}) | match.binding.get("config", {})
+            bindings.append(binding | {"sceneContentHash": scene.content_hash, "program": program,
+                                       "robotModel": model["id"] if model else None,
+                                       "graspMode": config.get("graspMode")})
+        controller_id = value["controller"]
+        controller = self.controller(controller_id) if controller_id in controllers else None
+        if controller_id and controller is None and value["root"] != "user":
+            raise LibraryError("unknown_robot_resource", "Built-in Controller is unavailable")
+        if controller and controller["embodiment"] != value["id"]:
+            raise LibraryError("controller_embodiment_mismatch", "Controller robot identity differs", 409)
+        return value | {"bindings": bindings, "visualUrl": summary["visualUrl"],
+                               "assetContentHash": summary["contentHash"],
+                               "connection": "not-connected" if value["kind"] == "real" else "simulation",
+                               "currentController": controller["current"] if controller else None,
+                               "controllerHistory": controller["versions"] if controller else []}
 
     def embodiment(self, identifier):
         return self._find(self.embodiments(), identifier)
+
+
+    def register_model(self, document):
+        return self._register(
+            "robot-models", RobotModel, document,
+            lambda value: self._validate_model(value, self.embodiment_metadata()),
+            self.model,
+        )
+
+    def register_embodiment(self, document):
+        def validate(value):
+            asset = self.assets.resolve(value["asset"])
+            relative = asset.path.relative_to(self.assets.roots[asset.root]).as_posix()
+            self.assets.indexed_file(asset.root, relative + "/asset.yaml")
+            controller_id = value["controller"]
+            controllers = self._documents("controllers", Controller)
+            if controller_id and (
+                controller_id in controllers or any(
+                    item["controller"] == controller_id
+                    for item in self.embodiment_metadata().values()
+                )
+            ):
+                raise LibraryError("robot_resource_conflict", "Controller ID already reserved", 409)
+            self._describe_embodiment(value | {"root": "user"}, self.models(), controllers)
+
+        return self._register("embodiments", Embodiment, document, validate, self.embodiment)
+
+    def register_controller(self, document):
+        def validate(value):
+            embodiment = self.embodiment_metadata().get(value["embodiment"])
+            if not embodiment or embodiment["kind"] != "sim" or embodiment["controller"] != value["id"]:
+                raise LibraryError(
+                    "controller_embodiment_mismatch", "Simulated Embodiment must declare this Controller", 409
+                )
+            directory = destination_parent(self.roots["user"], ("controllers", value["id"]))
+            if any(directory.glob("*.yaml")):
+                raise LibraryError("robot_resource_conflict", "Controller already has metadata", 409)
+
+        return self._register("controllers", Controller, document, validate, self.controller)
+
+    def _register(self, kind, schema, document, validate, describe):
+        value = document.model_dump()
+        content = json_bytes(value)
+        if len(content) > METADATA_MAX_BYTES:
+            raise LibraryError("robot_resource_too_large", "Robot resource metadata exceeds 256 KiB", 422)
+        identifier = self._name(value["id"])
+        root = self.roots["user"]
+        if kind == "controllers":
+            parents, filename = (kind, identifier), "controller.yaml"
+        else:
+            parents, filename = (kind,), identifier + ".yaml"
+        with self.assets._lock, import_lock(root):
+            relative = Path(*parents, filename)
+            for origin in ("builtin", "user"):
+                source_root = self.roots[origin]
+                path = destination_parent(source_root, parents) / filename
+                if not (path.exists() or path.is_symlink() or path.is_junction()):
+                    continue
+                if origin == "user":
+                    existing = self._read(root, relative, schema, identifier)
+                    existing.pop("contentHash")
+                    if existing == value:
+                        return describe(identifier), False
+                raise LibraryError("robot_resource_conflict", "Robot resource ID is already registered", 409)
+            validate(value)
+            path = destination_parent(root, parents, create=True) / filename
+            durable_bytes(path, content)
+            return describe(identifier), True

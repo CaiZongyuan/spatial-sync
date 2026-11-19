@@ -11,6 +11,7 @@ from pathlib import Path
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, extract_package, package_files
 from packages.library.common import content_hash
+from packages.training.runtime import job_backend, trainer_distributions
 
 
 def pack_package(path):
@@ -76,15 +77,9 @@ def _file_hash(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
-def store_artifacts(manager, job, stream):
-    with manager.library_assets._lock:
-        return _store_artifacts(manager, job, stream)
-
-
-def _store_artifacts(manager, job, stream):
+def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=None):
     root = manager.library_assets.roots["user"]
-    directory = destination_parent(root, ("jobs", job["jobId"]), create=True)
-    with tempfile.TemporaryDirectory(prefix=".upload-", dir=directory) as temporary:
+    with manager.library_assets._lock, tempfile.TemporaryDirectory(prefix=".upload-", dir=root) as temporary:
         stage = Path(temporary)
         extract_package(stream, stage)
         files = package_files(stage)
@@ -101,17 +96,16 @@ def _store_artifacts(manager, job, stream):
                 or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
-            task_doc = manager.tasks.show(job["task"])["task"]
-            required_versions = (
-                ("mjlab", "mujoco", "mujoco_warp", "warp", "torch", "rsl_rl")
-                if task_doc.get("mjlab") is not None
-                else ("isaaclab", "newton", "warp", "torch", "rsl_rl")
-            )
+            task_doc = manager.tasks.show(job["task"])["task"] if job.get("backend") is None else None
+            required_versions = trainer_distributions(job_backend(job, task_doc) == "mjlab")
             if any(
                 not isinstance(versions["versions"].get(name), str) or not versions["versions"][name]
                 for name in required_versions
             ):
                 raise ValueError("Required runtime versions are missing")
+            expected_versions = trainer_versions or {}
+            if any(versions["versions"].get(name) != version for name, version in expected_versions.items()):
+                raise ValueError("Artifact trainer versions differ from the leased Compute Node capabilities")
             if job["executionDevice"] == "cpu" and versions["hardware"].get("gpu") is not None:
                 raise ValueError("CPU execution cannot claim a GPU model")
             if job["executionDevice"] == "cuda" and versions["hardware"].get("gpu") != {
@@ -163,6 +157,8 @@ def _store_artifacts(manager, job, stream):
             {"path": name, "size": (stage / name).stat().st_size, "sha256": _file_hash(stage / name)}
             for name in sorted(files)
         ]
+        parts = ("jobs", job["jobId"])
+        directory = destination_parent(root, parts)
         destination = directory / "artifacts"
         if destination.exists():
             existing = [
@@ -175,6 +171,10 @@ def _store_artifacts(manager, job, stream):
             ]
             if existing != records:
                 raise PlanError("artifact_conflict", "This dispatch already has different artifacts")
-            return existing, versions
-        os.rename(stage, destination)
+        with manager._resource_lock:
+            if verify_lease is not None:
+                verify_lease()
+            if not destination.exists():
+                destination_parent(root, parts, create=True)
+                os.rename(stage, destination)
         return records, versions

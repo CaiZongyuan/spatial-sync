@@ -514,6 +514,8 @@ COMMANDS = (
                 Argument("seed", ("--seed",), int | None, "One of the declared seeds", None),
                 Argument("planRevision", ("--revision",), int | None, "Expected approved revision", None),
                 Argument("requestId", ("--request-id",), str | None, "Stable retry identity", None),
+                Argument("kind", ("--kind",), Literal["training", "plan_validation"], "Job kind", "training"),
+                Argument("targetNodeId", ("--node",), str | None, "Target Compute Node", None),
             ), mcp_name="job_start", actor=True),
     Command(path=("job", "ls"), help="List retained jobs and their real queue/approval state.",
             method="job_list", arguments=(
@@ -533,6 +535,16 @@ COMMANDS = (
             mcp_name="job_logs"),
     Command(path=("node", "ls"), help="Read actual node capabilities, profiles, leases and queue.",
             method="node_list", output_type=list[dict[str, Any]], mcp_name="node_ls"),
+    Command(path=("node", "issue"), help="Issue a single-use Compute Node registration code.",
+            method="node_issue", actor=True, arguments=(
+                Argument("nodeId", ("--node-id",), str | None, "Persistent node ID", None),
+                Argument("ttlSeconds", ("--ttl",), int, "Validity in seconds", 600),
+                Argument("colocated", ("--colocated",), bool, "Share gateway GPUs with Sessions", False),
+            )),
+    Command(path=("node", "show"), help="Inspect a Compute Node.", method="node_show",
+            arguments=(Argument("id", ("id",), str, "Compute Node ID"),)),
+    Command(path=("node", "revoke"), help="Revoke a Compute Node token and fence its leases.",
+            method="node_revoke", actor=True, arguments=(Argument("id", ("id",), str, "Compute Node ID"),)),
     Command(
         path=("task", "push"), help="Snapshot an Isaac Lab Task source package without executing it.",
         method="task_push",
@@ -678,6 +690,11 @@ COMMANDS = (
         path=("suite", "ls"), help="List public train metadata for pinned Agent and embodied suites.",
         method="suites_list", output_type=list[dict[str, Any]], mcp_name="suite_list",
     ),
+    Command(path=("entity-type", "ls"), help="List built-in and published robot EntityTypes.",
+            method="entity_types_list", mcp_name="entity_type_list", output_type=list[dict[str, Any]]),
+    Command(path=("entity-type", "show"), help="Read one exact EntityType declaration and its content hash.",
+            method="entity_type_show", mcp_name="entity_type_show", arguments=(
+                Argument("id", ("name/vN",), str, "Exact EntityType version"),)),
     Command(path=("robot", "ls"), help="Read robot Embodiments and scene bindings; starts no Source.",
             method="robots_list", mcp_name="robot_list", output_type=list[dict[str, Any]]),
     Command(path=("robot", "show"), help="Read an Embodiment, control composition and version history.",
@@ -691,6 +708,18 @@ COMMANDS = (
     Command(path=("controller", "show"), help="Read the explicitly current Controller and retained versions.",
             method="controller_show", mcp_name="controller_show", arguments=(
                 Argument("id", ("controller",), str, "Controller ID, such as fr3-arm"),)),
+    *(
+        Command(
+            path=(kind, "register"), help=help_text, method=method, mcp_name=method,
+            arguments=(Argument("document", ("document",), dict[str, Any], "Registration JSON/YAML file"),),
+        )
+        for kind, method, help_text in (
+            ("entity-type", "entity_type_register", "Publish an immutable robot EntityType."),
+            ("robot", "robot_register", "Register an immutable Embodiment."),
+            ("robot-model", "robot_model_register", "Register an immutable Robot Model."),
+            ("controller", "controller_register", "Register an empty Controller header."),
+        )
+    ),
     Command(
         path=("suite", "show"), help="Describe a pinned suite without private seeds or grading.",
         method="suite_show", arguments=(

@@ -187,7 +187,8 @@ class AgentRSI:
             ):
                 raise ValueError("Fixed evaluation packages or runtime changed")
             verify_identity(
-                run["identitySnapshot"], directory=self.manager.evaluations.store.root / "identity-inputs"
+                run["identitySnapshot"], directory=self.manager.evaluations.store.root / "identity-inputs",
+                user_root=scene.user_root,
             )
         except (OSError, ValueError, KeyError, TypeError, LibraryError) as error:
             raise PlanError(

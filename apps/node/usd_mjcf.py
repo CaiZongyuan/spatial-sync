@@ -10,15 +10,19 @@ import json
 import math
 import os
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from itertools import product
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Literal
 
-from pxr import Ar, Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdUtils
+from pxr import Ar, Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, UsdUtils
 
 QuatWXYZ = tuple[float, float, float, float]
 Vec3 = tuple[float, float, float]
+JOINT_ARMATURE_ATTR = "newton:armature"
+DEFAULT_FRICTION = (1., .005, .0001)  # Newton 1.7 ModelBuilder.ShapeConfig
 
 _AXIS_VECTORS: dict[str, Vec3] = {
     "X": (1.0, 0.0, 0.0),
@@ -51,6 +55,7 @@ class DerivedJoint:
     armature: float
     frictionloss: float
     actuated: bool
+    initial_position: float | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,8 @@ class DerivedArticulation:
     joints: tuple[DerivedJoint, ...]
     sites: tuple[str, ...]
     mjcf_xml: str
+    body_names_by_path: dict[str, str]
+    collider_names_by_path: dict[str, str]
 
     @property
     def joint_names(self) -> tuple[str, ...]:
@@ -600,9 +607,721 @@ def _custom_float(prim: Usd.Prim, names: Sequence[str], default: float = 0.0) ->
     return default
 
 
+def joint_armature(prim, default=0.):
+    return _custom_float(prim, (JOINT_ARMATURE_ATTR, "mjc:armature", "physxJoint:armature"), default)
+
+
+def bound_contact_material(prim):
+    binding = UsdShade.MaterialBindingAPI(prim)
+    material, _ = binding.ComputeBoundMaterial("physics")
+    api = UsdPhysics.MaterialAPI(material.GetPrim()) if material else None
+    if not api:
+        return None
+    # Both rigid solvers use one sliding coefficient, from dynamicFriction.
+    sliding = float(api.GetDynamicFrictionAttr().Get())
+    if not math.isfinite(sliding) or sliding < 0:
+        raise UnsupportedUsdPhysics(prim.GetPath(), "Invalid dynamic contact friction")
+    restitution = float(api.GetRestitutionAttr().Get())
+    if not 0 <= restitution <= 1:
+        raise UnsupportedUsdPhysics(prim.GetPath(), "Invalid contact restitution")
+    return sliding, restitution
+
+
+def _contact_attributes(prim):
+    contact = bound_contact_material(prim)
+    sliding, restitution = contact if contact is not None else (DEFAULT_FRICTION[0], 0.)
+    attrs = {"friction": _fmt((sliding, *DEFAULT_FRICTION[1:]))}
+    if restitution:
+        # Positive MuJoCo solref uses a time constant and damping ratio.
+        log_e = math.log(restitution)
+        ratio = max(.001, -log_e / math.hypot(math.pi, log_e))
+        attrs["solref"] = _fmt((.02, ratio))
+    return attrs
+
+
+def mujoco_contact_pairs(model):
+    """Compiled contact eligibility before pose-dependent broad/narrow phase."""
+    import mujoco
+    import numpy as np
+
+    disabled = mujoco.mjtDisableBit.mjDSBL_CONTACT | mujoco.mjtDisableBit.mjDSBL_CONSTRAINT
+    if model.opt.disableflags & disabled:
+        return set()
+    enabled_geoms = np.flatnonzero(model.geom_contype | model.geom_conaffinity)
+    first, second = (enabled_geoms[ids] for ids in np.triu_indices(len(enabled_geoms), k=1))
+    a, b = model.geom_bodyid[first], model.geom_bodyid[second]
+    weld_a, weld_b = model.body_weldid[a], model.body_weldid[b]
+    allowed = (weld_a != weld_b) & (
+        ((model.geom_contype[first] & model.geom_conaffinity[second]) != 0)
+        | ((model.geom_contype[second] & model.geom_conaffinity[first]) != 0)
+    )
+    if not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_FILTERPARENT:
+        parent = model.body_weldid[model.body_parentid]
+        allowed &= (weld_a == 0) | (weld_b == 0) | (
+            (parent[weld_a] != weld_b) & (parent[weld_b] != weld_a)
+        )
+    signatures = (np.minimum(a, b).astype(np.int64) << 16) | np.maximum(a, b)
+    allowed &= ~np.isin(signatures, model.exclude_signature.astype(np.uint32))
+    pairs = set(zip(first[allowed], second[allowed], strict=True))
+    # Explicit contact pairs bypass masks and body-level filtering in MuJoCo Warp.
+    pairs.update(tuple(sorted(pair)) for pair in zip(model.pair_geom1, model.pair_geom2, strict=True))
+    return pairs
+
+
+def _automatic_contact_parameters(model, first, second):
+    import mujoco
+    import numpy as np
+
+    # Match MuJoCo Warp's automatic geom contacts. Explicit pair overrides are
+    # outside the canonical plane composition supported here.
+    priority = model.geom_priority
+    condim = model.geom_condim
+    friction = model.geom_friction
+    mix = model.geom_solmix
+    if priority[first] != priority[second]:
+        winner = first if priority[first] > priority[second] else second
+        dimension = int(condim[winner])
+        coefficients = friction[winner]
+        weight = float(winner == first)
+    else:
+        dimension = int(max(condim[first], condim[second]))
+        coefficients = np.maximum(friction[first], friction[second])
+        left, right = mix[first], mix[second]
+        if left < mujoco.mjMINVAL or right < mujoco.mjMINVAL:
+            weight = .5 if max(left, right) < mujoco.mjMINVAL else float(left >= mujoco.mjMINVAL)
+        else:
+            weight = left / (left + right)
+
+    solref = model.geom_solref
+    solimp = model.geom_solimp
+    solver = (weight * solref[first] + (1. - weight) * solref[second]
+              if min(solref[first, 0], solref[second, 0]) > 0.
+              else np.minimum(solref[first], solref[second]))
+    # Slide, torsion and rolling coefficients enter the constraint only at
+    # dimensions 3, 4 and 6 respectively.
+    friction_count = {1: 0, 3: 1, 4: 2, 6: 3}[dimension]
+    active = np.maximum(coefficients[:friction_count], mujoco.mjMINMU)
+    return np.concatenate((
+        [dimension], active, solver, weight * solimp[first] + (1. - weight) * solimp[second],
+        [model.geom_margin[first] + model.geom_margin[second],
+         model.geom_gap[first] + model.geom_gap[second]],
+    ))
+
+
+def _check_mjlab_plane_pose(model, name, path):
+    import mujoco
+    import numpy as np
+
+    ground = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+    if ground < 0 or model.geom_type[ground] != mujoco.mjtGeom.mjGEOM_PLANE:
+        raise UnsupportedUsdPhysics(path, "Final mjlab scene requires the USD plane collider")
+    data = mujoco.MjData(model)
+    mujoco.mj_kinematics(model, data)
+    normal = data.geom_xmat[ground].reshape(3, 3)[:, 2]
+    ground_body = model.geom_bodyid[ground]
+    if (not np.isfinite(data.geom_xpos[ground]).all()
+            or not np.allclose(normal, (0., 0., 1.), rtol=0., atol=1e-6)
+            or abs(data.geom_xpos[ground, 2]) > 1e-6
+            or model.body_weldid[ground_body] != 0):
+        raise UnsupportedUsdPhysics(path, "Final mjlab terrain must remain a fixed Z-up plane at height zero")
+
+
+def mujoco_rotation_matrix(quat):
+    import mujoco
+    import numpy as np
+
+    matrix = np.empty(9)
+    quat = np.asarray(quat, dtype=float)
+    mujoco.mju_quat2Mat(matrix, quat / np.linalg.norm(quat))
+    return matrix.reshape(3, 3)
+
+
+def mujoco_link_inertia(model, index):
+    axes = mujoco_rotation_matrix(model.body_iquat[index])
+    return (axes * model.body_inertia[index]) @ axes.T
+
+
+def mujoco_joint_limits(model, index):
+    import mujoco
+
+    if model.jnt_limited[index] and not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_LIMIT:
+        return model.jnt_range[index].copy()
+    return None
+
+
+def mujoco_collision_axes(geom_type, rotation):
+    import mujoco
+    import numpy as np
+
+    if geom_type == mujoco.mjtGeom.mjGEOM_SPHERE:
+        return None
+    if geom_type == mujoco.mjtGeom.mjGEOM_PLANE:
+        return rotation[:, 2]
+    if geom_type in (mujoco.mjtGeom.mjGEOM_CAPSULE, mujoco.mjtGeom.mjGEOM_CYLINDER):
+        axis = rotation[:, 2]
+        return np.outer(axis, axis)
+    return rotation
+
+
+def _mjlab_collider_paths(model, names_by_path):
+    import mujoco
+
+    paths = {}
+    for path, name in names_by_path.items():
+        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+        if index < 0:
+            raise UnsupportedUsdPhysics(path, f"Missing USD collision geom {name}")
+        paths[index] = path
+    return paths
+
+
+def _mjlab_contact_snapshot(model, paths, plane_path):
+    import mujoco
+    import numpy as np
+
+    disabled = mujoco.mjtDisableBit.mjDSBL_CONTACT | mujoco.mjtDisableBit.mjDSBL_CONSTRAINT
+    if model.opt.disableflags & disabled:
+        raise UnsupportedUsdPhysics(plane_path, "Final mjlab simulation disabled contact constraints")
+    if model.opt.enableflags & mujoco.mjtEnableBit.mjENBL_OVERRIDE:
+        raise UnsupportedUsdPhysics(plane_path, "Global contact overrides change USD contact parameters")
+    for first, second in zip(model.pair_geom1, model.pair_geom2, strict=True):
+        if first in paths or second in paths:
+            path = paths[first] if first in paths else paths[second]
+            raise UnsupportedUsdPhysics(path, "Explicit MJCF pair overrides USD contact parameters")
+
+    pairs = {}
+    for first, second in sorted(mujoco_contact_pairs(model)):
+        if first not in paths and second not in paths:
+            continue
+        if first not in paths or second not in paths:
+            managed, extra = (first, second) if first in paths else (second, first)
+            extra_name = model.geom(int(extra)).name
+            raise UnsupportedUsdPhysics(paths[managed], f"Unexpected contact with geom {extra_name}")
+        pair = tuple(sorted((paths[first], paths[second])))
+        parameters = _automatic_contact_parameters(model, first, second)
+        if not np.isfinite(parameters).all():
+            raise UnsupportedUsdPhysics(pair[0], f"Non-finite contact parameters with {pair[1]}")
+        pairs[pair] = parameters
+    return pairs
+
+
+def _link_local_collision_geometry(model, index, path):
+    import mujoco
+    import numpy as np
+
+    geom_type = model.geom_type[index]
+    position = model.geom_pos[index].copy()
+    quat = model.geom_quat[index]
+    if not np.isfinite(quat).all() or np.linalg.norm(quat) < 1e-12:
+        raise UnsupportedUsdPhysics(path, "Invalid link-local collider rotation")
+    rotation = mujoco_rotation_matrix(quat)
+    size = model.geom_size[index]
+    points = None
+    if geom_type == mujoco.mjtGeom.mjGEOM_MESH:
+        mesh = model.geom_dataid[index]
+        start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
+        vertices = model.mesh_vert[start:start + count]
+        graph = model.mesh_graphadr[mesh]
+        if graph >= 0:
+            # MuJoCo's convex graph stores the mesh-local indices of hull vertices.
+            count = model.mesh_graph[graph]
+            offset = graph + 2 + count
+            vertices = vertices[model.mesh_graph[offset:offset + count]]
+        # The compiled geom already compensates for the mesh's principal frame.
+        points = position + vertices @ rotation.T
+        parameters = {}
+    elif geom_type == mujoco.mjtGeom.mjGEOM_BOX:
+        # Box corners preserve equivalent permutations and signs of local axes.
+        points = position + (np.array(list(product((-1., 1.), repeat=3))) * size) @ rotation.T
+        parameters = {}
+    else:
+        dimensions = {
+            mujoco.mjtGeom.mjGEOM_SPHERE: 1,
+            mujoco.mjtGeom.mjGEOM_CAPSULE: 2,
+            mujoco.mjtGeom.mjGEOM_CYLINDER: 2,
+        }
+        count = dimensions.get(mujoco.mjtGeom(int(geom_type)))
+        if count is None:
+            raise UnsupportedUsdPhysics(path, "Unsupported compiled collider type")
+        parameters = {"link-local position": position, "dimensions": size[:count].copy()}
+        axes = mujoco_collision_axes(geom_type, rotation)
+        if axes is not None:
+            parameters["link-local orientation"] = axes
+
+    if not all(np.isfinite(values).all() for values in parameters.values()):
+        raise UnsupportedUsdPhysics(path, "Non-finite link-local collider geometry")
+    if points is not None and (not len(points) or not np.isfinite(points).all()):
+        raise UnsupportedUsdPhysics(path, "Invalid link-local collider vertices")
+    owner = model.body(int(model.geom_bodyid[index])).name
+    return owner, geom_type, parameters, points
+
+
+def _same_collider_points(reference, candidate, tolerance):
+    import numpy as np
+
+    if reference.shape == candidate.shape and np.allclose(reference, candidate, atol=tolerance, rtol=0.):
+        return True
+
+    def contains_all(points, pool):
+        # Restrict each tolerance lookup to a window on the widest axis.
+        axis = int(np.argmax(np.ptp(pool, axis=0)))
+        pool = pool[np.argsort(pool[:, axis])]
+        lower = np.searchsorted(pool[:, axis], points[:, axis] - tolerance)
+        upper = np.searchsorted(pool[:, axis], points[:, axis] + tolerance, side="right")
+        return all(np.any(np.all(np.abs(pool[lo:hi] - point) <= tolerance, axis=1))
+                   for point, lo, hi in zip(points, lower, upper, strict=True))
+
+    return contains_all(reference, candidate) and contains_all(candidate, reference)
+
+
+def _mjlab_articulation(model, derived, coordinates, *, prefix=""):
+    import mujoco
+
+    body_paths = {}
+    for path, name in derived.body_names_by_path.items():
+        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, prefix + name)
+        if index <= 0:
+            raise UnsupportedUsdPhysics(path, "Missing USD rigid link in simulation")
+        body_paths[index] = path
+
+    # MuJoCo stores parents before children. Follow auxiliary frames back to
+    # their USD link so an added body cannot silently change robot dynamics.
+    owners = body_paths.copy()
+    for index in range(1, model.nbody):
+        if index in body_paths:
+            continue
+        owner = owners.get(model.body_parentid[index])
+        if owner is not None:
+            if model.body_mass[index] != 0. or model.body_jntnum[index]:
+                name = model.body(index).name or f"index {index}"
+                raise UnsupportedUsdPhysics(
+                    owner, f"Simulation added attached body {name} with mass or joints",
+                )
+            owners[index] = owner
+
+    data = mujoco.MjData(model)
+    joint_paths = {}
+    joints_by_id = {}
+    for joint in derived.joints:
+        path = joint.prim_path
+        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, prefix + joint.name)
+        kind = mujoco.mjtJoint.mjJNT_HINGE if joint.kind == "hinge" else mujoco.mjtJoint.mjJNT_SLIDE
+        if index < 0 or model.jnt_type[index] != kind:
+            raise UnsupportedUsdPhysics(path, "Missing USD joint or changed joint type")
+        address = model.jnt_qposadr[index]
+        data.qpos[address] = coordinates[path]
+        joint_paths[index] = path
+        axis = model.jnt_axis[index].copy()
+        # Translating a hinge anchor along its own axis preserves the joint line.
+        anchor = model.jnt_pos[index]
+        hinge_line = anchor - (anchor @ axis) * axis if joint.kind == "hinge" else None
+        limits = mujoco_joint_limits(model, index)
+        # A limit activates when the coordinate is closer to a bound than its margin.
+        margin = model.jnt_margin[index] if limits is not None else 0.
+        joints_by_id[index] = (axis, hinge_line, limits, margin,
+                              model.dof_armature[model.jnt_dofadr[index]])
+    # Compare the order of all USD scalar coordinates, including passive
+    # joints. Free-root coordinates occupy a separate representation.
+    joint_order = sorted(joint_paths, key=lambda index: model.jnt_qposadr[index])
+    joint_parameters = {joint_paths[index]: joints_by_id[index] for index in joint_order}
+
+    mujoco.mj_kinematics(model, data)
+    links = {}
+    for index, path in body_paths.items():
+        parent = model.body_parentid[index]
+        parent_path = body_paths.get(parent)
+        first = model.body_jntadr[index]
+        joints = range(first, first + model.body_jntnum[index])
+        free_root = len(joints) == 1 and model.jnt_type[first] == mujoco.mjtJoint.mjJNT_FREE
+        mocap_root = model.body_mocapid[index] >= 0
+        if parent and parent_path is None:
+            # mjlab wraps a fixed entity in a single world-attached mocap
+            # placement body. The original link's offset inside it stays pinned.
+            if (not prefix or model.body(int(parent)).name != prefix + "mocap_base"
+                    or model.body_parentid[parent] != 0 or model.body_mocapid[parent] < 0
+                    or model.body_jntnum[parent] != 0 or free_root or mocap_root):
+                raise UnsupportedUsdPhysics(path, "Simulation changed rigid link parent")
+        attached = () if free_root else tuple(sorted(joint_paths.get(j, "") for j in joints))
+        if "" in attached:
+            raise UnsupportedUsdPhysics(path, "Simulation attached an unrecognized joint to USD link")
+        relative = None
+        if not (free_root or mocap_root):
+            parent_inverse = data.xmat[parent].reshape(3, 3).T
+            relative = (parent_inverse @ (data.xpos[index] - data.xpos[parent]),
+                        parent_inverse @ data.xmat[index].reshape(3, 3))
+        inertial = (model.body_mass[index], model.body_ipos[index].copy(), mujoco_link_inertia(model, index))
+        links[path] = ((parent_path, attached, free_root, mocap_root), relative, inertial)
+    return links, joint_parameters
+
+
+def _check_mjlab_articulation(reference, candidate):
+    import numpy as np
+
+    expected_links, expected_joints = reference
+    actual_links, actual_joints = candidate
+    for path, (structure, pose, inertial) in expected_links.items():
+        actual_structure, actual_pose, actual_inertial = actual_links[path]
+        if structure != actual_structure:
+            raise UnsupportedUsdPhysics(path, "Simulation changed link parent, attached joints or root type")
+        if pose is not None and any(
+            not np.allclose(left, right, rtol=0., atol=1e-5)
+            for left, right in zip(pose, actual_pose, strict=True)
+        ):
+            raise UnsupportedUsdPhysics(path, "Simulation changed parent-relative link transform")
+        mass, center, tensor = inertial
+        actual_mass, actual_center, actual_tensor = actual_inertial
+        if not np.isclose(mass, actual_mass, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link mass")
+        if (mass > 0. or actual_mass > 0.) and not np.allclose(center, actual_center, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link center of mass")
+        if not np.allclose(tensor, actual_tensor, rtol=0., atol=1e-8):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link inertia tensor")
+
+    for path, actual_path in zip(expected_joints, actual_joints, strict=True):
+        if path != actual_path:
+            raise UnsupportedUsdPhysics(
+                path, f"Simulation changed USD scalar joint coordinate order (found {actual_path})",
+            )
+    for path, (axis, anchor, limits, margin, armature) in expected_joints.items():
+        actual_axis, actual_anchor, actual_limits, actual_margin, actual_armature = actual_joints[path]
+        if not np.allclose(axis, actual_axis, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint axis")
+        if anchor is not None and not np.allclose(anchor, actual_anchor, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD hinge anchor")
+        # Unbounded joints can carry unused endpoints in the compiled model.
+        if ((limits is None) != (actual_limits is None)
+                or limits is not None and not np.allclose(limits, actual_limits, rtol=0., atol=1e-6)):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint limits")
+        if not np.isclose(margin, actual_margin, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(
+                path,
+                f"Simulation changed USD joint limit activation margin ({margin:g} to {actual_margin:g})",
+            )
+        if not np.isclose(armature, actual_armature, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint armature")
+
+
+def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
+    """Compose the USD plane and return a check for the final simulation model."""
+    import mujoco
+    import numpy as np
+
+    if len(scene_cfg.entities) != 1 or getattr(scene_cfg.terrain, "terrain_type", None) != "plane":
+        raise ValueError("USD scene composition requires one mjlab entity and plane terrain")
+    stage, _pinned_layers = _open_usd_stage(source, asset_packages)
+    root = stage.GetPrimAtPath("/World/Lab")
+    if not root:
+        raise ValueError("USD scene composition requires /World/Lab")
+    prims = list(Usd.PrimRange(root, Usd.TraverseInstanceProxies()))
+    colliders = {
+        prim.GetPath(): _enclosing_rigid_body(stage, prim.GetPath(), root.GetPath())
+        for prim in prims if _enabled_collider(prim)
+    }
+    static = [path for path, body in colliders.items() if body is None]
+    if len(static) != 1 or not (plane := UsdGeom.Plane.Get(stage, static[0])):
+        raise ValueError("USD scene composition requires exactly one static plane collider")
+    matrix = UsdGeom.XformCache().GetLocalToWorldTransform(plane.GetPrim())
+    axis = _AXIS_VECTORS[str(plane.GetAxisAttr().Get())]
+    normal = matrix.TransformDir(Gf.Vec3d(*axis)).GetNormalized()
+    if (normal - Gf.Vec3d(0, 0, 1)).GetLength() > 1e-6 or abs(matrix.ExtractTranslation()[2]) > 1e-6:
+        raise UnsupportedUsdPhysics(plane.GetPath(), "mjlab terrain requires a Z-up plane at height zero")
+    owners = {path: body.GetPath() if body is not None else Sdf.Path.absoluteRootPath
+              for path, body in colliders.items()}
+    if (any(plane.GetPath() in pair for pair in filtered_collider_pairs(stage.Traverse(), owners))
+            or any(prim.IsA(UsdPhysics.CollisionGroup) for prim in prims)):
+        raise UnsupportedUsdPhysics(plane.GetPath(), "mjlab plane composition requires unfiltered terrain")
+
+    contact = _contact_attributes(plane.GetPrim())
+    plane_path = plane.GetPath()
+    derived = derive_usd_mjcf(stage, prim_path=str(root.GetPath()))
+    source_names = derived.collider_names_by_path
+    source_model = derived.to_mjmodel()
+    source_paths = _mjlab_collider_paths(source_model, source_names)
+    prefix = next(iter(scene_cfg.entities)) + "/"
+    plane_key = str(plane_path)
+    expected = _mjlab_contact_snapshot(source_model, source_paths, plane_key)
+    root_index = source_model.body(derived.root_body).id
+    wrapped_contacts = None
+    if source_model.body_jntnum[root_index] == 0 and source_model.body_mocapid[root_index] < 0:
+        # The SDK's placement wrapper gives a static entity its own mocap weld
+        # island. Compile that source collision representation separately.
+        wrapped = derived.to_mjspec()
+        wrapped.body(derived.root_body).mocap = True
+        wrapped_model = wrapped.compile()
+        wrapped_paths = _mjlab_collider_paths(wrapped_model, source_names)
+        wrapped_contacts = _mjlab_contact_snapshot(wrapped_model, wrapped_paths, plane_key)
+    coordinates = {
+        joint.prim_path: float(source_model.qpos0[source_model.joint(joint.name).qposadr[0]])
+        for joint in derived.joints
+    }
+    expected_articulation = _mjlab_articulation(source_model, derived, coordinates)
+    expected_geometry = {
+        path: _link_local_collision_geometry(source_model, index, path)
+        for index, path in source_paths.items() if path != plane_key
+    }
+    final_names = {path: "terrain" if path == plane_key else prefix + name
+                   for path, name in source_names.items()}
+    previous = scene_cfg.spec_fn
+
+    def compose(spec):
+        if previous is not None:
+            previous(spec)
+        geom = spec.geom("terrain")
+        if geom is None or geom.type != mujoco.mjtGeom.mjGEOM_PLANE:
+            raise UnsupportedUsdPhysics(plane_path, "Final mjlab scene requires a plane geom named terrain")
+        # MjSpec.attach preserves entity exclusions, but only the root owns solver flags.
+        spec.option.disableflags |= mujoco.mjtDisableBit.mjDSBL_FILTERPARENT
+        geom.friction = [float(value) for value in contact["friction"].split()]
+        geom.solref = [float(value) for value in contact.get("solref", ".02 1").split()]
+
+    def verify(model):
+        _check_mjlab_plane_pose(model, "terrain", plane_path)
+        final_paths = _mjlab_collider_paths(model, final_names)
+        for index, path in final_paths.items():
+            if path == plane_key:
+                continue
+            owner, geom_type, parameters, points = expected_geometry[path]
+            if model.body(int(model.geom_bodyid[index])).name != prefix + owner:
+                raise UnsupportedUsdPhysics(path, "Simulation changed collider ownership")
+            if model.geom_type[index] != geom_type:
+                raise UnsupportedUsdPhysics(path, "Simulation changed collider type")
+            _, _, actual_parameters, actual_points = _link_local_collision_geometry(model, index, path)
+            for name, values in parameters.items():
+                if not np.allclose(values, actual_parameters[name], rtol=0., atol=1e-5):
+                    raise UnsupportedUsdPhysics(path, f"Simulation changed collider {name}")
+            if points is not None and not _same_collider_points(points, actual_points, 1e-5):
+                raise UnsupportedUsdPhysics(path, "Simulation changed link-local collider vertices")
+
+        actual_articulation = _mjlab_articulation(model, derived, coordinates, prefix=prefix)
+        _check_mjlab_articulation(expected_articulation, actual_articulation)
+        actual = _mjlab_contact_snapshot(model, final_paths, plane_key)
+        root_index = model.body(prefix + derived.root_body).id
+        # A non-world parent for this root has already been verified as the SDK wrapper.
+        uses_wrapper = wrapped_contacts is not None and model.body_parentid[root_index] != 0
+        expected_pairs = wrapped_contacts if uses_wrapper else expected
+        changed_pairs = expected_pairs.keys() ^ actual.keys()
+        if changed_pairs:
+            first, second = min(changed_pairs)
+            raise UnsupportedUsdPhysics(first, f"Simulation changed collision eligibility with {second}")
+        for pair, reference in expected_pairs.items():
+            candidate = actual[pair]
+            same_parameters = reference.shape == candidate.shape and np.allclose(
+                reference, candidate, rtol=0., atol=1e-8,
+            )
+            if not same_parameters:
+                first, second = pair
+                raise UnsupportedUsdPhysics(first, f"Simulation changed contact parameters with {second}")
+
+    scene_cfg.spec_fn = compose
+    return verify
+
+
+def filtered_collider_pairs(prims, collider_owners):
+    """Resolve symmetric filtered pairs on colliders, rigid bodies or containing scopes."""
+    relationships = [(prim.GetPath(), rel) for prim in prims
+                     if (rel := prim.GetRelationship("physics:filteredPairs"))]
+    if not relationships:
+        return {}
+    by_body = defaultdict(set)
+    by_scope = defaultdict(set)
+    for collider, body in collider_owners.items():
+        by_body[body].add(collider)
+        for prefix in collider.GetPrefixes():
+            by_scope[prefix].add(collider)
+    pairs = {}
+    def endpoint(path):
+        if path in by_body:
+            return by_body[path]
+        if path in collider_owners:
+            return {path}
+        return by_scope.get(path, ())
+
+    for source, relationship in relationships:
+        for target in relationship.GetForwardedTargets():
+            if source != target:
+                sources, targets = endpoint(source), endpoint(target)
+                for first, second in product(sources, targets):
+                    if first != second and collider_owners[first] != collider_owners[second]:
+                        pairs[tuple(sorted((first, second)))] = source
+    return pairs
+
+
+def _body_exclusions(prims, collider_owners, joint_exclusions):
+    filtered = filtered_collider_pairs(prims, collider_owners)
+    by_body = defaultdict(set)
+    for collider, body in collider_owners.items():
+        by_body[body].add(collider)
+    exclusions = set(joint_exclusions)
+    for (first, second), authored_at in filtered.items():
+        bodies = tuple(sorted((collider_owners[first], collider_owners[second])))
+        if bodies in exclusions:
+            continue
+        if any(tuple(sorted(pair)) not in filtered for pair in product(*(by_body[b] for b in bodies))):
+            raise UnsupportedUsdPhysics(authored_at, "Filtered pair does not cover both bodies' colliders")
+        exclusions.add(bodies)
+    return exclusions
+
+
+class UnsupportedUsdPhysics(ValueError):
+    def __init__(self, path: Sdf.Path, message: str):
+        self.prim_path = str(path)
+        super().__init__(f"{message} at {path}")
+
+
+def _joint_edges(stage, scope_path, prims):
+    edges = {}
+    for prim in prims:
+        type_name = str(prim.GetTypeName())
+        is_joint_type = type_name.startswith("Physics") and type_name.endswith("Joint")
+        if not (prim.IsA(UsdPhysics.Joint) or is_joint_type):
+            continue
+        joint = UsdPhysics.Joint(prim)
+        if joint.GetJointEnabledAttr().Get() is False:
+            continue
+        endpoints = [rel.GetForwardedTargets() for rel in (joint.GetBody0Rel(), joint.GetBody1Rel())]
+        parent, child = [
+            _enclosing_rigid_body(stage, targets[0], scope_path) if targets else None
+            for targets in endpoints
+        ]
+        joint_path = prim.GetPath()
+        if parent is None and child is None and not joint_path.HasPrefix(scope_path):
+            continue
+        if not any(prim.IsA(schema) for schema in (
+            UsdPhysics.FixedJoint, UsdPhysics.RevoluteJoint, UsdPhysics.PrismaticJoint,
+        )):
+            raise UnsupportedUsdPhysics(joint_path, f"Unsupported USD joint type {prim.GetTypeName()}")
+        if any("mimic" in name.lower() or "tendon" in name.lower()
+               for name in (*prim.GetAppliedSchemas(), *prim.GetAuthoredPropertyNames())):
+            raise UnsupportedUsdPhysics(joint_path, "Unsupported mimic or tendon joint")
+        drive_name = "angular" if prim.IsA(UsdPhysics.RevoluteJoint) else "linear"
+        if prim.HasAPI(UsdPhysics.DriveAPI, drive_name):
+            drive_type = UsdPhysics.DriveAPI(prim, drive_name).GetTypeAttr().Get()
+            if drive_type not in (None, "force"):
+                raise UnsupportedUsdPhysics(
+                    joint_path, f"Unsupported UsdPhysics.DriveAPI type {drive_type!r}; use 'force'"
+                )
+        if child is None:
+            if parent is None and any(endpoints):
+                continue
+            raise UnsupportedUsdPhysics(joint_path, "Joint body1 must resolve to a rigid body")
+        child_path = child.GetPath()
+        if child_path in edges:
+            previous = edges[child_path][1].GetPath()
+            raise UnsupportedUsdPhysics(
+                joint_path, f"Rigid body {child_path} has multiple parent joints ({previous})"
+            )
+        edges[child_path] = (parent.GetPath() if parent is not None else None, prim)
+    _check_joint_cycles(edges)
+    return edges
+
+
+def _check_joint_cycles(edges):
+    checked = set()
+    for body in edges:
+        chain = set()
+        while body in edges and body not in checked:
+            parent, joint = edges[body]
+            if body in chain:
+                path = joint.GetPath() if joint else body
+                raise UnsupportedUsdPhysics(path, f"Cyclic rigid body graph involving {body}")
+            chain.add(body)
+            body = parent
+        checked.update(chain)
+
+
+def _enabled_collider(prim):
+    return (prim.HasAPI(UsdPhysics.CollisionAPI)
+            and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False)
+
+
+def _check_collision_mesh(prim, cache):
+    mesh = UsdGeom.Mesh(prim)
+    points = mesh.GetPointsAttr().Get() or []
+    counts = mesh.GetFaceVertexCountsAttr().Get() or []
+    indices = mesh.GetFaceVertexIndicesAttr().Get() or []
+    _, _, scale = _decompose_matrix(cache.GetLocalToWorldTransform(prim), 1.)
+    vertices = [tuple(float(p[i]) * scale[i] for i in range(3)) for p in points]
+    valid = (all(math.isfinite(x) for point in vertices for x in point)
+             and all(count >= 3 for count in counts) and sum(counts) == len(indices)
+             and all(0 <= i < len(vertices) for i in indices))
+    if valid and counts:
+        approximation = UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()
+        # An explicit convex hull defines a solid independently of the source face seams.
+        if approximation == "convexHull" and _mesh_is_volumetric(vertices):
+            return
+        if approximation != "convexHull" and _has_solid_components(vertices, counts, indices):
+            return
+    raise UnsupportedUsdPhysics(prim.GetPath(), "Collision mesh must be watertight and volumetric")
+
+
+def _has_solid_components(vertices, counts, indices):
+    edges = {}
+    faces = []
+    cursor = 0
+    for count in counts:
+        face = [vertices[i] for i in indices[cursor:cursor + count]]
+        for edge in zip(face, face[1:] + face[:1], strict=True):
+            if edge[0] == edge[1] or edge in edges:
+                return False
+            edges[edge] = len(faces)
+        faces.append(face)
+        cursor += count
+    adjacent = [[] for face in faces]
+    for (a, b), index in edges.items():
+        opposite = edges.get((b, a))
+        if opposite is None:
+            return False
+        adjacent[index].append(opposite)
+
+    remaining = set(range(len(faces)))
+    while remaining:
+        pending = [remaining.pop()]
+        component = []
+        while pending:
+            index = pending.pop()
+            component.append(faces[index])
+            for other in adjacent[index]:
+                if other in remaining:
+                    remaining.remove(other)
+                    pending.append(other)
+        origin = Gf.Vec3d(*component[0][0])
+        extent = max((Gf.Vec3d(*p) - origin).GetLength() for face in component for p in face)
+        if extent == 0:
+            return False
+
+        def signed_tetrahedra():
+            for face in component:
+                points = [(Gf.Vec3d(*p) - origin) / extent for p in face]
+                for b, c in zip(points[1:-1], points[2:], strict=True):
+                    yield Gf.Dot(points[0], Gf.Cross(b, c))
+
+        if abs(math.fsum(signed_tetrahedra())) <= 1e-12:
+            return False
+    return True
+
+
+def check_training_structure(stage, scope_path, prims):
+    """Check the authored structures shared by the trainer and structural validator."""
+    edges = _joint_edges(stage, scope_path, prims)
+    cache = UsdGeom.XformCache()
+    for prim in prims:
+        if not prim.GetPath().HasPrefix(scope_path):
+            continue
+        if any("tendon" in schema.lower() for schema in prim.GetAppliedSchemas()):
+            raise UnsupportedUsdPhysics(prim.GetPath(), "Unsupported tendon")
+        if prim.IsA(UsdGeom.Mesh) and _enabled_collider(prim):
+            _check_collision_mesh(prim, cache)
+    return edges
+
+
 def _mesh_is_volumetric(vertices: list[Vec3]) -> bool:
     if len(vertices) < 4:
         return False
+    p0 = vertices[0]
+    extent = max(abs(point[axis] - p0[axis]) for point in vertices for axis in range(3))
+    if extent == 0:
+        return False
+    vertices = [tuple((point[axis] - p0[axis]) / extent for axis in range(3)) for point in vertices]
     p0 = vertices[0]
     # Find farthest point from p0
     v1 = max(vertices[1:], key=lambda p: (p[0] - p0[0]) ** 2 + (p[1] - p0[1]) ** 2 + (p[2] - p0[2]) ** 2)
@@ -652,6 +1371,7 @@ def derive_usd_mjcf(
     include_ground_plane: bool = False,
     include_static_colliders: bool = True,
     model_name: str | None = None,
+    allow_multiple_roots: bool = False,
 ) -> DerivedArticulation:
     """Derive a deterministic MuJoCo MJCF model and structured metadata from a Z-up USD stage."""
     stage, _pinned_layers = _open_usd_stage(source, asset_packages)
@@ -690,41 +1410,18 @@ def derive_usd_mjcf(
         raise ValueError(f"No active UsdPhysics.RigidBodyAPI prims found under {scope_path}")
     body_by_path = {prim.GetPath(): prim for prim in rigid_bodies}
 
-    # Discover enabled joints within scope (and any stage-level joints targeting bodies in scope)
-    joint_candidates: list[Usd.Prim] = []
-    seen_joint_paths: set[Sdf.Path] = set()
-    for prim in [*all_prims, *Usd.PrimRange(stage.GetPseudoRoot(), Usd.TraverseInstanceProxies())]:
-        if prim.GetPath() in seen_joint_paths or not prim.IsActive() or not prim.IsA(UsdPhysics.Joint):
-            continue
-        j_api = UsdPhysics.Joint(prim)
-        if j_api.GetJointEnabledAttr().Get() is False:
-            continue
-        seen_joint_paths.add(prim.GetPath())
-        joint_candidates.append(prim)
-
-    # Map child_body_path -> (parent_body_path | None, joint_prim)
-    incoming_joint: dict[Sdf.Path, tuple[Sdf.Path | None, Usd.Prim]] = {}
+    stage_prims = list(stage.Traverse(Usd.TraverseInstanceProxies()))
+    incoming_joint = check_training_structure(stage, scope_path, stage_prims)
     children_by_parent: dict[Sdf.Path, list[tuple[Sdf.Path, Usd.Prim]]] = {p: [] for p in body_by_path}
-
-    for j_prim in joint_candidates:
-        j_api = UsdPhysics.Joint(j_prim)
-        b0_targets = j_api.GetBody0Rel().GetTargets()
-        b1_targets = j_api.GetBody1Rel().GetTargets()
-        if not b1_targets:
-            continue
-        child_prim = _enclosing_rigid_body(stage, b1_targets[0], scope_path)
-        if child_prim is None:
-            continue
-        parent_prim = _enclosing_rigid_body(stage, b0_targets[0], scope_path) if b0_targets else None
-        c_path = child_prim.GetPath()
-        p_path = parent_prim.GetPath() if parent_prim is not None else None
-        if c_path in incoming_joint:
-            continue
-        incoming_joint[c_path] = (p_path, j_prim)
+    for c_path, (p_path, j_prim) in incoming_joint.items():
         if p_path is not None:
             children_by_parent[p_path].append((c_path, j_prim))
 
-    #Also connect nested rigid bodies without explicit joints as fixed children
+    # OpenUSD supplies articulation joints to Newton in Prim Path order.
+    for children in children_by_parent.values():
+        children.sort(key=lambda child: child[1].GetPath())
+
+    # Connect nested rigid bodies without explicit joints as fixed children.
     for b_path, b_prim in body_by_path.items():
         if b_path in incoming_joint:
             continue
@@ -735,6 +1432,7 @@ def derive_usd_mjcf(
                 children_by_parent[anc.GetPath()].append((b_path, Usd.Prim()))
                 break
             anc = anc.GetParent()
+    _check_joint_cycles(incoming_joint)
 
     root_candidates = [
         b_path
@@ -743,70 +1441,64 @@ def derive_usd_mjcf(
     ]
     if not root_candidates:
         raise ValueError(f"Cyclic rigid body graph under {scope_path}")
-    if len(root_candidates) > 1:
+    if len(root_candidates) > 1 and not allow_multiple_roots:
         roots_str = ", ".join(str(p) for p in root_candidates)
         raise ValueError(
             f"Multiple disconnected articulation roots under {scope_path}: {roots_str}; "
             "pass prim_path to select a single articulation"
         )
     root_path = root_candidates[0]
-    root_prim = body_by_path[root_path]
+    articulated_joints = set()
+    if any(incoming_joint.get(path, (None, None))[1] for path in root_candidates):
+        load_physics = getattr(UsdPhysics, "UsdPhysicsLoadStageFromPrimRange", None)
+        if load_physics is None:
+            load_physics = UsdPhysics.LoadUsdPhysicsFromRange
+        parsed = load_physics(stage, ["/"])
+        _, articulations = parsed.get(UsdPhysics.ObjectType.Articulation, ((), ()))
+        articulated_joints = {
+            joint for entry in articulations if entry.isValid for joint in entry.articulatedJoints
+        }
 
-    world_joint_prim = incoming_joint.get(root_path, (None, Usd.Prim()))[1]
-    inferred_fixed = bool(
-        world_joint_prim
-        and world_joint_prim.IsValid()
-        and world_joint_prim.IsA(UsdPhysics.FixedJoint)
-    )
-    is_fixed_base = inferred_fixed if fixed_base is None else bool(fixed_base)
-
-    # Compute root pose in world coordinates
-    scope_world_pos, scope_world_quat, _ = _decompose_matrix(
-        xform_cache.GetLocalToWorldTransform(scope_prim), meters_per_unit
-    )
-    if world_joint_prim and world_joint_prim.IsValid():
+    def root_transform(root_prim, world_joint_prim):
+        pos, quat, s1 = _decompose_matrix(
+            xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit
+        )
+        if not world_joint_prim:
+            return pos, quat
         wj = UsdPhysics.Joint(world_joint_prim)
-        # Empty body0 inside a referenced asset is relative to scope_prim.
-        b0_targets = wj.GetBody0Rel().GetTargets()
-        if b0_targets:
-            b0_prim = stage.GetPrimAtPath(b0_targets[0])
+        b0_targets = wj.GetBody0Rel().GetForwardedTargets()
+        b0_prim = stage.GetPrimAtPath(b0_targets[0]) if b0_targets else None
+        # Newton reconstructs the world-side frame of an orphan joint from the
+        # authored child pose. An articulated joint uses its resolved world anchor.
+        has_children = bool(children_by_parent[root_prim.GetPath()])
+        lone_fixed = world_joint_prim.IsA(UsdPhysics.FixedJoint) and not has_children
+        orphan = (world_joint_prim.GetPath() not in articulated_joints
+                  or wj.GetExcludeFromArticulationAttr().Get())
+        if (lone_fixed or orphan) and not (b0_prim and _is_rigid_body(b0_prim)):
+            return pos, quat
+        lp0 = _gf_vec3(wj.GetLocalPos0Attr().Get(), meters_per_unit)
+        lr0 = _gf_quat_to_wxyz(wj.GetLocalRot0Attr().Get())
+        if b0_prim:
             frame0_pos, frame0_quat, s0 = _decompose_matrix(
                 xform_cache.GetLocalToWorldTransform(b0_prim), meters_per_unit
             )
+            anchor = tuple(p * s for p, s in zip(lp0, s0, strict=True))
+            w_j0_pos, w_j0_quat = _pose_mul(frame0_pos, frame0_quat, anchor, lr0)
         else:
-            j_parent = world_joint_prim.GetParent()
-            if j_parent and j_parent.IsValid() and j_parent.GetPath().HasPrefix(scope_path):
-                frame0_pos, frame0_quat, s0 = _decompose_matrix(
-                    xform_cache.GetLocalToWorldTransform(j_parent), meters_per_unit
-                )
-            else:
-                frame0_pos, frame0_quat, s0 = scope_world_pos, scope_world_quat, (1.0, 1.0, 1.0)
-        lp0 = wj.GetLocalPos0Attr().Get()
-        lr0 = _gf_quat_to_wxyz(wj.GetLocalRot0Attr().Get())
-        p0_local = (
-            float(lp0[0]) * s0[0] * meters_per_unit if lp0 is not None else 0.0,
-            float(lp0[1]) * s0[1] * meters_per_unit if lp0 is not None else 0.0,
-            float(lp0[2]) * s0[2] * meters_per_unit if lp0 is not None else 0.0,
-        )
-        w_j0_pos, w_j0_quat = _pose_mul(frame0_pos, frame0_quat, p0_local, lr0)
-
-        _, _, s1 = _decompose_matrix(xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit)
-        lp1 = wj.GetLocalPos1Attr().Get()
+            # Newton 1.7 recovers an identity world anchor from the child's stage
+            # placement. Any non-identity anchor with no body0 is already world space.
+            if max(map(abs, lp0)) <= 1e-6 and abs(lr0[0]) > 1.0 - 1e-6:
+                return pos, quat
+            w_j0_pos, w_j0_quat = lp0, lr0
+        lp1 = _gf_vec3(wj.GetLocalPos1Attr().Get(), meters_per_unit)
         lr1 = _gf_quat_to_wxyz(wj.GetLocalRot1Attr().Get())
-        p1_local = (
-            float(lp1[0]) * s1[0] * meters_per_unit if lp1 is not None else 0.0,
-            float(lp1[1]) * s1[1] * meters_per_unit if lp1 is not None else 0.0,
-            float(lp1[2]) * s1[2] * meters_per_unit if lp1 is not None else 0.0,
-        )
+        p1_local = tuple(p * s for p, s in zip(lp1, s1, strict=True))
         inv_j1_pos, inv_j1_quat = _pose_inv(p1_local, lr1)
-        root_pos, root_quat = _pose_mul(w_j0_pos, w_j0_quat, inv_j1_pos, inv_j1_quat)
-    else:
-        root_pos, root_quat, _ = _decompose_matrix(
-            xform_cache.GetLocalToWorldTransform(root_prim), meters_per_unit
-        )
+        return _pose_mul(w_j0_pos, w_j0_quat, inv_j1_pos, inv_j1_quat)
 
     mj_root = ET.Element("mujoco", {"model": model_name or scope_prim.GetName() or "usd_articulation"})
     ET.SubElement(mj_root, "compiler", {"angle": "radian", "autolimits": "true"})
+    ET.SubElement(ET.SubElement(mj_root, "option"), "flag", {"filterparent": "disable"})
     asset_elem = ET.SubElement(mj_root, "asset")
     worldbody_elem = ET.SubElement(mj_root, "worldbody")
     actuator_elem = ET.SubElement(mj_root, "actuator")
@@ -819,46 +1511,9 @@ def derive_usd_mjcf(
 
     derived_joints: list[DerivedJoint] = []
     derived_sites: list[str] = []
-    has_ground_plane = False
-
-    if include_static_colliders:
-        for prim in Usd.PrimRange(stage.GetPseudoRoot(), Usd.TraverseInstanceProxies()):
-            if not prim.IsActive() or prim.GetPath().HasPrefix(scope_path):
-                continue
-            if prim.GetTypeName() == "Plane" and prim.HasAPI(UsdPhysics.CollisionAPI):
-                g_pos, g_quat, _ = _decompose_matrix(
-                    xform_cache.GetLocalToWorldTransform(prim), meters_per_unit
-                )
-                g_name = _unique_name(prim.GetName() or "ground", used_geom_names)
-                ET.SubElement(
-                    worldbody_elem,
-                    "geom",
-                    {
-                        "name": g_name,
-                        "type": "plane",
-                        "pos": _fmt(g_pos),
-                        "quat": _fmt(g_quat),
-                        "size": "0 0 0.05",
-                        "contype": "1",
-                        "conaffinity": "1",
-                    },
-                )
-                has_ground_plane = True
-
-    if include_ground_plane and not has_ground_plane:
-        g_name = _unique_name("ground", used_geom_names)
-        ET.SubElement(
-            worldbody_elem,
-            "geom",
-            {
-                "name": g_name,
-                "type": "plane",
-                "pos": "0 0 0",
-                "size": "0 0 0.05",
-                "contype": "1",
-                "conaffinity": "1",
-            },
-        )
+    body_names = {}
+    collider_names = {}
+    collider_owners = {}
 
     def _extract_joint_spec(j_prim: Usd.Prim, child_scale: Vec3) -> DerivedJoint | None:
         if not j_prim or not j_prim.IsValid() or j_prim.IsA(UsdPhysics.FixedJoint):
@@ -926,12 +1581,6 @@ def derive_usd_mjcf(
         has_drive = j_prim.HasAPI(UsdPhysics.DriveAPI, drive_type)
         if has_drive:
             drive = UsdPhysics.DriveAPI(j_prim, drive_type)
-            raw_drive_type = drive.GetTypeAttr().Get()
-            if raw_drive_type is not None and str(raw_drive_type) != "force":
-                raise ValueError(
-                    f"Unsupported UsdPhysics.DriveAPI type {str(raw_drive_type)!r} on {j_prim.GetPath()}; "
-                    "only 'force' drives are supported"
-                )
             raw_kp = drive.GetStiffnessAttr().Get()
             raw_kd = drive.GetDampingAttr().Get()
             raw_mf = drive.GetMaxForceAttr().Get()
@@ -948,19 +1597,15 @@ def derive_usd_mjcf(
         state_pos = _custom_float(
             j_prim,
             (
-                f"state:{drive_type}:physics:position",
                 f"newton:{drive_type}:position",
+                f"state:{drive_type}:physics:position",
             ),
             default=math.nan,
         )
         if math.isfinite(state_pos):
             default_pos = state_pos * pos_scale
 
-        armature = _custom_float(
-            j_prim,
-            ("mjc:armature", "newton:armature", "physxJoint:armature"),
-            default=0.0,
-        )
+        armature = joint_armature(j_prim)
         frictionloss = _custom_float(
             j_prim,
             ("mjc:frictionloss", "newton:friction", "physics:jointFriction"),
@@ -984,29 +1629,29 @@ def derive_usd_mjcf(
             armature=armature,
             frictionloss=frictionloss,
             actuated=actuated,
+            initial_position=state_pos * pos_scale if math.isfinite(state_pos) else None,
         )
 
     def _add_body_geoms_and_sites(
-        body_prim: Usd.Prim, body_elem: ET.Element
+        body_prim: Usd.Prim | None, body_elem: ET.Element, static_prims=(),
     ) -> tuple[int, list[_ShapeMass]]:
-        b_world = xform_cache.GetLocalToWorldTransform(body_prim)
-        b_world_inv = b_world.GetInverse()
+        b_world_inv = (xform_cache.GetLocalToWorldTransform(body_prim).GetInverse()
+                       if body_prim else Gf.Matrix4d(1.))
         collision_geom_count = 0
         col_shapes: list[_ShapeMass] = []
 
-        stack = list(reversed(body_prim.GetFilteredChildren(Usd.TraverseInstanceProxies())))
+        stack = [body_prim] if body_prim else list(reversed(static_prims))
         while stack:
             prim = stack.pop()
-            if not prim.IsActive() or _is_rigid_body(prim) or prim.IsA(UsdPhysics.Joint):
+            if ((prim != body_prim and _is_rigid_body(prim)) or prim.IsA(UsdPhysics.Joint)):
                 continue
+            children = prim.GetFilteredChildren(Usd.TraverseInstanceProxies()) if body_prim else ()
 
             is_geom = prim.IsA(UsdGeom.Gprim)
             if is_geom:
                 imageable = UsdGeom.Imageable(prim)
                 purpose = str(imageable.ComputePurpose() or "default")
-                has_col = prim.HasAPI(UsdPhysics.CollisionAPI) and (
-                    UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False
-                )
+                has_col = _enabled_collider(prim)
                 rel_mat = xform_cache.GetLocalToWorldTransform(prim) * b_world_inv
                 g_pos, g_quat, g_scale = _decompose_matrix(rel_mat, meters_per_unit)
                 if purpose == "guide" and not has_col:
@@ -1017,12 +1662,12 @@ def derive_usd_mjcf(
                         {"name": s_name, "pos": _fmt(g_pos), "quat": _fmt(g_quat), "size": "0.005"},
                     )
                     derived_sites.append(s_name)
-                    for child in reversed(prim.GetFilteredChildren(Usd.TraverseInstanceProxies())):
-                        stack.append(child)
+                    stack.extend(reversed(children))
                     continue
 
                 abs_scale = (abs(g_scale[0]), abs(g_scale[1]), abs(g_scale[2]))
-                g_name = _unique_name(f"{body_prim.GetName()}_{prim.GetName()}", used_geom_names)
+                label = f"{body_prim.GetName()}_{prim.GetName()}" if body_prim else prim.GetName()
+                g_name = _unique_name(label, used_geom_names)
                 common_attrs = {
                     "name": g_name,
                     "pos": _fmt(g_pos),
@@ -1030,7 +1675,9 @@ def derive_usd_mjcf(
                     "conaffinity": "1" if has_col else "0",
                     "group": "3" if has_col else "1",
                 }
-                if not has_col:
+                if has_col:
+                    common_attrs.update(_contact_attributes(prim))
+                else:
                     common_attrs["density"] = "0"
                     gprim = UsdGeom.Gprim(prim)
                     colors = gprim.GetDisplayColorAttr().Get()
@@ -1042,7 +1689,14 @@ def derive_usd_mjcf(
 
                 emitted = False
                 shape_mass: _ShapeMass | None = None
-                if prim.IsA(UsdGeom.Cube):
+                if prim.IsA(UsdGeom.Plane) and has_col:
+                    plane_axis = str(UsdGeom.Plane(prim).GetAxisAttr().Get())
+                    g_quat = _quat_mul(g_quat, _Z_TO_AXIS_QUAT[plane_axis])
+                    ET.SubElement(body_elem, "geom", {
+                        **common_attrs, "type": "plane", "quat": _fmt(g_quat), "size": "0 0 0.05",
+                    })
+                    emitted = True
+                elif prim.IsA(UsdGeom.Cube):
                     edge = float(UsdGeom.Cube(prim).GetSizeAttr().Get() or 2.0) * meters_per_unit
                     half = (0.5 * edge * abs_scale[0], 0.5 * edge * abs_scale[1], 0.5 * edge * abs_scale[2])
                     ET.SubElement(
@@ -1191,12 +1845,7 @@ def derive_usd_mjcf(
                         tris = [(t0[0], 3, t0[2]), (3, t0[1], t0[2]), *tris[1:]]
                     if len(verts) >= 4 and tris:
                         volumetric = _mesh_is_volumetric(verts)
-                        if has_col and not volumetric:
-                            common_attrs["contype"] = "0"
-                            common_attrs["conaffinity"] = "0"
-                            common_attrs["density"] = "0"
-                            has_col = False
-                        m_name = _unique_name(f"mesh_{body_prim.GetName()}_{prim.GetName()}", used_mesh_names)
+                        m_name = _unique_name(f"mesh_{label}", used_mesh_names)
                         mesh_attrs = {
                             "name": m_name,
                             "vertex": "  ".join(_fmt(v) for v in verts),
@@ -1215,11 +1864,17 @@ def derive_usd_mjcf(
                             shape_mass = _mesh_shape_mass(verts, tris, g_pos, g_quat)
 
                 if emitted and has_col:
+                    collider_names[str(prim.GetPath())] = g_name
+                    owner = body_prim.GetPath() if body_prim else Sdf.Path.absoluteRootPath
+                    collider_owners[prim.GetPath()] = owner
                     collision_geom_count += 1
                     if shape_mass is not None:
                         col_shapes.append(shape_mass)
-            elif prim.IsA(UsdGeom.Xformable):
-                children = prim.GetFilteredChildren(Usd.TraverseInstanceProxies())
+                elif has_col:
+                    raise UnsupportedUsdPhysics(
+                        prim.GetPath(), f"Unsupported collision shape {prim.GetTypeName()}"
+                    )
+            elif prim != body_prim and prim.IsA(UsdGeom.Xformable):
                 p_name_lower = prim.GetName().lower()
                 is_geom_container = (
                     p_name_lower in ("visuals", "visual", "collisions", "collision")
@@ -1237,8 +1892,7 @@ def derive_usd_mjcf(
                     )
                     derived_sites.append(s_name)
 
-            for child in reversed(prim.GetFilteredChildren(Usd.TraverseInstanceProxies())):
-                stack.append(child)
+            stack.extend(reversed(children))
 
         return (collision_geom_count, col_shapes)
 
@@ -1250,14 +1904,17 @@ def derive_usd_mjcf(
         joint_prim: Usd.Prim | None,
         *,
         is_root: bool,
+        is_fixed: bool = False,
     ) -> None:
         b_prim = body_by_path[body_path]
         b_name = _unique_name(b_prim.GetName(), used_body_names)
-        body_elem = ET.SubElement(
-            parent_elem,
-            "body",
-            {"name": b_name, "pos": _fmt(rel_pos), "quat": _fmt(rel_quat)},
-        )
+        body_names[str(body_path)] = b_name
+        attributes = {"name": b_name, "pos": _fmt(rel_pos), "quat": _fmt(rel_quat)}
+        if is_fixed and children_by_parent[body_path]:
+            # Newton exports fixed articulation roots as mocap bodies. A distinct weld
+            # island preserves contacts with static geometry and keeps the root fixed.
+            attributes["mocap"] = "true"
+        body_elem = ET.SubElement(parent_elem, "body", attributes)
 
         _, _, child_scale = _decompose_matrix(
             xform_cache.GetLocalToWorldTransform(b_prim), meters_per_unit
@@ -1303,8 +1960,9 @@ def derive_usd_mjcf(
                     if q_norm > 1e-12:
                         axes_quat = _quat_normalize(raw_q)
 
-        if is_root and not is_fixed_base and (joint_prim is None or not joint_prim.IsValid()):
-            ET.SubElement(body_elem, "freejoint", {"name": "floating_base_joint"})
+        if is_root and not is_fixed and not joint_prim:
+            name = _unique_name("floating_base_joint", used_joint_names)
+            ET.SubElement(body_elem, "freejoint", {"name": name})
         elif joint_prim is not None and joint_prim.IsValid():
             j_spec = _extract_joint_spec(joint_prim, child_scale)
             if j_spec is not None:
@@ -1381,7 +2039,7 @@ def derive_usd_mjcf(
                 },
             )
             body_elem.insert(0, inertial_elem)
-        elif col_count == 0 and not (is_root and is_fixed_base and not children_by_parent[body_path]):
+        elif col_count == 0 and not (is_root and is_fixed and not children_by_parent[body_path]):
             body_elem.insert(
                 0,
                 ET.Element("inertial", {"pos": "0 0 0", "mass": "1e-5", "diaginertia": "1e-8 1e-8 1e-8"}),
@@ -1423,16 +2081,47 @@ def derive_usd_mjcf(
 
             _emit_body(child_path, body_elem, c_rel_pos, c_rel_quat, c_joint_prim, is_root=False)
 
-    root_joint_arg = (
-        world_joint_prim
-        if (
-            world_joint_prim
-            and world_joint_prim.IsValid()
-            and not world_joint_prim.IsA(UsdPhysics.FixedJoint)
-        )
-        else None
-    )
-    _emit_body(root_path, worldbody_elem, root_pos, root_quat, root_joint_arg, is_root=True)
+    static_prims = [
+        prim for prim in stage_prims
+        if include_static_colliders and _enabled_collider(prim)
+        and (prim.GetPath().HasPrefix(scope_path)
+             or (not allow_multiple_roots and prim.IsA(UsdGeom.Plane)))
+        and _enclosing_rigid_body(stage, prim.GetPath(), Sdf.Path.absoluteRootPath) is None
+    ]
+    _add_body_geoms_and_sites(None, worldbody_elem, static_prims)
+    if include_ground_plane and not any(prim.IsA(UsdGeom.Plane) for prim in static_prims):
+        ET.SubElement(worldbody_elem, "geom", {
+            "name": _unique_name("ground", used_geom_names), "type": "plane", "size": "0 0 0.05",
+            "friction": _fmt(DEFAULT_FRICTION),
+        })
+
+    root_info = None
+    for path in root_candidates:
+        joint = incoming_joint.get(path, (None, None))[1]
+        pos, quat = root_transform(body_by_path[path], joint)
+        world_fixed = bool(joint and joint.IsA(UsdPhysics.FixedJoint))
+        fixed = world_fixed if fixed_base is None else fixed_base
+        _emit_body(path, worldbody_elem, pos, quat, None if world_fixed else joint,
+                   is_root=True, is_fixed=fixed)
+        if path == root_path:
+            root_info = (pos, quat, fixed)
+    assert root_info is not None
+    root_pos, root_quat, is_fixed_base = root_info
+
+    bodies_with_colliders = set(collider_owners.values())
+    joint_exclusions = {
+        tuple(sorted((parent, child)))
+        for child, (parent, joint) in incoming_joint.items()
+        if parent in bodies_with_colliders and child in bodies_with_colliders
+        and (not joint or not UsdPhysics.Joint(joint).GetCollisionEnabledAttr().Get())
+    }
+    exclusions = _body_exclusions(stage_prims, collider_owners, joint_exclusions)
+    if exclusions:
+        contact = ET.SubElement(mj_root, "contact")
+        for first, second in sorted(exclusions):
+            ET.SubElement(contact, "exclude", {
+                "body1": body_names.get(str(first), "world"), "body2": body_names[str(second)],
+            })
 
     ET.indent(mj_root, space="  ")
     mjcf_xml = ET.tostring(mj_root, encoding="unicode")
@@ -1446,6 +2135,8 @@ def derive_usd_mjcf(
         joints=tuple(derived_joints),
         sites=tuple(derived_sites),
         mjcf_xml=mjcf_xml,
+        body_names_by_path=body_names,
+        collider_names_by_path=collider_names,
     )
 
 

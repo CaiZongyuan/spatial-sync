@@ -18,7 +18,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T03:55:40.190803+00:00",
+  "capturedAt": "2026-11-19T21:12:44.224827+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -41,16 +41,12 @@
       "sha256": "0aabec809d01320d5580934813c55fe5c347bb7bfa664bdecc57ca6b05d0554c"
     },
     {
+      "path": "apps/node/usd_mjcf.py",
+      "sha256": "3d1cce1c980696bc8970ae5bc0e149280fd0d95508f35ac7823bb3b6d52bf018"
+    },
+    {
       "path": "assets/registry.yaml",
       "sha256": "bc5c1084c6257c35bbb93b755fe4f642342388760042089391bb76d01ecf7240"
-    },
-    {
-      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.usdc",
-      "sha256": "40a7ba812c827bff61a0f5e479a4f7ab7b444a5997eca585ba106dd39d86e890"
-    },
-    {
-      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.yaml",
-      "sha256": "4d105fe73928a7af5825b677333221c9827d5745a32be141622ead4c258f923a"
     },
     {
       "path": "library/assets/environment/fr3-culture-laboratory-1/1/CONTRIBUTION_NOTICE.txt",
@@ -59,6 +55,14 @@
     {
       "path": "library/assets/environment/fr3-culture-laboratory-1/1/LICENSE",
       "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.usdc",
+      "sha256": "40a7ba812c827bff61a0f5e479a4f7ab7b444a5997eca585ba106dd39d86e890"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-1/1/asset.yaml",
+      "sha256": "4d105fe73928a7af5825b677333221c9827d5745a32be141622ead4c258f923a"
     },
     {
       "path": "library/assets/environment/fr3-culture-laboratory-1/1/provenance.json",
@@ -73,20 +77,20 @@
       "sha256": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71"
     },
     {
-      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.usdc",
-      "sha256": "e6cedc650d0f2460c9ed4fd0e1ce470b68dd5be43752ca9c1aeaa1e8bcf27bd3"
-    },
-    {
-      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.yaml",
-      "sha256": "2fe68080a59c484020739c42c5f992b6ef4b3f7523a33a6c30ddbb027f6aa05f"
-    },
-    {
       "path": "library/assets/environment/fr3-culture-laboratory-2/1/CONTRIBUTION_NOTICE.txt",
       "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
     },
     {
       "path": "library/assets/environment/fr3-culture-laboratory-2/1/LICENSE",
       "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.usdc",
+      "sha256": "e6cedc650d0f2460c9ed4fd0e1ce470b68dd5be43752ca9c1aeaa1e8bcf27bd3"
+    },
+    {
+      "path": "library/assets/environment/fr3-culture-laboratory-2/1/asset.yaml",
+      "sha256": "2fe68080a59c484020739c42c5f992b6ef4b3f7523a33a6c30ddbb027f6aa05f"
     },
     {
       "path": "library/assets/environment/fr3-culture-laboratory-2/1/provenance.json",
@@ -101,14 +105,6 @@
       "sha256": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12"
     },
     {
-      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.usdc",
-      "sha256": "3cdb7a251c2fda5c869fe2afc8d5f85c68d5f68ed3ae4c6da855c68e61e17e9d"
-    },
-    {
-      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.yaml",
-      "sha256": "dcde2238814980a3eae4ff7aa6fec614afbfe03122564ece095f1fe505855f80"
-    },
-    {
       "path": "library/assets/robot/fr3-culture-robot-1/1/CONTRIBUTION_NOTICE.txt",
       "sha256": "a2b98ed44cdc88255df3b4366dae88fee3aa9e461b4d1a8d98d6d53045bd6cda"
     },
@@ -119,6 +115,14 @@
     {
       "path": "library/assets/robot/fr3-culture-robot-1/1/NOTICE",
       "sha256": "13991525876741e3dc94c46e0afce111dc0a5c6156c89bbbefd06547b84738fd"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.usdc",
+      "sha256": "3cdb7a251c2fda5c869fe2afc8d5f85c68d5f68ed3ae4c6da855c68e61e17e9d"
+    },
+    {
+      "path": "library/assets/robot/fr3-culture-robot-1/1/asset.yaml",
+      "sha256": "dcde2238814980a3eae4ff7aa6fec614afbfe03122564ece095f1fe505855f80"
     },
     {
       "path": "library/assets/robot/fr3-culture-robot-1/1/provenance.json",
@@ -166,11 +170,15 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "96f31032addaa0901ace62097610d3ae62ff686ad5db855bdf4e0bea780a33fa"
+      "sha256": "9d7b0072d608f6ec55ac1b655e394f943c20329e3eaff7065ee67dd23c7d14f2"
     },
     {
       "path": "packages/info/conditions.py",
       "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
+    },
+    {
+      "path": "packages/info/declarations.py",
+      "sha256": "af14520093aac28d80ad7d6fae3f0be5d50efdb0e8ce779def0ae55abbae2d2c"
     },
     {
       "path": "packages/info/diff.py",
@@ -201,6 +209,10 @@
       "sha256": "0a7a9779b7a1be341b94bb3c9da5e887f93c7c8e9f707ffc403692d31e2da405"
     },
     {
+      "path": "packages/library/entity_types.py",
+      "sha256": "01a904a8801ae868a53d4a94130bf092174827e07cab9cb7d6cff064dfda37ce"
+    },
+    {
       "path": "packages/library/grasp_calibration.py",
       "sha256": "2f1d5f20e91eac29f7bbf1e52abc7d18544ce572b224c7e698d3e3d1b1aedbfd"
     },
@@ -214,7 +226,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "eb24d219c105b2509ee2b3734499f233074e92b17ab7bce86dab8d85476eca75"
+      "sha256": "1f3a4d3ab8b451aacea22c56846d05f6827f1c65be817dd08eaedf05c16a6dd5"
     },
     {
       "path": "packages/library/python_stages.py",
@@ -222,23 +234,23 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
+      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
+      "sha256": "95d991701ac47a2dad702fe57f6ca918fedb1a4f5e2cf35ca14999baef759da4"
     },
     {
       "path": "packages/library/structural.py",
-      "sha256": "fa5eebb0c73986e9d07e3d1fb7f3156042e14fdb0b08a58085e4cf8193318add"
+      "sha256": "dcdf21399b48b759b5f604827036825fcadb263efee17c862c0f2a81c30b45bd"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
+      "sha256": "072a862f6922ebb7970e653d195c980427252ff2e601f1ba8dfd99e1de0ef719"
     },
     {
       "path": "packages/library/transactions.py",
-      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
+      "sha256": "f9e182145dfa95bc7610cb228bc336ef10c304a95e5ade722b088ed7f3be7d92"
     },
     {
       "path": "packages/library/visuals.py",
@@ -354,7 +366,7 @@
     },
     {
       "path": "packages/programs/subjects.py",
-      "sha256": "e94bf7abf1c5f26c7a4b3191acb8a5218264b5d41387f5443756a8e5cdb1ed6e"
+      "sha256": "fbbe71aa4724582dcbd3c8d11d6bcbf0c7440d95744edbd418cc0991df04e941"
     },
     {
       "path": "packages/programs/tube/facts.py",
@@ -382,7 +394,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "ca7dc86c86f1714fe8b9a612e5be949d312f6c21b53ff1ca9f33c5841d825f7f"
+      "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -394,11 +406,11 @@
     },
     {
       "path": "packages/sim_runtime/library_scene.py",
-      "sha256": "098c528142d181b80f7f3060e7db8d9e63d912f503c7fc323dd501d60842e19e"
+      "sha256": "b2289fdd949733aaaba1208a973ec10a0201a4dfee2422773d53dfb4ae79a979"
     },
     {
       "path": "packages/sim_runtime/loaders.py",
-      "sha256": "d41a0d4126e9ab9aca62dc017d124c4d6401f0174eb91fbc0d5f9211df9f0082"
+      "sha256": "71c0deed5d73db10ac4783d7b5b55bea480f60e68a1cc78a7bc7255508cbc0b3"
     },
     {
       "path": "packages/sim_runtime/manifest_export.py",
@@ -458,7 +470,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "ac1de1057bced1359beebd86597a2256c8a02419b56105cd51c674bec56fa70a"
+      "sha256": "1fe8d17f6c544e46eddfb94f58e6dbb0667f8cdb6bfe4ae7028d54cf00865c53"
     },
     {
       "path": "uv.lock",
@@ -472,10 +484,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "a86d553f0bc1eb871be3ae65f0c0447032f8e757f5c8291ad5ea689a87a04a97",
-    "catalog.json": "c366573b6b6c2bced401f2944b255d243717e67136d670e82400257a2a31cae4",
-    "state.json": "eb163ee8a6590f5e2cd6a4dae63817ecaef4f558fa1f49e31f4d08f6686504e1",
-    "snapshot.bin": "cf2ebb26e3b1609acada3568b39ced27456772c3ffba5f7aeff497b072cf9177",
+    "manifest.json": "735c72d198c8b379b59af834b525d091fcadeaed8b39775e625874436de283c5",
+    "catalog.json": "65b2ec4967ffce96011bf3ac9f51c36437cb111e1d246ea758fc0055a871ec4b",
+    "state.json": "552ff7b440574fa92332e1a25a1f150c352457b0e0848f03182f9e45c721d05b",
+    "snapshot.bin": "ad632e40cdfdabd1aa4cd67595c5469158f0606eb4ccb2729356bb3ab9aebd1e",
     "assets/sha256-5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71.glb": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71",
     "assets/sha256-5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12.glb": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12",
     "assets/sha256-a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89.glb": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"

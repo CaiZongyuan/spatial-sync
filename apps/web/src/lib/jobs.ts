@@ -35,7 +35,7 @@ export interface JobVersions {
 }
 export interface TrainingJob {
   jobId: string;
-  kind: 'training';
+  kind: 'training' | 'plan_validation';
   status: JobStatus;
   planId: string;
   planRevision: number;
@@ -79,6 +79,15 @@ export interface NodeLease {
   assignedAt: number;
   quarantined: boolean;
 }
+export interface QuarantinedGpu {
+  nodeId: string;
+  instanceId: string;
+  jobId: string;
+  leaseId: string;
+  gpuId: string;
+  colocated: boolean;
+  releaseAt: null;
+}
 export interface GPUHistory {
   windowSeconds: number;
   sampleIntervalSeconds: number;
@@ -103,20 +112,23 @@ export interface NodeGPU {
 }
 export interface TrainingNode {
   id: string;
-  instanceId: string;
-  hardware: string;
+  instanceId: string | null;
+  hardware: string | null;
+  hostname?: string | null;
   state: 'online' | 'offline';
-  lastSeen: number;
-  reconnectDeadline: number;
+  lastSeen?: number;
+  reconnectDeadline?: number;
   cpuAvailable: boolean;
   gpus: NodeGPU[];
   leases: Record<string, NodeLease>;
+  quarantinedGpus?: QuarantinedGpu[];
+  quarantinedGpuCount?: number;
   profiles: Record<string, TimingProfile>;
   queue: string[];
 }
 
 export async function listJobs(
-  filters: { plan?: string; status?: JobStatus; kind?: 'training' } = {},
+  filters: { plan?: string; status?: JobStatus; kind?: TrainingJob['kind'] } = {},
   signal?: AbortSignal,
 ): Promise<TrainingJob[]> {
   const query = new URLSearchParams();

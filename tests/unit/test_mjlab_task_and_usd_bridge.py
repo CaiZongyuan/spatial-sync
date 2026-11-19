@@ -412,7 +412,12 @@ def test_usd_mjcf_derives_articulation_hierarchy_inertias_geoms_drives_and_groun
 
     # Scene stage referencing library:assets/... resolved via asset_packages + fixed base + ground plane
     fixed_asset_dir = tmp_path / "fixed_pkg"
-    _write_test_articulation_usd(fixed_asset_dir / "asset.usda", fixed_base=True)
+    from pxr import Usd, UsdPhysics
+
+    asset_path = _write_test_articulation_usd(fixed_asset_dir / "asset.usda", fixed_base=True)
+    fixed_asset = Usd.Stage.Open(str(asset_path))
+    UsdPhysics.FixedJoint.Get(fixed_asset, "/Asset/base_fixed_joint").CreateBody0Rel().SetTargets(["/Asset"])
+    fixed_asset.GetRootLayer().Save()
     scene_stage = tmp_path / "scene" / "stage.usda"
     scene_stage.parent.mkdir(parents=True, exist_ok=True)
     scene_stage.write_text(
@@ -1878,3 +1883,315 @@ def test_bridge_callback_enforces_static_onnx_and_subclass_learn_interception(
     # Also verify RNG seeding order in mjlab_launcher._seed_everything
     mjlab_launcher._seed_everything(99, "cpu")
     assert ("torch", 99) in seed_events
+
+
+@pytest.mark.parametrize("problem, path, message", [
+    ("loop", "/Asset/extra", "multiple parent joints"),
+    ("ball", "/Asset/shoulder_pitch", "Unsupported USD joint type"),
+    ("planar", "/Asset/shoulder_pitch", "Unsupported USD joint type"),
+    ("distance", "/Asset/shoulder_pitch", "Unsupported USD joint type"),
+    ("mimic", "/Asset/shoulder_pitch", "mimic"),
+    ("mesh", "/Asset/upper_link/collision_mesh", "watertight"),
+])
+def test_usd_mjcf_rejects_lossy_structure(tmp_path, problem, path, message):
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    stage = Usd.Stage.Open(str(_write_test_articulation_usd(tmp_path / "asset.usda", fixed_base=True)))
+    if problem == "loop":
+        joint = UsdPhysics.RevoluteJoint.Define(stage, path)
+        joint.CreateBody0Rel().SetTargets(["/Asset/carriage_link"])
+        joint.CreateBody1Rel().SetTargets(["/Asset/upper_link"])
+    elif problem in {"ball", "planar", "distance"}:
+        joint_types = {"ball": "PhysicsSphericalJoint", "planar": "PhysicsPlanarJoint",
+                       "distance": "PhysicsDistanceJoint"}
+        stage.GetPrimAtPath(path).SetTypeName(joint_types[problem])
+    elif problem == "mimic":
+        stage.GetPrimAtPath(path).CreateRelationship("physxMimicJoint:rotY:referenceJoint").SetTargets(
+            ["/Asset/slider_joint"]
+        )
+    else:
+        mesh = UsdGeom.Mesh.Define(stage, path)
+        mesh.CreatePointsAttr([(0, 0, 0), (.1, 0, 0), (0, .1, 0), (0, 0, .1)])
+        mesh.CreateFaceVertexCountsAttr([3, 3, 3])
+        mesh.CreateFaceVertexIndicesAttr([0, 2, 1, 0, 1, 3, 1, 2, 3])
+        UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+    with pytest.raises(ValueError, match=message) as exc:
+        derive_usd_mjcf(stage)
+    assert path in str(exc.value)
+
+
+@pytest.mark.parametrize("filter_scope", ["body", "articulation"])
+def test_usd_mjcf_preserves_authored_contact_and_armature(tmp_path, filter_scope):
+    import xml.etree.ElementTree as ET
+
+    from pxr import Sdf, Usd, UsdPhysics, UsdShade
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    stage = Usd.Stage.Open(str(_write_test_articulation_usd(tmp_path / "asset.usda", fixed_base=True)))
+    base = stage.GetPrimAtPath("/Asset/base_link")
+    tip = stage.GetPrimAtPath("/Asset/carriage_link")
+    if filter_scope == "articulation":
+        base = stage.GetDefaultPrim()
+    for first, second in ((base, tip), (tip, base)):
+        UsdPhysics.FilteredPairsAPI.Apply(first).CreateFilteredPairsRel().SetTargets([second.GetPath()])
+    material = UsdShade.Material.Define(stage, "/Asset/Grip")
+    physics = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+    physics.CreateDynamicFrictionAttr(.37)
+    physics.CreateStaticFrictionAttr(.61)
+    UsdShade.MaterialBindingAPI.Apply(tip).Bind(material, materialPurpose="physics")
+    hinge = stage.GetPrimAtPath("/Asset/shoulder_pitch")
+    hinge.CreateAttribute("newton:armature", Sdf.ValueTypeNames.Float).Set(.027)
+
+    result = derive_usd_mjcf(stage)
+    model = ET.fromstring(result.mjcf_xml)
+    pairs = [frozenset(row.attrib.values()) for row in model.findall("./contact/exclude")]
+    assert pairs.count(frozenset(("base_link", "carriage_link"))) == 1
+    grip = model.find(".//geom[@name='carriage_link_tip_sphere']")
+    assert list(map(float, grip.attrib["friction"].split())) == pytest.approx([.37, .005, .0001])
+    assert [j.armature for j in result.joints] == pytest.approx([.027, .003])
+
+
+def test_structural_validation_reports_unsupported_joint_without_physics(tmp_path):
+    from types import SimpleNamespace
+
+    from pxr import Usd
+
+    from packages.library.validation import StructuralValidator
+
+    asset = _write_test_articulation_usd(tmp_path / "asset" / "asset.usda", fixed_base=True)
+    stage = Usd.Stage.Open(str(asset))
+    stage.GetPrimAtPath("/Asset/shoulder_pitch").SetTypeName("PhysicsSphericalJoint")
+    stage.GetRootLayer().Save()
+    report = StructuralValidator(tmp_path / "state").run_structure(
+        asset.parent, "asset", "asset:robot/example@1",
+        {"kind": "robot", "stage": asset.name}, SimpleNamespace(versions={}),
+    )
+    assert report["launchable"] is False
+    assert any(row["status"] == "fail" and row.get("entityKey") == "/Asset/shoulder_pitch"
+               and "Unsupported USD joint type" in row["message"] for row in report["checks"])
+
+
+@pytest.mark.newton
+def test_model_consistency_measures_newton_and_detects_derived_drift(tmp_path):
+    import dataclasses
+    import xml.etree.ElementTree as ET
+
+    newton = pytest.importorskip("newton")
+    pytest.importorskip("mujoco")
+    from pxr import Sdf, Usd, UsdPhysics, UsdShade
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.sim_runtime.loaders import import_usd
+
+    stage = Usd.Stage.Open(str(_write_test_articulation_usd(tmp_path / "asset.usda", fixed_base=True)))
+    tip = stage.GetPrimAtPath("/Asset/carriage_link")
+    UsdPhysics.FilteredPairsAPI.Apply(stage.GetDefaultPrim()).CreateFilteredPairsRel().SetTargets([tip.GetPath()])
+    grip = UsdShade.Material.Define(stage, "/Asset/Grip")
+    UsdPhysics.MaterialAPI.Apply(grip.GetPrim()).CreateDynamicFrictionAttr(.37)
+    UsdShade.MaterialBindingAPI.Apply(tip).Bind(grip, materialPurpose="physics")
+    hinge = stage.GetPrimAtPath("/Asset/shoulder_pitch")
+    hinge.CreateAttribute("newton:armature", Sdf.ValueTypeNames.Float).Set(.027)
+
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage, root_path="/Asset")
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(stage)
+    from packages.library.model_consistency import compare_models
+
+    report = compare_models(model, derived)
+    assert [row["status"] for row in report] == ["pass"], report
+    assert report[0]["measurements"]["rigidBodyCount"] == 4
+    assert report[0]["measurements"]["controlledJointCount"] == 2
+    assert report[0]["measurements"]["excludedBodyPairCount"] == 3
+    tip_geom_id = model.shape_label.index("/Asset/carriage_link/tip_sphere")
+    assert model.shape_material_mu.numpy()[tip_geom_id] == pytest.approx(.37)
+    hinge_id = model.joint_label.index("/Asset/shoulder_pitch")
+    slide_id = model.joint_label.index("/Asset/slider_joint")
+    starts = model.joint_qd_start.numpy()
+    assert model.joint_armature.numpy()[[starts[hinge_id], starts[slide_id]]] == pytest.approx([.027, .003])
+
+    moved_mesh = ET.fromstring(derived.mjcf_xml)
+    mesh_geom = moved_mesh.find(".//geom[@name='upper_link_fin_mesh']")
+    mesh_geom.set("pos", "0.01 0 0")
+    moved = dataclasses.replace(derived, mjcf_xml=ET.tostring(moved_mesh, encoding="unicode"))
+    assert any(row.get("entityKey") == "/Asset/upper_link/fin_mesh"
+               and "Collider world position" in row["message"] for row in compare_models(model, moved))
+
+    xml = ET.fromstring(derived.mjcf_xml)
+    xml.find(".//body[@name='carriage_link']/inertial").set("mass", "0.5")
+    xml.find(".//body[@name='upper_link']/inertial").set("diaginertia", "0.006 0.007 0.008")
+    xml.find(".//geom[@name='carriage_link_tip_sphere']").set("friction", "0.9 0.005 0.0001")
+    xml.find(".//joint[@name='shoulder_pitch']").set("armature", "0.05")
+    xml.find(".//joint[@name='slider_joint']").set("axis", "1 0 0")
+    xml.find(".//joint[@name='slider_joint']").set("range", "0 0.05")
+    actuators = xml.find("actuator")
+    first_actuator = actuators[0]
+    first_actuator.set("kp", "100")
+    first_actuator.set("kv", "2")
+    actuators.remove(first_actuator)
+    actuators.append(first_actuator)
+    contact = xml.find("contact")
+    contact.remove(next(row for row in contact if "base_link" in row.attrib.values()
+                        and "carriage_link" in row.attrib.values()))
+    changed = dataclasses.replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode"))
+    failures = compare_models(model, changed)
+    assert all(row["status"] == "fail" for row in failures)
+    for message in ("Total mass", "Body mass", "Body inertia", "Controlled joint order", "Joint axis",
+                    "Joint limit", "Joint armature", "Joint stiffness", "Joint damping",
+                    "Collider friction", "Effective collision pairs"):
+        assert any(message in row["message"] for row in failures), failures
+
+
+@pytest.mark.newton
+def test_p7_compares_effective_masks_and_accepts_equivalent_encodings(tmp_path):
+    from dataclasses import replace
+    from xml.etree import ElementTree as ET
+
+    newton = pytest.importorskip("newton")
+    pytest.importorskip("mujoco")
+    from pxr import Usd, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+    from packages.sim_runtime.loaders import import_usd
+
+    stage = Usd.Stage.Open(str(_write_test_articulation_usd(tmp_path / "asset.usda", fixed_base=True)))
+    shoulder = UsdPhysics.Joint.Get(stage, "/Asset/shoulder_pitch")
+    shoulder.CreateCollisionEnabledAttr(True)
+    base = stage.GetPrimAtPath("/Asset/base_link")
+    UsdPhysics.FilteredPairsAPI.Apply(base).CreateFilteredPairsRel().SetTargets(["/Asset/carriage_link"])
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage, root_path="/Asset")
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(stage)
+
+    assert [row["status"] for row in compare_models(model, derived)] == ["pass"]
+    xml = ET.fromstring(derived.mjcf_xml)
+    base_geom = xml.find(".//geom[@name='base_link_base_collision']")
+    base_geom.attrib.update(contype="2", conaffinity="2")
+
+    def compare():
+        return compare_models(model, replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode")))
+
+    failure = next(row for row in compare() if row["status"] == "fail")
+    assert failure["measurements"]["missingGeometryPairs"] == [
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/link_capsule"],
+    ]
+    for geom in xml.findall(".//geom[@contype='1']"):
+        geom.attrib.update(contype="2", conaffinity="2")
+    assert [row["status"] for row in compare()] == ["pass"]
+    xml.find("./option/flag").set("filterparent", "enable")
+    failure = next(row for row in compare() if row["status"] == "fail")
+    assert failure["measurements"]["missingGeometryPairs"] == [
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/link_capsule"],
+        ["/Asset/carriage_link/tip_sphere", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/carriage_link/tip_sphere", "/Asset/upper_link/link_capsule"],
+    ]
+
+
+@pytest.mark.parametrize("approximation", ["none", "convexHull"])
+def test_validation_distinguishes_zero_volume_components_from_solid_hull(tmp_path, approximation):
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.assets import AssetLibrary
+    from packages.library.validation import StructuralValidator
+
+    asset = _write_test_articulation_usd(tmp_path / "asset" / "asset.usda", fixed_base=True)
+    stage = Usd.Stage.Open(str(asset))
+    path = "/Asset/upper_link/fin_mesh"
+    mesh = UsdGeom.Mesh.Get(stage, path)
+    mesh.CreatePointsAttr([(0, 0, 0), (.1, 0, 0), (0, .1, 0),
+                           (0, 0, .1), (.1, 0, .1), (0, .1, .1)])
+    mesh.CreateFaceVertexCountsAttr([3, 3, 3, 3])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 2, 1, 0, 3, 4, 5, 5, 4, 3])
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr(approximation)
+    stage.GetRootLayer().Save()
+
+    assets = AssetLibrary(tmp_path / "state", user_root=tmp_path / "library")
+    report = StructuralValidator(tmp_path / "state").run_structure(
+        asset.parent, "asset", "asset:robot/example@1",
+        {"kind": "robot", "stage": asset.name}, assets,
+    )
+    findings = [row for row in report["checks"] if row["id"] == "S9"]
+    if approximation == "convexHull":
+        assert not findings
+        assert path in derive_usd_mjcf(stage).collider_names_by_path
+    else:
+        assert [(row["status"], row["entityKey"]) for row in findings] == [("fail", path)]
+        assert "volumetric" in findings[0]["message"]
+        assert report["launchable"] is False
+        with pytest.raises(ValueError, match=path):
+            derive_usd_mjcf(stage)
+
+
+@pytest.mark.newton
+@pytest.mark.parametrize("change", ["passive_order", "body_position", "geom_position", "quaternion_sign"])
+def test_p7_detects_actual_pose_drift_and_passive_coordinate_reorder(change):
+    from dataclasses import replace
+    from xml.etree import ElementTree as ET
+
+    newton = pytest.importorskip("newton")
+    pytest.importorskip("mujoco")
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+    from packages.sim_runtime.loaders import import_usd
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, 1)
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    root = UsdGeom.Xform.Define(stage, "/Asset")
+    stage.SetDefaultPrim(root.GetPrim())
+    UsdPhysics.ArticulationRootAPI.Apply(root.GetPrim())
+    for name in ("Base", "B", "C"):
+        body = UsdGeom.Xform.Define(stage, f"/Asset/{name}")
+        UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+        collider = UsdGeom.Cube.Define(stage, f"/Asset/{name}/Box")
+        collider.CreateSizeAttr(.2)
+        UsdPhysics.CollisionAPI.Apply(collider.GetPrim())
+    for name, child, x in (("AB", "B", .3), ("BC", "C", -.3)):
+        joint = UsdPhysics.RevoluteJoint.Define(stage, f"/Asset/{name}")
+        joint.CreateBody0Rel().SetTargets(["/Asset/Base"])
+        joint.CreateBody1Rel().SetTargets([f"/Asset/{child}"])
+        joint.CreateLocalPos0Attr(Gf.Vec3f(x, 0, 0))
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage)
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(stage)
+    original = compare_models(model, derived)
+    assert [row["status"] for row in original] == ["pass"], original
+
+    xml = ET.fromstring(derived.mjcf_xml)
+    base = xml.find(".//body[@name='Base']")
+    if change == "passive_order":
+        child = base.find("./body[@name='B']")
+        base.remove(child)
+        base.append(child)
+    elif change == "body_position":
+        base.set("pos", "0 0 .25")
+    elif change == "geom_position":
+        xml.find(".//geom[@name='B_Box']").set("pos", ".25 0 0")
+    else:
+        base.set("quat", "-1 0 0 0")
+
+    rows = compare_models(model, replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode")))
+    failures = [(row.get("entityKey"), row["message"]) for row in rows if row["status"] == "fail"]
+    if change == "passive_order":
+        assert failures == [(None, "Scalar joint coordinate order differs between Newton and MuJoCo")]
+    elif change == "body_position":
+        assert ("/Asset/Base", "Body world position differs between Newton and MuJoCo") in failures
+    elif change == "geom_position":
+        # This link has no authored inertial element. Moving its only shape also moves its COM.
+        assert failures == [
+            ("/Asset/B", "Body center of mass in the link frame differs between Newton and MuJoCo"),
+            ("/Asset/B/Box", "Collider world position differs between Newton and MuJoCo"),
+        ]
+    else:
+        assert [row["status"] for row in rows] == ["pass"], rows

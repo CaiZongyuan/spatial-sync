@@ -6,6 +6,7 @@ import re
 from packages.info.recording import SCENE_VERSION, recording_metadata
 from packages.library.common import LibraryError
 from packages.library.reports import HASH, parse_report
+from packages.library.robot_resources import RobotResources
 from packages.library.templates import references, template_id
 
 
@@ -126,6 +127,18 @@ class ReferenceInspection:
                 if target.id in retained["dependencies"]:
                     reference("recovery", retained["id"],
                               "Retained " + retained["versionId"] + " needs this exact version for recovery")
+
+        try:
+            resources = RobotResources(self.assets.roots, self.assets, self.scenes, programs={})
+            for embodiment in resources.embodiment_metadata().values():
+                if kind == "asset" and embodiment["asset"] == target.id:
+                    reference("embodiment", embodiment["id"], "Pinned Embodiment asset version")
+                elif kind == "scene" and any(
+                    binding["scene"] == target.id for binding in embodiment["bindings"]
+                ):
+                    reference("embodiment", embodiment["id"], "Pinned Embodiment binding scene")
+        except (OSError, ValueError, LibraryError) as exc:
+            problem("embodiment", "library", exc)
 
         # Future product stores have no A2 reader. Existing contents cannot be declared empty.
         reserved = (("tasks",) if self.tasks is None else ()) + (("jobs",) if self.jobs is None else ())
@@ -258,7 +271,8 @@ class ReferenceInspection:
         return {
             "references": found, "complete": not unknown, "uninspected": unknown,
             "coverage": ["all scene and asset versions", "all bound validation history",
-                         "all recording entries", "starting and retained sessions", "configured Live layout"]
+                         "all recording entries", "starting and retained sessions", "configured Live layout",
+                         "all Embodiment registrations"]
                         + (["all Task versions"] if self.tasks is not None else []),
             "training": ("Task and Job pins inspected; nonempty policy stores still block deletion"
                          if self.tasks is not None and self.jobs is not None else

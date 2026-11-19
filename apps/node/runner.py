@@ -12,16 +12,50 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import psutil
 
+from apps.node.mjlab_launcher import compiler_hash
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
-from packages.library.archive import extract_package, relative_path
+from packages.library.archive import extract_package, import_lock, relative_path
 from packages.library.common import content_hash
+from packages.library.transactions import durable_json
+from packages.training import runtime as training_runtime
 from packages.training.inputs import pack_package
+
+GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
+
+
+def work_directory_id(job_id, lease_id):
+    return hashlib.sha256((job_id + lease_id).encode()).hexdigest()[:24]
+
+
+def owned_processes_clean(root):
+    try:
+        for path in root.iterdir():
+            if not path.match("process-*.json"):
+                continue
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            if not cleanup_confirmed(root, receipt):
+                return False
+            try:
+                process = psutil.Process(receipt["pid"])
+                if process.create_time() == receipt["createdAt"] and process.cmdline() == receipt["command"]:
+                    return False
+            except psutil.NoSuchProcess:
+                continue
+    except (OSError, ValueError, KeyError, TypeError, psutil.AccessDenied):
+        return False
+    return True
+
+
+def trainer_environment():
+    return {key: value for key, value in os.environ.items() if key not in GATEWAY_CREDENTIALS}
 
 
 def retained_rows(path):
@@ -166,13 +200,13 @@ def mjlab_trainer_arguments(inputs, callback):
 class OwnedRun:
     def __init__(self, node, assignment):
         self.node, self.assignment = node, assignment
-        identity = hashlib.sha256((assignment["jobId"] + assignment["leaseId"]).encode()).hexdigest()[:24]
-        self.root = node.root / "work" / identity
+        self.root = node.root / "work" / work_directory_id(assignment["jobId"], assignment["leaseId"])
         self.view_directory = self.root / "view-state"
         self.view_active = threading.Event()
         self.cancel = threading.Event()
         self.status, self.reason = "running", None
         self.started, self.log_cursor = time.monotonic(), 0
+        self.timeout = min(node.timeout, assignment.get("timeoutSeconds", node.timeout))
         self.metrics = {}
         self._logs = []
         self._log_offsets = {"stdout.log": 0, "stderr.log": 0}
@@ -188,7 +222,7 @@ class OwnedRun:
         self.current_process = process.process
         try:
             while process.process.poll() is None:
-                if self.cancel.wait(0.05) or time.monotonic() - self.started > self.node.timeout:
+                if self.cancel.wait(0.05) or time.monotonic() - self.started > self.timeout:
                     self.cancel.set()
                     raise InterruptedError("Owned job was cancelled or reached its wall-clock bound")
             if process.process.returncode:
@@ -199,8 +233,12 @@ class OwnedRun:
 
     def _request(self, http, method, url, **arguments):
         while True:
+            remaining = self.timeout - (time.monotonic() - self.started)
+            if self.cancel.is_set() or remaining <= 0:
+                self.cancel.set()
+                raise InterruptedError("Owned job stopped before completing gateway I/O")
             try:
-                response = http.request(method, url, **arguments)
+                response = http.request(method, url, timeout=min(10, remaining), **arguments)
                 response.raise_for_status()
                 return response
             except httpx.HTTPStatusError as error:
@@ -208,13 +246,11 @@ class OwnedRun:
                     raise
             except httpx.TransportError:
                 pass
-            if self.cancel.wait(0.1) or time.monotonic() - self.started > self.node.timeout:
-                self.cancel.set()
-                raise InterruptedError("Owned job stopped while waiting for gateway recovery")
+            self.cancel.wait(0.1)
 
     def run(self):
         try:
-            if self.root.exists():
+            if self.assignment.get("cleanupOnly") or self.root.exists():
                 self.uncertain_owner = True
                 self.reason = "owner_reconciliation_required"
                 history = self.root / "node-reports.jsonl"
@@ -226,9 +262,7 @@ class OwnedRun:
                     self._log_offsets[row["stream"]] = max(self._log_offsets[row["stream"]], row["line"] + 1)
                 return
             self.root.mkdir(parents=True, exist_ok=False)
-            env = dict(os.environ)
-            for name in ("SPATIAL_NODE_TOKEN", "LW_TOKEN"):
-                env.pop(name, None)
+            env = trainer_environment()
             env.update(
                 PXR_WORK_THREAD_LIMIT="1",
                 PYTHONIOENCODING="utf-8",
@@ -243,6 +277,9 @@ class OwnedRun:
                 response = self._request(http, "GET", f"/api/v1/jobs/{self.assignment['jobId']}/inputs")
                 inputs = response.json()
                 job = inputs["job"]
+                validation = job["kind"] == "plan_validation"
+                if validation:
+                    self.timeout = min(self.timeout, job["validationLimits"]["timeoutSeconds"])
                 expected = {
                     ("task", job["task"]): job["taskContentHash"],
                     ("scene", job["scene"]): job["sceneContentHash"],
@@ -322,12 +359,16 @@ class OwnedRun:
                                 bridge / "lw_usd_mjcf.py")
                 shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
                                 bridge / "lw_mjlab_launcher.py")
-                self.view_directory.mkdir()
-                self.view_active.set()
+                shutil.copyfile(training_runtime.__file__, bridge / "lw_training_runtime.py")
+                leased_compiler = inputs.get("compilerHash")
+                if leased_compiler and compiler_hash(bridge, prefix="lw_") != leased_compiler:
+                    raise RuntimeError("Bundled mjlab compiler differs from the leased compiler digest")
+                if not validation:
+                    self.view_directory.mkdir()
+                    self.view_active.set()
                 env.update(
                     LW_NODE_INPUTS=str(manifest),
                     LW_NODE_OUTPUT=str(output),
-                    LW_NODE_VIEW_IPC=str(self.view_directory),
                     LW_TASK_PACKAGE=task_package["directory"],
                     LW_SCENE_PACKAGE=scene_package["directory"],
                     LW_ASSET_PACKAGES=json.dumps(
@@ -344,6 +385,8 @@ class OwnedRun:
                     else self.assignment["gpuId"],
                     UV_CACHE_DIR=str(self.node.root / "uv-cache"),
                 )
+                if not validation:
+                    env["LW_NODE_VIEW_IPC"] = str(self.view_directory)
                 if inputs["job"]["executionDevice"] == "cpu":
                     env.update(OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
                 is_mjlab = inputs["task"].get("mjlab") is not None
@@ -353,7 +396,21 @@ class OwnedRun:
                     raise RuntimeError(
                         f"{backend_name} trainer runtime is not configured on this compute node"
                     )
+                entry = trainer_prefix[1:]
+                if runtime := inputs.get("runtimeIdentity"):
+                    if (
+                        runtime["backend"] != backend_name
+                        or training_runtime.entry_identity(backend_name, entry) != runtime["entry"]
+                    ):
+                        raise RuntimeError(
+                            "Configured trainer entry differs from the leased runtime identity"
+                        )
+                    if backend_name == "isaaclab" and not entry[0].startswith("-"):
+                        entry[0] = str(Path(entry[0]).resolve())
+                if is_mjlab and (validation or not entry):
+                    entry = list(training_runtime.MJLAB_ENTRY)
                 stage = scene_package["stage"]
+                env.pop("LW_SCENE_STAGE", None)
                 if inputs["task"][backend_name].get("sceneInput", "usd") == "usd":
                     if stage.startswith("python:"):
                         raise ValueError(
@@ -411,11 +468,20 @@ class OwnedRun:
                     )
                     if is_mjlab:
                         args = mjlab_trainer_arguments(inputs, "lw_training_bridge.install")
-                        entry = trainer_prefix[1:] if len(trainer_prefix) > 1 else ["-m", "lw_mjlab_launcher"]
+                        if validation:
+                            iterations = str(job["validationLimits"]["iterations"])
+                            args.extend(["--validation-iterations", iterations])
                         self._command([python, *entry, *args], env, stdout, stderr)
                     else:
                         args = trainer_arguments(inputs, "lw_training_bridge.install")
-                        self._command([python, *trainer_prefix[1:], *args], env, stdout, stderr)
+                        self._command([python, *entry, *args], env, stdout, stderr)
+                if validation:
+                    self.metrics = {
+                        "iteration": job["validationLimits"]["iterations"],
+                        "validation": json.loads((output / "validation.json").read_text(encoding="utf-8")),
+                    }
+                    self.status = "succeeded"
+                    return
                 for pattern, category in (("*.pt", "checkpoints"), ("events.out.tfevents.*", "tensorboard")):
                     for file in (self.root / "logs").rglob(pattern):
                         target = output / category / file.relative_to(self.root / "logs")
@@ -462,32 +528,22 @@ class OwnedRun:
         return self.node.headers | {"X-Lease-Id": self.assignment["leaseId"]}
 
     def report(self):
+        if self.uncertain_owner and owned_processes_clean(self.root):
+            result = self.root / "result.json"
+            if result.exists():
+                saved = json.loads(result.read_text(encoding="utf-8"))
+                self.status, self.reason = saved["status"], saved["reason"]
+            else:
+                self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
+            self.uncertain_owner = False
+            self.finished = time.monotonic()
         # An exit during any producer-owned read requires another report for its final data.
         producer_finished = not self.thread.is_alive() and not self.uncertain_owner
-        if self.uncertain_owner:
-            alive = False
-            for receipt in self.root.glob("process-*.json"):
-                value = json.loads(receipt.read_text(encoding="utf-8"))
-                if not cleanup_confirmed(self.root, value):
-                    alive = True
-                try:
-                    process = psutil.Process(value["pid"])
-                    alive |= (
-                        process.create_time() == value["createdAt"] and process.cmdline() == value["command"]
-                    )
-                except psutil.NoSuchProcess:
-                    continue
-                except psutil.AccessDenied:
-                    alive = True
-            if not alive:
-                result = self.root / "result.json"
-                if result.exists():
-                    saved = json.loads(result.read_text(encoding="utf-8"))
-                    self.status, self.reason = saved["status"], saved["reason"]
-                else:
-                    self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
-                self.uncertain_owner = False
-                self.finished = time.monotonic()
+        elapsed = self.baseline_elapsed + (self.finished or time.monotonic()) - self.started
+        if producer_finished and ("cleanup" in self.assignment or self.assignment.get("quarantined")):
+            producer_finished = owned_processes_clean(self.root)
+        recovered = self.assignment.get("quarantined") and producer_finished
+        snapshot = self.root / "recovered-log-tail.json"
         metrics = self.root / "output/metrics.jsonl"
         if metrics.exists():
             complete = metrics.read_text(encoding="utf-8").splitlines()
@@ -497,6 +553,8 @@ class OwnedRun:
                 except ValueError:
                     pass  # A still-open final line is retried at the next heartbeat.
         for name in ("stdout.log", "stderr.log"):
+            if recovered and snapshot.exists():
+                break
             path = self.root / name
             if path.exists():
                 lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
@@ -518,6 +576,25 @@ class OwnedRun:
                             stream.write(json.dumps(row) + "\n")
                     self._logs.extend(row["text"] for row in new)
                 self._log_offsets[name] = len(complete)
+        selected = self._logs[self.log_cursor:self.log_cursor + 500]
+        if recovered:
+            if snapshot.exists():
+                final_cursor = json.loads(snapshot.read_bytes())["end"]
+                if final_cursor != len(self._logs):
+                    raise RuntimeError("The recovered log spool differs from its final cursor")
+            else:
+                # Sync the spool and its final cursor before releasing the GPU.
+                spool = self.root / "node-logs.jsonl"
+                if spool.exists():
+                    with spool.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                final_cursor = len(self._logs)
+                durable_json(snapshot, {"end": final_cursor})
+            return {
+                "jobId": self.assignment["jobId"], "leaseId": self.assignment["leaseId"],
+                "status": "cleaned", "elapsedSeconds": elapsed, "tailEnd": final_cursor,
+                "logAfter": self.log_cursor, "logs": selected,
+            }
         memory = None
         if self.assignment["gpuId"] is not None and self.current_process is not None:
             try:
@@ -531,16 +608,17 @@ class OwnedRun:
                 memory = sum(rows) if rows else None
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        selected = self._logs[self.log_cursor:self.log_cursor + 500]
         draining = self.status in ("succeeded", "failed", "cancelled") and (
             not producer_finished or self.log_cursor + len(selected) < len(self._logs))
+        status = "running" if draining else self.status
         return {
-            **self.metrics,
+            **{key: value for key, value in self.metrics.items()
+               if key != "validation" or status == "succeeded"},
             "jobId": self.assignment["jobId"],
             "leaseId": self.assignment["leaseId"],
-            "status": "running" if draining else self.status,
+            "status": status,
             "reason": "draining_logs" if draining else self.reason,
-            "elapsedSeconds": self.baseline_elapsed + (self.finished or time.monotonic()) - self.started,
+            "elapsedSeconds": elapsed,
             "logAfter": self.log_cursor,
             "logs": selected,
             "memoryUsedMb": memory,
@@ -548,30 +626,68 @@ class OwnedRun:
 
 
 class LocalNode:
-    def __init__(self, url, root, trainer, capabilities, *, mjlab_trainer=(), interval=10, timeout=86400):
+    def __init__(self, url, root, trainer, capabilities, *, mjlab_trainer=(), interval=10, timeout=86400,
+                 node_id="local", token=None):
         self.url, self.root, self.trainer = url, Path(root), trainer
         self.mjlab_trainer = mjlab_trainer
         self.capabilities, self.interval, self.timeout = capabilities, interval, timeout
         self.root.mkdir(parents=True, exist_ok=True)
-        identity = self.root / "instance-id"
-        if not identity.exists():
-            import uuid
-
-            identity.write_text(uuid.uuid4().hex, encoding="utf-8")
-        self.instance = identity.read_text(encoding="utf-8")
+        self.node_id, self.instance = node_id, uuid.uuid4().hex
+        if node_id == "local":
+            identity = self.root / "instance-id"
+            if not identity.exists():
+                identity.write_text(self.instance, encoding="utf-8")
+            self.instance = identity.read_text(encoding="utf-8")
         self.hardware = capabilities["hardware"]
-        self.headers = {"X-Node-Token": os.environ["SPATIAL_NODE_TOKEN"], "X-Node-Instance": self.instance}
+        self.headers = {"X-Node-Token": token or os.environ["SPATIAL_NODE_TOKEN"],
+                        "X-Node-Id": node_id, "X-Node-Instance": self.instance}
         self.active = {}
         self.capabilities_path = None
         self.process_memory = {}
+        self.cleanup_receipts = self.root / "cleanup-receipts"
+
+    def _remember_cleanup(self, assignment):
+        capability = assignment.get("cleanup")
+        if capability is None or capability["schemaVersion"] != 1:
+            return
+        job, lease = assignment["jobId"], assignment["leaseId"]
+        # Save the capability before starting any subprocess. The work directory then records each launcher.
+        durable_json(self.cleanup_receipts / f"{work_directory_id(job, lease)}.json", {
+            "url": self.url, "token": capability["token"],
+            "receipt": {
+                "schemaVersion": 1, "nodeId": self.node_id, "instanceId": self.instance,
+                "jobId": job, "leaseId": lease, "gpuId": assignment["gpuId"],
+            },
+        })
+
+    async def _send_cleanup(self, http, *, stopping=False):
+        active = {run.root.name for run in self.active.values()}
+        for path in self.cleanup_receipts.glob("*.json"):
+            if not stopping and path.stem in active:
+                continue
+            if not await asyncio.to_thread(owned_processes_clean, self.root / "work" / path.stem):
+                continue
+            try:
+                pending = json.loads(path.read_text(encoding="utf-8"))
+                if pending["url"] != self.url:
+                    continue
+                response = await http.post(
+                    "/api/v1/nodes/cleanup", json=pending["receipt"],
+                    headers={"X-Node-Cleanup-Token": pending["token"]},
+                )
+                if response.status_code == 204:
+                    path.unlink()
+            except (OSError, ValueError, KeyError, httpx.TransportError):
+                continue  # Retain the receipt for a later poll or a subsequent runner process.
 
     async def run(self):
         view_worker = asyncio.create_task(relay_views(self), name="node-view-relays")
-        async with httpx.AsyncClient(
-            base_url=self.url, headers=self.headers, trust_env=False, timeout=10
-        ) as http:
+        refresh_recovery = False
+        retiring = set()
+        async with httpx.AsyncClient(base_url=self.url, trust_env=False, timeout=10) as http:
             try:
                 while True:
+                    await self._send_cleanup(http)
                     if (self.root / "stop").exists():
                         return
                     if self.capabilities_path:
@@ -593,7 +709,16 @@ class LocalNode:
                                     },
                                 )
                             )
-                    reports = [owned.report() for owned in self.active.values()]
+                    reports = []
+                    if not refresh_recovery:
+                        for identity, owned in self.active.items():
+                            if identity in retiring:
+                                continue
+                            report = owned.report()
+                            if owned.assignment.get("quarantined") and report["status"] == "running":
+                                continue
+                            reports.append(report)
+                    refresh_recovery = False
                     for report in reports:
                         root = self.active[report["jobId"]].root
                         if root.exists():
@@ -601,7 +726,8 @@ class LocalNode:
                                 stream.write(json.dumps(report) + "\n")
                     try:
                         response = await http.post(
-                            "/api/v1/nodes/local/heartbeat",
+                            f"/api/v1/nodes/{self.node_id}/heartbeat",
+                            headers=self.headers,
                             json={
                                 **self.capabilities,
                                 "instanceId": self.instance,
@@ -610,24 +736,51 @@ class LocalNode:
                         )
                         response.raise_for_status()
                         reply = response.json()
+                        if reply["nodeId"] != self.node_id:
+                            raise RuntimeError("Gateway replied for another Compute Node")
                         for identity, cursor in reply["logCursors"].items():
                             self.active[identity].log_cursor = cursor
-                        assignments = {row["jobId"]: row for row in reply["assignments"]}
+                        assignments = {
+                            row["jobId"]: row for row in (*reply["assignments"], *reply.get("logTails", ()))
+                        }
+                        retiring = self.active.keys() - assignments.keys()
                         for identity, owned in list(self.active.items()):
-                            if identity not in assignments and not owned.thread.is_alive():
-                                owned.thread.join()
-                                del self.active[identity]
+                            if identity in retiring:
+                                owned.cancel.set()
+                                if not owned.thread.is_alive():
+                                    owned.thread.join()
+                                    del self.active[identity]
                         for identity, assignment in assignments.items():
                             if identity not in self.active:
+                                self._remember_cleanup(assignment)
                                 self.active[identity] = OwnedRun(self, assignment)
                             elif self.active[identity].assignment["leaseId"] != assignment["leaseId"]:
                                 raise RuntimeError("Node cannot replace an owned live dispatch")
+                            else:
+                                self.active[identity].assignment = assignment
                             if assignment["cancel"]:
                                 self.active[identity].cancel.set()
                     except httpx.HTTPStatusError as error:
-                        if error.response.status_code < 500:
+                        if reports and error.response.status_code == 403:
+                            try:
+                                detail = error.response.json()["detail"]
+                            except (ValueError, KeyError, TypeError):
+                                detail = None
+                            # Refresh ownership once without replaying fenced job reports.
+                            refresh_recovery = (
+                                isinstance(detail, dict) and detail.get("code") == "lease_mismatch"
+                            )
+                        if not refresh_recovery and error.response.status_code < 500:
                             for owned in self.active.values():
                                 owned.cancel.set()
+                                if (error.response.status_code == 422 and not owned.thread.is_alive()
+                                        and owned.status == "succeeded" and "validation" in owned.metrics):
+                                    owned.status = "failed"
+                                    owned.reason = "gateway_rejected_validation"
+                            if self.node_id != "local" and error.response.status_code in (401, 403, 409):
+                                raise RuntimeError(
+                                    "Gateway rejected Compute Node credentials or ownership"
+                                ) from None
                     except httpx.TransportError:
                         pass  # Preserve process ownership and retry the same reports after gateway recovery.
                     await asyncio.sleep(self.interval)
@@ -639,12 +792,15 @@ class LocalNode:
                 await asyncio.gather(
                     *(asyncio.to_thread(owned.thread.join) for owned in self.active.values())
                 )
+                await self._send_cleanup(http, stopping=True)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", required=True)
     parser.add_argument("--root", required=True)
+    parser.add_argument("--node-id", help="Persistent Compute Node ID (defaults to local)")
+    parser.add_argument("--registration-code", help="Exchange a single-use code and retain the node token")
     parser.add_argument(
         "--trainer", default="[]", help="JSON command prefix in an existing Isaac Lab environment"
     )
@@ -655,6 +811,40 @@ def main():
     parser.add_argument("--interval", type=float, default=10)
     parser.add_argument("--timeout", type=float, default=86400)
     args = parser.parse_args()
+    with import_lock(Path(args.root)):
+        run_node(args)
+
+
+def node_credentials(args):
+    url = args.url.rstrip("/")
+    parsed = urlsplit(url)
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username
+            or parsed.password or parsed.path or parsed.query or parsed.fragment):
+        raise ValueError("Use an explicit gateway HTTP(S) origin")
+    path = Path(args.root) / "node-credentials.json"
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    if args.registration_code:
+        with httpx.Client(base_url=url, trust_env=False, timeout=10) as http:
+            response = http.post("/api/v1/nodes/register", json={"code": args.registration_code})
+            if not response.is_success:
+                raise RuntimeError(f"Compute Node registration failed (HTTP {response.status_code})")
+            saved = response.json() | {"url": url}
+        durable_json(path, saved)
+    node_id = args.node_id or (saved["nodeId"] if saved else "local")
+    token = os.getenv("SPATIAL_NODE_TOKEN")
+    if args.registration_code or not token and saved:
+        if saved["url"] != url or saved["nodeId"] != node_id:
+            raise ValueError("Stored registration belongs to a different gateway or Compute Node")
+        token = saved["token"]
+    if not token:
+        raise ValueError("Use --registration-code or set SPATIAL_NODE_TOKEN")
+    return node_id, token
+
+
+def run_node(args):
+    node_id, token = node_credentials(args)
+    trainer = json.loads(args.trainer)
+    mjlab_trainer = json.loads(args.mjlab_trainer)
     capabilities_path = (
         Path(args.capabilities) if args.capabilities else Path(args.root) / "capabilities.json"
     )
@@ -664,21 +854,64 @@ def main():
         capabilities = discover()
         if capabilities_path.exists():
             previous = json.loads(capabilities_path.read_text(encoding="utf-8"))
-            if previous["hardware"] == capabilities["hardware"]:
+            if previous["hardware"] in (capabilities["hardware"], capabilities.get("legacyHardware")):
                 capabilities["profiles"] = previous.get("profiles", [])
-        capabilities_path.parent.mkdir(parents=True, exist_ok=True)
-        capabilities_path.write_text(json.dumps(capabilities), encoding="utf-8")
+        if node_id != "local":
+            capabilities.pop("legacyHardware", None)
+    mjlab_versions = trainer_versions(mjlab_trainer, is_mjlab=True)
+    isaaclab_versions = trainer_versions(trainer, is_mjlab=False)
+    modern = "mjlab" in mjlab_versions or "isaaclab" in isaaclab_versions
+    if modern or node_id != "local" or not args.capabilities:
+        capabilities["trainerVersions"] = mjlab_versions or isaaclab_versions
+        capabilities["isaaclabVersions"] = isaaclab_versions
+        entries = {
+            backend: training_runtime.entry_identity(backend, prefix[1:])
+            for backend, prefix in (("isaaclab", trainer), ("mjlab", mjlab_trainer)) if prefix
+        }
+        capabilities["trainingEntries"] = {backend: entry for backend, entry in entries.items() if entry}
+    if "mjlab" in (capabilities.get("trainerVersions") or {}):
+        capabilities["compilerHash"] = compiler_hash()
+    if not args.capabilities:
+        durable_json(capabilities_path, capabilities)
     node = LocalNode(
         args.url,
         args.root,
-        json.loads(args.trainer),
+        trainer,
         capabilities,
-        mjlab_trainer=json.loads(args.mjlab_trainer),
+        mjlab_trainer=mjlab_trainer,
         interval=args.interval,
         timeout=args.timeout,
+        node_id=node_id,
+        token=token,
     )
     node.capabilities_path = capabilities_path
     asyncio.run(node.run())
+
+
+def trainer_versions(prefix, *, is_mjlab):
+    if not prefix:
+        return {}
+    script = """
+import importlib.metadata
+import json
+import sys
+versions = {}
+for name, distribution in json.loads(sys.argv[1]).items():
+    try:
+        versions[name] = importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        pass
+print(json.dumps(versions))
+"""
+    try:
+        result = subprocess.run(
+            [prefix[0], "-c", script, json.dumps(training_runtime.trainer_distributions(is_mjlab))],
+            capture_output=True, text=True, timeout=10, check=True,
+            env=trainer_environment(),
+        )
+        return json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
 
 
 def _nvidia_smi() -> str:
@@ -731,20 +964,35 @@ def discover():
     smi = _nvidia_smi()
     try:
         result = subprocess.run(
-            [smi, "--query-gpu=uuid,name,memory.total", "--format=csv,noheader,nounits"],
+            [smi, "--query-gpu=uuid,name,memory.total,compute_cap", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=3,
         )
+        if result.returncode != 0:
+            result = subprocess.run(
+                [smi, "--query-gpu=uuid,name,memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=3,
+            )
         if result.returncode == 0:
             for line in result.stdout.splitlines():
-                identifier, name, memory = [value.strip() for value in line.split(",", 2)]
-                gpus.append({"id": identifier, "name": name, "memoryTotalMb": float(memory)})
+                identifier, name, memory, *cap = [value.strip() for value in line.split(",", 3)]
+                gpu = {"id": identifier, "name": name, "memoryTotalMb": float(memory)}
+                if cap and cap[0].replace(".", "").isdigit():
+                    gpu["computeCapability"] = cap[0]
+                gpus.append(gpu)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         pass
-    hardware = json.dumps({"host": platform.uname()._asdict(), "gpus": gpus}, sort_keys=True)
+    host = platform.uname()
+    hardware = json.dumps([host.system, host.machine, host.processor])
+    legacy = json.dumps({
+        "host": host._asdict(),
+        "gpus": [{key: gpu[key] for key in ("id", "name", "memoryTotalMb")} for gpu in gpus],
+    }, sort_keys=True)
     return {
-        "hardware": hashlib.sha256(hardware.encode()).hexdigest(),
+        "hardware": "node-hardware/2:" + hashlib.sha256(hardware.encode()).hexdigest(),
+        "legacyHardware": hashlib.sha256(legacy.encode()).hexdigest(),
+        "hostname": host.node,
         "gpus": gpus,
         "cpuAvailable": True,
         "profiles": [],

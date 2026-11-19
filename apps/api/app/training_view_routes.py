@@ -52,15 +52,19 @@ def install_training_view_routes(app, manager, views, role_for, authenticate_nod
             await websocket.close(code=1008)
             return
         try:
-            job = manager.jobs.get(identity)
+            job = manager.jobs.get_committed(identity)
         except PlanError:
             await websocket.close(code=1008)
             return
         await websocket.accept()
         if job["status"] != "running":
-            await websocket.send_json(
-                views.envelope(job, "ended", {"status": job["status"], "reason": job["reason"]})
-            )
+            try:
+                await views.send(websocket, views.envelope(
+                    job, "ended", {"status": job["status"], "reason": job["reason"]},
+                ))
+            except PlanError as error:
+                await websocket.close(code=1011, reason=error.detail["code"])
+                return
             await websocket.close(code=1000)
             return
         subscription = Reader(websocket)
@@ -87,10 +91,11 @@ def install_training_view_routes(app, manager, views, role_for, authenticate_nod
 
     @app.get("/api/v1/jobs/{identity}/view-assets/{digest}/{relative:path}")
     async def resource(identity: str, digest: str, relative: str):
-        job = manager.jobs.get(identity)
+        job = manager.jobs.get_committed(identity)
         if job["status"] in TERMINAL:
             raise PlanError("training_view_asset_unavailable", "Job view is no longer active", status=404)
         payload = await asyncio.to_thread(views.descriptors.read, identity, digest, relative)
+        manager.jobs.get_committed(identity)
         media = {
             ".glb": "model/gltf-binary",
             ".gltf": "model/gltf+json",

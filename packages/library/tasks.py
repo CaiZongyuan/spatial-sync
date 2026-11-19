@@ -139,7 +139,7 @@ class TaskLibrary:
                     raise ValueError("Task condition entity must match exactly one scene binding")
                 return matched[0]
 
-            types = load_entity_types()
+            types = load_entity_types() | scene.entity_types()
             interface, action = task.implements.split(".")
             if entity_type(task.robot) != interface or action not in types[interface]["actions"]:
                 raise ValueError("implements must name an action of the selected robot type")

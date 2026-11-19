@@ -1,5 +1,6 @@
 """Ordinary HTTP removal/restore uses the real immutable bytes and legacy reference guards."""
 
+import json
 import os
 import shutil
 import time
@@ -12,8 +13,11 @@ from scene_support import user_version
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
-from packages.library.common import LibraryError, content_hash
+from packages.library.assets import AssetLibrary
+from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash
 from packages.library.removals import RemovalRequest
+from packages.library.robot_resources import Embodiment, RobotResources
+from packages.library.scenes import SceneLibrary
 from packages.protocol.schema import Actor
 
 TARGET = "/api/v1/library/scenes/lab-demo/4"
@@ -413,3 +417,84 @@ def test_old_remove_audit_failure_cannot_poison_accepted_restore(tmp_path, monke
             release.set()
         restored = settled(client, restoring)
         assert restored["status"] == "restored" and client.get(TARGET).status_code == 200
+
+
+@pytest.mark.parametrize("kind", ["asset", "scene"])
+def test_embodiment_retains_exact_version_in_both_removal_paths(tmp_path, kind):
+    library = tmp_path / "user-library"
+    if kind == "asset":
+        _copy_fr3_asset(library)
+        identifier, route = "robot/fr3@30", "/api/v1/library/assets/robot/fr3/30"
+        asset, bindings = identifier, []
+    else:
+        directory = library / "scenes/robot-and-tubes/30"
+        shutil.copytree(BUILTIN_ROOT / "scenes/robot-and-tubes/2", directory)
+        report_path = directory / "validation.json"
+        report = json.loads(report_path.read_bytes())
+        report_path.write_text(json.dumps(report | {"subject": "scene:robot-and-tubes@30"}))
+        identifier, route = "robot-and-tubes@30", "/api/v1/library/scenes/robot-and-tubes/30"
+        asset = "robot/fr3@1"
+        bindings = [{"scene": identifier, "entity": "/World/Lab/RobotA", "source": "newton"}]
+
+    with TestClient(create_app()) as client:
+        original = client.get(route)
+        assert original.status_code == 200, original.text
+        old_approval = client.delete(route)
+        assert old_approval.status_code == 202, old_approval.text
+        robot = client.post("/api/v1/embodiments", json={
+            "id": "retained-robot", "title": "Retained Robot", "asset": asset, "kind": "sim",
+            "controller": None, "bindings": bindings,
+        })
+        assert robot.status_code == 201, robot.text
+
+        request = {"resource": kind, "id": identifier, "contentHash": original.json()["contentHash"],
+                   "requestId": "embodiment-delete"}
+        submitted = client.post(ROOT, json=request)
+        assert submitted.status_code == 202, submitted.text
+        ordinary = settled(client, submitted.json())
+        assert ordinary["status"] == "blocked", ordinary
+        assert ordinary["error"]["code"] == "version_in_use"
+        assert any(pin["kind"] == "embodiment" and pin["id"] == "retained-robot"
+                   for pin in ordinary["error"]["references"])
+        legacy = client.delete(route)
+        assert legacy.status_code == 409 and legacy.json()["detail"]["code"] == "version_in_use", legacy.text
+        decision = client.post(
+            "/api/v1/approvals/" + old_approval.json()["approvalId"] + "/decision",
+            json={"decision": "approve"},
+        )
+        assert decision.status_code == 409, decision.text
+        assert decision.json()["detail"]["code"] == "version_in_use", decision.text
+        assert client.get(route).json()["contentHash"] == original.json()["contentHash"]
+        assert client.get("/api/v1/embodiments/retained-robot").json() == robot.json()
+        assert client.get("/api/v1/embodiments").status_code == 200
+
+
+def _copy_fr3_asset(library):
+    directory = library / "assets/robot/fr3/30"
+    shutil.copytree(BUILTIN_ROOT / "assets/robot/fr3/1", directory)
+    report_path = directory / "validation.json"
+    report = json.loads(report_path.read_bytes())
+    report_path.write_text(json.dumps(report | {"subject": "asset:robot/fr3@30"}))
+
+
+def test_embodiment_registration_revalidates_asset_if_another_index_has_removed_it(tmp_path):
+    library = tmp_path / "user-library"
+    _copy_fr3_asset(library)
+    stale_assets = AssetLibrary(tmp_path / "second-state", user_root=library)
+    stale_assets.startup()
+    stale_scenes = SceneLibrary(user_root=library, state_root=tmp_path / "second-state")
+    resources = RobotResources(stale_assets.roots, stale_assets, stale_scenes, {})
+    document = Embodiment(id="late-robot", title="Late Robot", kind="sim", asset="robot/fr3@30",
+                          controller=None, bindings=[])
+    with TestClient(create_app()) as client:
+        response = client.post(ROOT, json={
+            "resource": "asset", "id": document.asset, "requestId": "remove-first",
+            "contentHash": stale_assets.resolve(document.asset).content_hash,
+        })
+        assert response.status_code == 202, response.text
+        assert settled(client, response.json())["status"] == "committed"
+        with pytest.raises(LibraryError) as unavailable:
+            resources.register_embodiment(document)
+        assert unavailable.value.detail["code"] == "asset_changed"
+        assert client.get("/api/v1/embodiments/late-robot").status_code == 404
+        assert client.get("/api/v1/embodiments").status_code == 200

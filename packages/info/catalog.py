@@ -31,6 +31,15 @@ class Catalog(BaseModel):
     _configs: dict = PrivateAttr(default_factory=dict)
     _events: dict = PrivateAttr(default_factory=dict)
     _alerts: dict = PrivateAttr(default_factory=dict)
+    _type_content_hashes: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    def binding_documents(self):
+        """Return bindings for runtime identity checks, including private type pins."""
+        return {
+            key: binding | {"typeContentHash": self._type_content_hashes[key]}
+            if key in self._type_content_hashes else binding
+            for key, binding in self.entities.items()
+        }
 
     def action(self, entity_key, action):
         return self.types[self.entities[entity_key]["type"]]["actions"][action]
@@ -160,12 +169,17 @@ def compile_catalog(scene_revision, types, entities, configs, *, sites=()):
             for key, value in type_declarations.items()
         },
         entities={
-            key: value.model_dump(mode="json", exclude={"alerts"}, exclude_none=True)
+            key: value.model_dump(mode="json", exclude={"alerts", "typeContentHash"}, exclude_none=True)
             for key, value in binding_declarations.items()
         },
     )
     catalog = Catalog.model_validate(document.model_dump(mode="json", by_alias=True, exclude_none=True))
     catalog._configs = configs
+    catalog._type_content_hashes = {
+        key: binding.typeContentHash
+        for key, binding in binding_declarations.items()
+        if binding.typeContentHash is not None
+    }
     for type_id, definition in catalog.types.items():
         for prop, value in definition["properties"].items():
             catalog._properties[type_id, prop] = compile_schema(value["schema"])

@@ -5,22 +5,35 @@ import json
 import math
 
 from packages.info.schema_subset import json_equal
-from packages.training.jobs import profile_key
+from packages.training.runtime import job_backend, legacy_local, runtime_profile_key, training_runtime
 
 
-def measured_profile(raw, job, plan, node, resource_id):
+def measured_profile(raw, job, plan, node, resource_id, *, task=None):
     receipt = json.loads(raw)
+    if not isinstance(receipt, dict):
+        raise ValueError("Measurement receipt must be an object")
+    node = {"id": "local", **node}
+    if legacy_local(node) and job.get("kind", "training") == "training":
+        runtime = None
+        schema = "lw.training-profile/1"
+    else:
+        runtime = training_runtime(node, job | {"plan": plan}, job_backend(job, task))
+        schema = "lw.training-profile/2"
     expected = {
         "taskContentHash": job["taskContentHash"],
         "hardware": node["hardware"],
         "resourceId": resource_id,
         **{name: plan[name] for name in ("algorithm", "model", "hyperparameters")},
     }
-    if receipt.get("schema") != "lw.training-profile/1" or not json_equal(
+    if runtime is not None:
+        expected["runtimeIdentity"] = runtime
+    if receipt.get("schema") != schema or not json_equal(
         {key: receipt.get(key) for key in expected}, expected
     ):
         raise ValueError("Measurement does not match this exact Task, plan configuration and node resource")
-    resources = {gpu["id"] for gpu in node["gpus"]} | ({"cpu"} if node.get("cpuAvailable") else set())
+    resources = {gpu["id"]: gpu for gpu in node["gpus"]}
+    if node.get("cpuAvailable"):
+        resources["cpu"] = {"id": "cpu"}
     if resource_id not in resources:
         raise ValueError("Measurement resource is not advertised by this node")
     samples = receipt.get("samplesSeconds")
@@ -31,6 +44,7 @@ def measured_profile(raw, job, plan, node, resource_id):
     ):
         raise ValueError("Provide actual positive finite iteration-duration samples")
     setup, measured = receipt.get("setupSeconds"), receipt.get("measuredAt")
+    dispatch = receipt.get("dispatchOverheadSeconds") if runtime is not None else 0
     if (
         type(setup) not in (int, float)
         or not math.isfinite(setup)
@@ -38,13 +52,18 @@ def measured_profile(raw, job, plan, node, resource_id):
         or type(measured) not in (int, float)
         or not math.isfinite(measured)
         or measured <= 0
+        or type(dispatch) not in (int, float)
+        or not math.isfinite(dispatch)
+        or dispatch < 0
     ):
         raise ValueError("Measurement setup duration and timestamp are required")
     digest = hashlib.sha256(raw).hexdigest()
+    key = runtime_profile_key(plan, job["taskContentHash"], node, resources[resource_id], runtime)
     return {
-        "key": profile_key(plan, job["taskContentHash"], node["hardware"], resource_id),
+        "key": key,
         "iterationSeconds": max(samples),
         "setupSeconds": setup,
+        "dispatchOverheadSeconds": dispatch,
         "samples": len(samples),
         "measuredAt": measured,
         "evidence": f"measured receipt sha256:{digest}",

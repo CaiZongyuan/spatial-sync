@@ -56,7 +56,6 @@ def test_real_fr3_binding_preview_and_registration_only_models_need_no_source(tm
         assert http.get("/api/v1/jobs").json()["jobs"] == []
         for route in ("/embodiments/missing", "/controllers/missing", "/robot-models/missing"):
             assert http.get("/api/v1" + route).status_code == 404
-        assert http.post("/api/v1/robot-models", json=taught).status_code == 405
         assert "private/" not in json.dumps(models)
 
 

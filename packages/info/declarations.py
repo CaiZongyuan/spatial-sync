@@ -30,4 +30,5 @@ class EntityTypeDeclaration(EntityType):
 
 
 class EntityBindingDeclaration(EntityBinding):
+    typeContentHash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     alerts: AlertRules = Field(default_factory=dict)

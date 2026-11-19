@@ -356,7 +356,8 @@ class ControllerPromotions:
                     or snapshot["candidateIdentity"] != record.get("candidateIdentity")
                     or record["runtimeHash"] != self.manager.evaluations._runtime_hash):
                 raise ValueError("Fixed Candidate implementation evidence is unavailable")
-            verify_identity(snapshot, directory=self.manager.evaluations.store.root / "identity-inputs")
+            verify_identity(snapshot, directory=self.manager.evaluations.store.root / "identity-inputs",
+                            user_root=self.resources.roots["user"])
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise PlanError(
                 "not_comparable", "Recoverable evaluation inputs are unavailable or changed"

@@ -591,6 +591,7 @@ class EvaluationService:
                         verify_identity,
                         record.get("identitySnapshot"),
                         directory=self.store.root / "identity-inputs",
+                        user_root=self.suites.roots["user"],
                     )
                 except (OSError, ValueError):
                     raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
@@ -694,6 +695,7 @@ class EvaluationService:
                     verify_identity,
                     record.get("identitySnapshot"),
                     directory=self.store.root / "identity-inputs",
+                    user_root=self.suites.roots["user"],
                 )
             except (OSError, ValueError):
                 raise HTTPException(409, {"code": "evaluation_conditions_changed"}) from None
@@ -820,7 +822,7 @@ class EvaluationService:
             or session.kind != suite.metadata["source"]
         ):
             raise HTTPException(409, {"code": "scene_changed"})
-        binding = session.catalog.entities.get(task["robot"])
+        binding = session.catalog.binding_documents().get(task["robot"])
         type_id, action = task["implements"].rsplit(".", 1)
         if simulation_subject is not None:
             simulation_subject = validate_simulation_catalog(session.catalog, simulation_subject)

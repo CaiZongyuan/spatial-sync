@@ -1,14 +1,16 @@
-"""Read-only Embodiment, Controller and Robot Model catalog routes."""
+"""Read and register Embodiment, Controller and Robot Model metadata."""
 
 import anyio
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from apps.api.app.library_validation import program_schemas
 from packages.info.evaluation_identity import comparison_identity, verify_identity
 from packages.library.common import LibraryError
-from packages.library.robot_resources import RobotResources
+from packages.library.robot_resources import ControllerRegistration, Embodiment, RobotModel, RobotResources
 
 
-def install_robot_resource_routes(app, assets, scenes, manager=None):
+def install_robot_resource_routes(app, assets, scenes, manager, role_for):
     resources = RobotResources(assets.roots, assets, scenes, program_schemas())
     app.state.robot_resources = resources
 
@@ -37,7 +39,8 @@ def install_robot_resource_routes(app, assets, scenes, manager=None):
                 raise ValueError("Current comparison evidence is unavailable")
             if record.get("runtimeHash") != manager.evaluations._runtime_hash:
                 raise ValueError("Runtime evidence differs")
-            verify_identity(record["identitySnapshot"], directory=store.root / "identity-inputs")
+            verify_identity(record["identitySnapshot"], directory=store.root / "identity-inputs",
+                            user_root=resources.roots["user"])
             suite = manager.evaluations.suites.resolve(row["suite"])
             scene = manager.library.resolve(row["key"]["scene"], source=row["key"]["source"])
             if (suite.content_hash != record["suiteContentHash"]
@@ -124,3 +127,24 @@ def install_robot_resource_routes(app, assets, scenes, manager=None):
         value = await anyio.to_thread.run_sync(resources.controller, identifier)
         value = await anyio.to_thread.run_sync(controller_readback, value)
         return {"versions": value["versions"]}
+
+
+    async def register(request, document, publish, readback=None):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        value, created = await anyio.to_thread.run_sync(publish, document)
+        if readback is not None:
+            value = await anyio.to_thread.run_sync(readback, value)
+        return JSONResponse(value, status_code=201 if created else 200)
+
+    @app.post("/api/v1/robot-models", status_code=201)
+    async def register_model(body: RobotModel, request: Request):
+        return await register(request, body, resources.register_model)
+
+    @app.post("/api/v1/embodiments", status_code=201)
+    async def register_embodiment(body: Embodiment, request: Request):
+        return await register(request, body, resources.register_embodiment, active_sessions)
+
+    @app.post("/api/v1/controllers", status_code=201)
+    async def register_controller(body: ControllerRegistration, request: Request):
+        return await register(request, body, resources.register_controller, controller_readback)

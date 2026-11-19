@@ -7,14 +7,26 @@ imports from ``packages.*`` or ``apps.*`` so isolated trainer environments can r
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.metadata
 import json
+import math
 import os
+import time
+from contextlib import ExitStack
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Sequence
+
+
+def compiler_hash(directory=None, *, prefix=""):
+    directory = directory or Path(__file__).parent
+    digest = hashlib.sha256()
+    for name in ("mjlab_launcher.py", "usd_mjcf.py"):
+        digest.update((directory / (prefix + name)).read_bytes())
+    return digest.hexdigest()
 
 
 def build_mjlab_launcher_parser() -> argparse.ArgumentParser:
@@ -38,6 +50,7 @@ def build_mjlab_launcher_parser() -> argparse.ArgumentParser:
     parser.add_argument("--critic_hidden_dims", default=None)
     parser.add_argument("--activation", default=None)
     parser.add_argument("--obs_normalization", default=None)
+    parser.add_argument("--validation-iterations", type=int, choices=(3,))
     return parser
 
 
@@ -80,6 +93,148 @@ def _load_registered_mjlab_tasks(target_task: str) -> None:
         raise ValueError(f"mjlab task {target_task!r} was not registered by any mjlab.tasks entry point")
 
 
+def profile_training(runner, env, *, device, num_envs, iterations, synchronize, setup_started):
+    import torch
+
+    def check_batch(observations, rewards=None):
+        if tuple(observations.batch_size) != (num_envs,) or (
+            rewards is not None and tuple(rewards.shape) != (num_envs,)
+        ):
+            raise ValueError("Validation did not step the requested number of environments")
+        tensors = list(observations.values(include_nested=True, leaves_only=True))
+        if not tensors:
+            raise ValueError("Validation received no observations")
+        if rewards is not None:
+            tensors.append(rewards)
+        checks.extend(torch.isfinite(tensor).all() for tensor in tensors)
+
+    def act(observations):
+        nonlocal started
+        if steps == 0:
+            synchronize()
+            if not samples:
+                check_batch(observations)
+                check_finite()
+            started = time.perf_counter()
+        return original_act(observations)
+
+    def step(actions):
+        nonlocal steps
+        observations, rewards, dones, extras = original_step(actions)
+        check_batch(observations, rewards)
+        steps += 1
+        return observations, rewards, dones, extras
+
+    def check_finite():
+        if physics_checks and bool(torch.stack(physics_checks).any().item()):
+            raise ValueError("Validation produced non-finite physics state before automatic reset")
+        physics_checks.clear()
+        if checks and not bool(torch.stack(checks).all().item()):
+            raise ValueError("Validation produced non-finite observations or rewards")
+        checks.clear()
+
+    def optimizer_gradients(optimizer, args, kwargs):
+        if not updating:
+            return
+        gradients = [
+            parameter.grad for group in optimizer.param_groups for parameter in group["params"]
+            if parameter.grad is not None
+        ]
+        pending_gradient_steps[optimizer] = bool(gradients)
+        update_checks.extend(torch.isfinite(gradient).all() for gradient in gradients)
+
+    def optimizer_step(optimizer, args, kwargs):
+        if updating and pending_gradient_steps.pop(optimizer, False):
+            optimizer_steps[optimizer] += 1
+            update_checks.extend(
+                torch.isfinite(parameter).all()
+                for group in optimizer.param_groups for parameter in group["params"]
+            )
+
+    def update():
+        nonlocal updating, updated
+        if updated or steps != runner.cfg["num_steps_per_env"] or steps < 1:
+            raise ValueError("Validation did not complete a full PPO rollout")
+        for optimizer in optimizer_steps:
+            optimizer_steps[optimizer] = 0
+        updating = True
+        try:
+            losses = original_update()
+        finally:
+            updating = False
+        if any(count != expected_updates for count in optimizer_steps.values()):
+            raise ValueError(
+                f"Validation did not complete {expected_updates} gradient-bearing PPO optimizer steps"
+            )
+        updated = True
+        return losses
+
+    def log(**values):
+        nonlocal steps, updated
+        synchronize()
+        elapsed = time.perf_counter() - started
+        if not updated:
+            raise ValueError("Validation did not complete PPO optimization before logging")
+        check_finite()
+        if not bool(torch.stack(update_checks).all().item()):
+            raise ValueError("Validation produced non-finite PPO gradients or weights")
+        update_checks.clear()
+        losses = values["loss_dict"]
+        if not losses or not all(math.isfinite(loss) for loss in losses.values()):
+            raise ValueError("Validation produced invalid PPO losses")
+        samples.append(elapsed)
+        updated = False
+        steps = 0
+
+    alg = runner.alg
+    expected_updates = alg.num_learning_epochs * alg.num_mini_batches
+    if alg.num_learning_epochs < 1 or alg.num_mini_batches < 1:
+        raise ValueError("Validation requires positive PPO optimizer epochs and mini-batches")
+    optimizer_steps = {alg.optimizer: 0}
+    if rnd_optimizer := getattr(alg, "rnd_optimizer", None):
+        optimizer_steps[rnd_optimizer] = 0
+    checks, physics_checks, update_checks, samples = [], [], [], []
+    pending_gradient_steps = {}
+    updating = updated = False
+    steps, started = 0, 0.0
+    original_act, original_step = alg.act, env.step
+    original_update, original_log = alg.update, runner.logger.log
+    with ExitStack() as hooks:
+        # The real mjlab VecEnv exposes the simulation through its unwrapped environment.
+        sim = getattr(getattr(env, "unwrapped", None), "sim", None)
+        if sim is not None:
+            from mjlab.utils.nan_guard import NanGuard
+
+            original_substep = sim.step
+
+            def observed_substep():
+                original_substep()
+                # Materialize the boolean on-device before another substep or reset replaces the state.
+                physics_checks.append(NanGuard.detect_nans(sim.data).any())
+
+            sim.step = observed_substep
+            hooks.callback(setattr, sim, "step", original_substep)
+        for optimizer in optimizer_steps:
+            hooks.callback(optimizer.register_step_pre_hook(optimizer_gradients).remove)
+            hooks.callback(optimizer.register_step_post_hook(optimizer_step).remove)
+        try:
+            alg.act, env.step, alg.update, runner.logger.log = act, step, update, log
+            synchronize()
+            setup_seconds = time.perf_counter() - setup_started
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+        finally:
+            alg.act, env.step, alg.update, runner.logger.log = (
+                original_act, original_step, original_update, original_log,
+            )
+    if len(samples) != iterations or steps:
+        raise ValueError("Validation did not complete the bounded PPO iterations")
+    return {
+        "numEnvs": num_envs, "setupSeconds": setup_seconds, "warmupSeconds": samples[0],
+        "samplesSeconds": samples[1:],
+        "peakMemoryMb": torch.cuda.max_memory_allocated(device) / (1024 * 1024) if device != "cpu" else None,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_mjlab_launcher_args(argv)
     device = args.device
@@ -89,7 +244,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         os.environ.setdefault("MUJOCO_GL", "egl")
         os.environ.setdefault("MUJOCO_EGL_DEVICE_ID", "0")
 
-    callback_module = _invoke_callback(args.external_callback)
+    validation = args.validation_iterations is not None
+    if validation:
+        from lw_training_bridge import verify_trainer_versions
+
+        inputs = json.loads(Path(os.environ["LW_NODE_INPUTS"]).read_text(encoding="utf-8"))
+        verify_trainer_versions(inputs, True)
+        callback_module = None
+    else:
+        callback_module = _invoke_callback(args.external_callback)
+    setup_started = time.perf_counter()
     _seed_everything(args.seed, device)
     _load_registered_mjlab_tasks(args.task)
 
@@ -137,6 +301,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         agent_cfg.actor.obs_normalization = obs_norm
         agent_cfg.critic.obs_normalization = obs_norm
 
+    verify_usd_model = None
+    stage = os.environ.get("LW_SCENE_STAGE")
+    if stage is not None:
+        from lw_usd_mjcf import configure_mjlab_usd_scene
+
+        verify_usd_model = configure_mjlab_usd_scene(env_cfg.scene, stage)
+
     log_dir = (
         Path("logs")
         / "rsl_rl"
@@ -149,15 +320,35 @@ def main(argv: Sequence[str] | None = None) -> None:
         ensure_bridged(runner_cls)
     env_cls = getattr(env_cfg, "class_type", None) or ManagerBasedRlEnv
     env = env_cls(cfg=env_cfg, device=device, render_mode=None)
-    vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
     try:
+        if verify_usd_model is not None:
+            verify_usd_model(env.sim.mj_model)
+        vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
         agent_dict = asdict(agent_cfg)
+        if validation:
+            def synchronize():
+                if device != "cpu":
+                    import torch
+                    import warp
+
+                    warp.synchronize_device(device)
+                    torch.cuda.synchronize(device)
+
+            runner = runner_cls(vec_env, agent_dict, None, device=device)
+            timing = profile_training(
+                runner, vec_env, device=device, num_envs=args.num_envs, iterations=args.validation_iterations,
+                synchronize=synchronize, setup_started=setup_started,
+            )
+            (Path(os.environ["LW_NODE_OUTPUT"]) / "validation.json").write_text(
+                json.dumps(timing, allow_nan=False), encoding="utf-8"
+            )
+            return
         dump_yaml(log_dir / "params" / "env.yaml", asdict(env_cfg))
         dump_yaml(log_dir / "params" / "agent.yaml", agent_dict)
         runner = runner_cls(vec_env, agent_dict, str(log_dir), device=device)
         runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
     finally:
-        vec_env.close()
+        env.close()
 
 
 if __name__ == "__main__":

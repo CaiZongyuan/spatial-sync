@@ -1,17 +1,26 @@
 """Public Job sockets preserve canonical/env/reset identity and cannot acquire Session ownership."""
 
 import asyncio
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 from test_training_jobs import HEARTBEAT, NODE, TOKEN, approve, heartbeat, setup_plan
+from websockets.exceptions import ConnectionClosed
+from websockets.sync.client import connect
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
+from tests.gateway.test_cost_http import HEADERS as COST_NODE
+from tests.gateway.test_cost_http import TOKEN as COST_TOKEN
+from tests.gateway.test_cost_http import admitted, totals
+from tests.gateway.test_remote_training_nodes import OPERATOR, VIEWER, remote_settings
+from tests.gateway.test_training_node_process import start_server, wait_for
 
 
 def start(client):
@@ -85,6 +94,102 @@ def receive(socket, kind, *, index=None):
         if value["type"] == kind and (index is None or value.get("envIndex") == index):
             return value
     raise AssertionError(f"Expected {kind} env{index}")
+
+
+@pytest.mark.parametrize("fail_write", [True, False], ids=["failed-save", "committed"])
+def test_live_view_ends_only_after_job_reconciliation_commits(fail_write):
+    settings = remote_settings(node_token=COST_TOKEN)
+    clock = [1000.0]
+    app = create_app(settings)
+    app.state.jobs.clock = lambda: clock[0]
+    _, server, thread = start_server(settings, app)
+    try:
+        with httpx.Client(base_url=settings.node_gateway_url, headers=OPERATOR, trust_env=False) as client:
+            _, body, job = admitted(client, clock)
+            clock[0] += 10
+            report = {
+                "jobId": job["jobId"], "leaseId": job["leaseId"], "status": "running",
+                "iteration": 4, "meanReward": 2.5, "memoryUsedMb": 128, "elapsedSeconds": 10,
+                "logs": ["retained log"],
+            }
+            packet = body | {"reports": [report]}
+            assert client.post(HEARTBEAT, headers=COST_NODE, json=packet).is_success
+            resource = f"/api/v1/jobs/{job['jobId']}"
+            prior = client.get(resource).json()
+            node = COST_NODE | {"X-Lease-Id": job["leaseId"]}
+            hint = client.get(resource + "/inputs", headers=node).json()["view"]
+            binding = hello(job, hint)
+            socket = settings.node_gateway_url.replace("http://", "ws://", 1) + resource
+            with (
+                connect(
+                    socket + "/view", origin=settings.allowed_origins[0],
+                    additional_headers=VIEWER, proxy=None,
+                ) as viewer,
+                connect(socket + "/view-frames", additional_headers=node, proxy=None) as producer,
+            ):
+                producer.send(json.dumps(binding))
+                producer.send(json.dumps(frame(binding, hint, 0)))
+                for _ in range(10):
+                    message = json.loads(viewer.recv(timeout=4))
+                    if message["type"] == "frame":
+                        assert message["envIndex"] == 0
+                        break
+                else:
+                    pytest.fail("Reader did not receive a live frame")
+
+                state = settings.state_root / "jobs.json"
+                retained = state.with_name("retained-jobs.json")
+                if fail_write:
+                    state.rename(retained)
+                    state.mkdir()
+                try:
+                    clock[0] += 61
+                    if fail_write:
+                        wait_for(
+                            lambda: client.get("/api/v1/cost/summary"),
+                            lambda result: result.status_code == 503,
+                        )
+                        for path in (resource, resource + "/logs"):
+                            assert client.get(path).status_code == 503
+                        assert client.post(HEARTBEAT, headers=COST_NODE, json=packet).status_code == 503
+                    else:
+                        ended = json.loads(viewer.recv(timeout=4))
+                        assert ended["type"] == "ended" and ended["jobId"] == job["jobId"]
+                        assert ended["payload"] == {"status": "failed", "reason": "node_lost"}
+                    with pytest.raises(ConnectionClosed) as closed:
+                        observed = viewer.recv(timeout=4)
+                        pytest.fail(f"Unexpected View message before close: {observed}")
+                    assert closed.value.rcvd.code == (1011 if fail_write else 1000)
+                    if fail_write:
+                        assert closed.value.rcvd.reason == "jobs_persistence_unavailable"
+                    inbox = client.get("/api/v1/inbox?kinds=job").json()["messages"]
+                    states = [
+                        message["data"]["status"] for message in inbox
+                        if message["data"]["jobId"] == job["jobId"]
+                    ]
+                    assert states[-1] == ("running" if fail_write else "failed")
+                finally:
+                    if fail_write:
+                        state.rmdir()
+                        retained.rename(state)
+    finally:
+        server.should_exit = True
+        thread.join(10)
+        assert not thread.is_alive()
+
+    reopened = create_app(settings)
+    reopened.state.jobs.clock = lambda: clock[0]
+    with TestClient(reopened, headers=OPERATOR) as http:
+        recovered = http.get(resource).json()
+        assert recovered["status"] == ("running" if fail_write else "failed")
+        assert recovered["metrics"] == prior["metrics"]
+        assert recovered["metricsHistory"] == prior["metricsHistory"]
+        assert http.get(resource + "/logs").json() == {
+            "lines": ["retained log"], "cursor": 1, "complete": False,
+        }
+        owner = http.get("/api/v1/nodes/local").json()["leases"]["fake-gpu"]
+        assert owner["leaseId"] == job["leaseId"] and owner["quarantined"] is not fail_write
+        assert totals(http)["gpuSeconds"] == (10 if fail_write else 71)
 
 
 def test_terminal_during_slow_reader_send_does_not_admit_the_remaining_old_frame_batch():

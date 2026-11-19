@@ -554,6 +554,21 @@ results, and add a `Newton CPU` paragraph with commands, results and tick P95
 to the PR. Use Linux/WSL2 for the latency gate; keep Windows observations
 separate. A focused native test is additional evidence, not a replacement for
 these four checks.
+
+USD robot asset and Newton scene validation checks training compatibility in
+the structural worker. With Newton and MuJoCo installed, the CPU physics worker
+adds `P7` for rigid training models. It compares the compiled models by USD
+Prim Path with relative tolerance `1e-4`, absolute tolerance `1e-6 kg` for
+mass, `1e-8 kg·m²` for inertia and `1e-6` in solver units for joint and friction
+parameters. It compares link-local centers of mass and initial body and
+collider world positions to `1e-5 m`, and rotation basis vectors to `1e-5`
+after MuJoCo mesh-frame normalization. It checks scalar coordinate order,
+actuator order, and effective collision pairs exactly.
+Author joint armature as `newton:armature`. Both paths accept existing
+`mjc:armature` and `physxJoint:armature` when the canonical attribute is absent.
+Bound `UsdPhysics.MaterialAPI` supplies dynamic sliding friction. The rigid
+solver comparison uses a single sliding coefficient.
+
 Optional browser journeys use `SPATIAL_NEWTON_E2E=1` and `SPATIAL_TEST_NEWTON=1`.
 Failure probes can terminate only the Runner belonging to their own session.
 

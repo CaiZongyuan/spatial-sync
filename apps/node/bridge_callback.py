@@ -9,6 +9,11 @@ import sys
 import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+if __package__:
+    from packages.training.runtime import rsl_rl_matches, trainer_distributions
+else:
+    from lw_training_runtime import rsl_rl_matches, trainer_distributions
+
 
 def external_files(policy, output):
     import onnx
@@ -57,6 +62,18 @@ def ensure_runner_bridged(runner_cls):
     return runner_cls
 
 
+def verify_trainer_versions(inputs, is_mjlab):
+    actual = {
+        name: importlib.metadata.version(distribution)
+        for name, distribution in trainer_distributions(is_mjlab).items()
+    }
+    if not rsl_rl_matches(actual["rsl_rl"], inputs["plan"]["algorithm"].get("version")):
+        raise RuntimeError("Installed RSL-RL version differs from the approved plan")
+    if any(actual.get(name) != version for name, version in (inputs.get("trainerVersions") or {}).items()):
+        raise RuntimeError("Installed trainer versions differ from the leased Compute Node capabilities")
+    return actual
+
+
 def install():
     global _ACTIVE_WRAP_LEARN
     from rsl_rl.runners import OnPolicyRunner
@@ -67,25 +84,8 @@ def install():
     job = inputs["job"]
     declared = inputs.get("task", {})
     is_mjlab = isinstance(declared, dict) and declared.get("mjlab") is not None
-    if is_mjlab:
-        names = {
-            "mjlab": "mjlab",
-            "mujoco": "mujoco",
-            "mujoco_warp": "mujoco-warp",
-            "warp": "warp-lang",
-            "torch": "torch",
-            "rsl_rl": "rsl-rl-lib",
-        }
-    else:
-        names = {
-            "isaaclab": "isaaclab",
-            "newton": "newton",
-            "warp": "warp-lang",
-            "torch": "torch",
-            "rsl_rl": "rsl-rl-lib",
-        }
     versions = {
-        "versions": {name: importlib.metadata.version(distribution) for name, distribution in names.items()},
+        "versions": verify_trainer_versions(inputs, is_mjlab),
         "hardware": inputs["hardware"],
         "demonstrationSets": job.get("demonstrationSets", []),
         **{
@@ -93,8 +93,6 @@ def install():
             for name in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed")
         },
     }
-    if versions["versions"]["rsl_rl"] != inputs["plan"]["algorithm"]["version"]:
-        raise RuntimeError("Installed RSL-RL version differs from the approved plan")
     presets = (
         declared.get("isaaclab", {}).get("presets", [])
         if isinstance(declared, dict) and not is_mjlab

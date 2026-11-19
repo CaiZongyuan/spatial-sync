@@ -21,6 +21,7 @@ from packages.library.common import (
     load_entity_types,
 )
 from packages.library.common import REPO_ROOT as REPO_ROOT
+from packages.library.entity_types import EntityTypes
 from packages.library.metadata import scene_metadata
 from packages.library.read_cache import ReadCache, stamps, tree_paths
 from packages.library.reports import ReportStore, launchable, parse_report, pinned_assets, validation_read
@@ -55,6 +56,7 @@ class SceneVersion:
     template_error: str | None = None
     runtime_assets: dict = field(default_factory=dict)
     asset_error: str | None = None
+    user_root: Path | None = None
 
     @property
     def id(self):
@@ -102,6 +104,19 @@ class SceneVersion:
         return [{"id": identifier, "contentHash": snapshot["contentHash"]}
                 for identifier, snapshot in sorted(self.runtime_assets.items())]
 
+    def entity_type_snapshots(self):
+        """Resolve only the user types pinned by this Scene Version."""
+        result = {}
+        for binding in self.bindings["entities"]:
+            snapshot = EntityTypes(self.user_root).require_pin(binding) if self.user_root else None
+            if snapshot:
+                identifier = snapshot.declaration["type"]
+                result[identifier] = snapshot
+        return result
+
+    def entity_types(self):
+        return {name: item.declaration for name, item in self.entity_type_snapshots().items()}
+
     def require_launchable(self):
         report = self.report()
         if not launchable(report):
@@ -112,7 +127,8 @@ class SceneVersion:
         try:
             self.template_dependencies()
             self.asset_dependencies()
-        except (TemplateError, OSError, ValueError) as exc:
+            self.entity_type_snapshots()
+        except (TemplateError, OSError, ValueError, LibraryError) as exc:
             raise LibraryError(
                 "scene_not_launchable", str(exc), 409, sceneVersion=self.id, validation=deepcopy(report)
             ) from exc
@@ -307,6 +323,7 @@ class SceneLibrary:
                     report,
                     self.reports,
                     tuple(package_files(path)),
+                    user_root=self.roots["user"],
                 )
                 if version.id in versions:
                     raise ValueError(f"Conflicting scene version {version.id} in built-in and user libraries")
@@ -521,7 +538,7 @@ class SceneLibrary:
             template_status = "failed"
         else:
             template_status = "resolved" if effective else "not_recorded"
-        definitions = load_entity_types()
+        definitions = load_entity_types() | version.entity_types()
         devices = [
             deepcopy(binding) | {"actions": definitions.get(binding.get("type"), {}).get("actions", {})}
             for binding in display_bindings

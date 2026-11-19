@@ -72,6 +72,7 @@ class TrainingViews:
         return value
 
     def _live(self, job):
+        self.manager.jobs.get_committed(job["jobId"])
         if job["status"] != "running":
             raise PlanError("training_view_not_running", "The Job is not running", status=409)
 
@@ -235,7 +236,9 @@ class TrainingViews:
             self._notify(identity)
 
     async def send(self, websocket, message):
-        await asyncio.wait_for(websocket.send_json(message), timeout=2)
+        self.manager.jobs.get_committed(message["jobId"])
+        async with asyncio.timeout(2):
+            await websocket.send_json(message)
 
     async def stream(self, job, reader):
         identity = job["jobId"]
@@ -247,6 +250,7 @@ class TrainingViews:
             while True:
                 await reader.event.wait()
                 reader.event.clear()
+                self.manager.jobs.get_committed(identity)
                 if reader.final is not None or job["status"] in TERMINAL:
                     final = reader.final or self.envelope(
                         job,
@@ -311,6 +315,8 @@ class TrainingViews:
                         outgoing["payload"]["type"] = "stream.snapshot"
                     await self.send(reader.websocket, outgoing)
                     reader.sent[index] = sample["payload"]["seq"]
+        except PlanError as error:
+            await reader.websocket.close(code=1011, reason=error.detail["code"])
         finally:
             readers.discard(reader)
             if not readers:
@@ -321,8 +327,18 @@ class TrainingViews:
 
     async def _watch(self):
         while True:
+            try:
+                self.manager.jobs._require_available()
+            except PlanError:
+                for identity in self.readers:
+                    self._notify(identity)
+                return
             for identity in tuple(self._tracked):
-                job = self.manager.jobs.get(identity)
+                try:
+                    job = self.manager.jobs.get_committed(identity)
+                except PlanError:
+                    self._notify(identity)
+                    continue
                 if job["status"] not in TERMINAL:
                     continue
                 state = self.states.pop(identity, None)

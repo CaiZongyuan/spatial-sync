@@ -485,7 +485,9 @@ def create_app(
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
-    install_robot_resource_routes(app, library_assets, manager.library, manager)
+    install_robot_resource_routes(
+        app, library_assets, manager.library, manager, lambda headers: _role(headers, settings)
+    )
     from apps.api.app.controller_promotion_routes import install_controller_promotion_routes
 
     controller_promotions = install_controller_promotion_routes(
@@ -524,7 +526,7 @@ def create_app(
         if app.state.metadata_worker_auth(request):
             return await call_next(request)
         if manager.jobs.authenticated_node(request.headers) and re.fullmatch(
-            r"/api/v1/(?:nodes/local/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
+            r"/api/v1/(?:nodes/[a-z0-9-]+/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
             request.url.path,
         ):
             return await call_next(request)
@@ -538,12 +540,16 @@ def create_app(
                 return JSONResponse(
                     {"detail": {"code": "unauthorized", "message": "Origin is not allowed"}}, status_code=403
                 )
+            node_proof = request.method == "POST" and request.url.path in (
+                "/api/v1/nodes/register", "/api/v1/nodes/cleanup",
+            )
             role = _role(request.headers, settings)
-            if role is None:
+            if role is None and not node_proof:
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=401)
             if (
                 request.method in ("POST", "DELETE", "PUT", "PATCH")
                 and role != "operator"
+                and not node_proof
                 and not request.url.path.endswith("/actions")
             ):
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=403)

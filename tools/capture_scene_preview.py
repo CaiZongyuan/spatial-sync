@@ -21,12 +21,12 @@ sys.path.insert(0, str(ROOT))
 from apps.api.app.recordings import freeze_manifest
 from packages.assets.registry import AssetRegistry
 from packages.library.previews import (
-    CODE_ROOTS,
     DATA_ROOTS,
     DEPENDENCY_DIGEST,
     SCHEMA,
     file_hash,
     input_hash,
+    is_code_input,
 )
 from packages.library.reports import measured_physics_dt
 from packages.library.scenes import BUILTIN_ROOT, SceneLibrary, content_hash
@@ -73,9 +73,9 @@ def capture_runner(*args):
         if event == "call":
             if filename not in code_cache:
                 path = Path(filename).resolve()
-                code_cache[filename] = path if path.is_relative_to(ROOT) and path.relative_to(
-                    ROOT
-                ).as_posix().startswith(CODE_ROOTS) else None
+                code_cache[filename] = path if path.is_relative_to(ROOT) and is_code_input(
+                    path.relative_to(ROOT).as_posix()
+                ) else None
             if path := code_cache[filename]:
                 files.add(path)
         module, name = frame.f_globals.get("__name__"), frame.f_code.co_name
@@ -167,7 +167,7 @@ def module_inputs(*objects):
         if not path.is_relative_to(ROOT):
             continue
         relative = path.relative_to(ROOT).as_posix()
-        if not relative.startswith(CODE_ROOTS):
+        if not is_code_input(relative):
             continue
         paths.add(path)
         if inspect.isfunction(item):
@@ -198,6 +198,8 @@ async def capture(version, source_kind, root, *, overwrite=True):
     version.require_launchable()
     template_assets = version.template_dependencies()
     library_assets = version.asset_dependencies()
+    snapshots = version.entity_type_snapshots()
+    entity_types = [snapshots[name].identity for name in sorted(snapshots)]
     if source_kind not in version.metadata["sources"]:
         raise ValueError("Source is not supported by this version")
     opened = set()
@@ -210,8 +212,10 @@ async def capture(version, source_kind, root, *, overwrite=True):
         if isinstance(mode, str) and "r" not in mode:
             return
         path = Path(args[0]).resolve()
-        if (path.is_relative_to(ROOT) and path.suffix != ".pyc"
-                and path.relative_to(ROOT).as_posix().startswith((*CODE_ROOTS, *DATA_ROOTS))):
+        if not path.is_relative_to(ROOT) or path.suffix == ".pyc":
+            return
+        relative = path.relative_to(ROOT).as_posix()
+        if is_code_input(relative) or relative.startswith(DATA_ROOTS):
             opened.add(path)
 
     sys.addaudithook(observe)
@@ -249,6 +253,8 @@ async def capture(version, source_kind, root, *, overwrite=True):
         raise ValueError("Template dependencies changed while capturing")
     if version.asset_dependencies() != library_assets:
         raise ValueError("USD asset dependencies changed while capturing")
+    if version.entity_type_snapshots() != snapshots:
+        raise ValueError("EntityType dependencies changed while capturing")
     dependencies = module_inputs(
         type(version), Source, FrameCodec, freeze_manifest, AssetRegistry, capture, capture_runner,
         native_capture_inputs,
@@ -292,6 +298,7 @@ async def capture(version, source_kind, root, *, overwrite=True):
                             if source_kind == "newton" else ("numpy",)
                         )}},
             "dependencyDigest": DEPENDENCY_DIGEST,
+            **({"entityTypes": entity_types} if entity_types else {}),
             "dependencies": [{"path": path.relative_to(ROOT).as_posix(), "sha256": input_hash(path)}
                              for path in sorted(dependencies)],
             "documents": documents, "files": {name: file_hash(staged / name) for name in payloads},

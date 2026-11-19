@@ -11,14 +11,23 @@ from pathlib import Path
 
 import psutil
 
+from packages.library.transactions import durable_json
+
 
 class CleanupIncomplete(RuntimeError):
     pass
 
 
+def _cleanup_recorded(marker):
+    try:
+        return marker.read_bytes() in (b"clean", b"not_started")
+    except OSError:
+        return False
+
+
 def cleanup_confirmed(root, receipt):
     marker = root / receipt["cleanup"]
-    if marker.is_file():
+    if _cleanup_recorded(marker):
         return True
     if os.name == "nt" and receipt.get("jobName"):
         import pywintypes
@@ -71,17 +80,15 @@ class OwnedProcess:
                 win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, limits)
                 win32job.AssignProcessToJobObject(self.job, int(self.process._handle))
             current = psutil.Process(self.process.pid)
-            (Path(cwd) / f"process-{identity}.json").write_text(
-                json.dumps(
-                    {
-                        "pid": self.process.pid,
-                        "createdAt": current.create_time(),
-                        "command": current.cmdline(),
-                        "cleanup": self.cleanup.name,
-                        "jobName": self.job_name if os.name == "nt" else None,
-                    }
-                ),
-                encoding="utf-8",
+            durable_json(
+                Path(cwd) / f"process-{identity}.json",
+                {
+                    "pid": self.process.pid,
+                    "createdAt": current.create_time(),
+                    "command": current.cmdline(),
+                    "cleanup": self.cleanup.name,
+                    "jobName": self.job_name if os.name == "nt" else None,
+                },
             )
             self.process.stdin.write(
                 (
@@ -125,5 +132,5 @@ class OwnedProcess:
 
     def close(self):
         self.stop()
-        if not self.cleanup.is_file():
+        if not _cleanup_recorded(self.cleanup):
             raise CleanupIncomplete("Process cleanup was not confirmed; retain the dispatch lease")

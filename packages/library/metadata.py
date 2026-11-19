@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, m
 from packages.info.declarations import AlertRules
 from packages.library.archive import invalid, package_entries, relative_path
 from packages.library.common import KINDS, NAME, LibraryError, document
+from packages.library.entity_types import ContentHash
 from packages.library.templates import template_id
 from packages.sim_runtime.scenes import SCENE_CONFIGS
 
@@ -27,6 +28,7 @@ class Physics(Schema):
 
 class BindingTemplate(Schema):
     type: str = Field(min_length=1)
+    typeContentHash: ContentHash | None = None
     programs: dict[str, str] = Field(default_factory=dict)
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -129,6 +131,7 @@ class EntityBinding(Schema):
     type: str | None = None
     program: str | None = None
     template: str | None = None
+    typeContentHash: ContentHash | None = None
     config: dict[str, JsonValue] = Field(default_factory=dict)
     interlocks: dict[str, list[dict[str, JsonValue]]] = Field(default_factory=dict)
     unplaced: bool = False

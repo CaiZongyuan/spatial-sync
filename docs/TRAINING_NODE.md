@@ -44,19 +44,31 @@ model, hyperparameters and advertised resource. Store measurement data outside
 the Task directory so measuring it does not change its own content hash.
 
 After a bounded, authorized calibration on that exact configuration, save the
-actual per-iteration samples and setup duration:
+actual per-iteration samples and setup duration. A modern receipt records the
+runtime from the measurement, including the entry, complete package versions,
+and the managed mjlab compiler hash. For Isaac Lab the compiler hash is null.
 
 ```json
 {
-  "schema": "lw.training-profile/1",
+  "schema": "lw.training-profile/2",
   "taskContentHash": "the Task contentHash returned by the platform",
   "hardware": "the local node hardware identity returned by lw node ls",
   "resourceId": "the advertised GPU UUID, or cpu",
   "algorithm": {"library": "rsl_rl", "name": "PPO", "version": "5.4.1"},
   "model": {"actor": [256, 128], "critic": [256, 128]},
   "hyperparameters": {"num_envs": 4, "max_iterations": 1, "device": "cpu"},
+  "runtimeIdentity": {
+    "backend": "isaaclab",
+    "entry": "isaaclab:cli",
+    "compilerHash": null,
+    "trainerVersions": {
+      "isaaclab": "3.0.0", "newton": "1.6.0rc1", "warp": "1.17.0",
+      "torch": "2.11.0+cu128", "rsl_rl": "5.4.1"
+    }
+  },
   "samplesSeconds": [1.2, 1.3],
   "setupSeconds": 8.0,
+  "dispatchOverheadSeconds": 2.0,
   "measuredAt": 1792776000.0
 }
 ```
@@ -69,13 +81,20 @@ work is represented as CPU, with no physical GPU or GPU-hours claim.
 uv run --no-sync python tools/import_training_profile.py --job job-id --resource cpu --measurement measurement.json --capabilities path/to/state/local-node/capabilities.json
 ```
 
-The tool reads the Job's pinned revision, rejects mismatched scope, retains the
-original receipt by SHA256 and adds the measured profile. The default capability
+The tool reads the Job's pinned revision, rejects mismatched scope and runtime,
+retains the original receipt by SHA256 and adds the measured profile. Version 1
+receipts remain readable for explicit pre-handshake local training capability
+files. The default capability
 file is `<SPATIAL_STATE_ROOT>/local-node/capabilities.json`; a configured
 `SPATIAL_NODE_CAPABILITIES` path takes precedence. The node reloads profiles on
-its next heartbeat, so an approved queued Job may then dispatch. Estimates use
-the largest retained iteration sample plus measured setup time. No measurement
-means no autonomous GPU launch.
+its next heartbeat, so an approved queued Job may then dispatch. Estimates
+multiply the largest retained iteration sample by the requested iteration count
+and add setup and dispatch overhead once. GPU dispatch requires a matching
+measured profile.
+
+Modern mjlab training and validation use the shipped managed launcher. The node
+reports an incompatible entry when configured with a custom mjlab command.
+Explicit pre-handshake local capability files retain their local training path.
 
 ## Inputs and outputs
 
