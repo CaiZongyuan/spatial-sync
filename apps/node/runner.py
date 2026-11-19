@@ -396,6 +396,7 @@ class OwnedRun:
                         f"{backend_name} trainer runtime is not configured on this compute node"
                     )
                 stage = scene_package["stage"]
+                env.pop("LW_SCENE_STAGE", None)
                 if inputs["task"][backend_name].get("sceneInput", "usd") == "usd":
                     if stage.startswith("python:"):
                         raise ValueError(

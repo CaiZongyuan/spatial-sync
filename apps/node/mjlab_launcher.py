@@ -267,6 +267,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         agent_cfg.actor.obs_normalization = obs_norm
         agent_cfg.critic.obs_normalization = obs_norm
 
+    stage = os.environ.get("LW_SCENE_STAGE")
+    if stage is not None:
+        from lw_usd_mjcf import configure_mjlab_usd_scene
+
+        configure_mjlab_usd_scene(env_cfg.scene, stage)
+
     log_dir = (
         Path("logs")
         / "rsl_rl"
