@@ -147,7 +147,6 @@ test('changing filters retires an already successful old response and preserves 
     await expect(page.getByRole('alert')).toContainText('Controlled scene retry');
     await page.getByRole('button', { name: '从第一页重试' }).click();
     await expect(page.locator('.scene-card')).toHaveCount(searched);
-    await expect(page.locator('canvas')).toHaveCount(0);
   } finally { await page.evaluate(() => (window as SceneListGateWindow).__sceneListSuccessGate?.release()).catch(() => {}); }
 });
 
@@ -174,16 +173,58 @@ test('real capture can be saved once and browsed as a static image without a liv
   await page.getByRole('button', { name: '生成列表缩略图' }).click();
   await expect(page.getByText('已保存列表缩略图。', { exact: true })).toBeVisible();
   const heavy: string[] = [];
-  page.on('request', value => { if (/\.glb|\/preview\//.test(value.url())) heavy.push(value.url()); });
+  page.on('request', value => { if (/\/scenes\/lab-demo\/3\/preview\//.test(value.url())) heavy.push(value.url()); });
   await page.goto('/scenes');
   const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@3' });
   await expect(laboratory).toBeVisible();
   const image = laboratory.getByRole('img', { name: 'lab-demo@3 的静态预览', exact: true });
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((value: HTMLImageElement) => value.naturalWidth)).toBeGreaterThan(20);
-  await expect(page.locator('canvas')).toHaveCount(0);
   expect(heavy).toEqual([]);
   await assertStatic(); expect(errors).toEqual([]);
+});
+
+test('viewer role keeps scene list free of offscreen WebGL while operator auto-fills missing thumbnails', async ({ page, request }) => {
+  await page.route('**/api/v1/approvals?*', route => route.fulfill({ json: { approvals: [], pendingCount: 0, role: 'viewer' } }));
+  await page.goto('/scenes?source=synthetic');
+  const laboratory = page.locator('.scene-card').filter({ hasText: 'lab-demo@3' });
+  await expect(laboratory).toBeVisible();
+  await expect(page.locator('.scene-thumbnail-renderer')).toHaveCount(0);
+  await expect(page.locator('canvas')).toHaveCount(0);
+
+  await page.unroute('**/api/v1/approvals?*');
+  const { scenes } = await (await request.get(`${api}/api/v1/library/scenes?view=summary&latest=true&source=synthetic`)).json();
+  await page.route('**/api/v1/library/thumbnails?*', route => route.request().method() === 'GET'
+    ? route.fulfill({ status: 404, json: { code: 'thumbnail_missing' } })
+    : route.continue());
+  await page.goto('/scenes?source=synthetic');
+  await page.unroute('**/api/v1/library/thumbnails?*');
+  await expect(laboratory.getByRole('img', { name: `${scenes[0].id} 的静态预览` })).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator('.scene-thumbnail-renderer')).toHaveCount(0);
+});
+
+test('stale scene preview remains viewable with a warning and supports recapture', async ({ page, request }) => {
+  const detail = await (await request.get(`${api}/api/v1/library/scenes/lab-demo/1`)).json();
+  const fresh = { ...detail, preview: { ...detail.preview, status: 'available', reason: null } };
+  let isStale = true;
+  await page.route('**/api/v1/library/scenes/lab-demo/1', route => route.request().method() === 'GET'
+    ? route.fulfill({
+        json: isStale
+          ? { ...detail, preview: { ...detail.preview, status: 'stale', reason: '预览的构建输入已变化，当前为旧版采集预览；建议重新采集' } }
+          : fresh,
+      })
+    : route.continue());
+  await page.route('**/api/v1/library/scenes/lab-demo/1/preview*', route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    isStale = false;
+    return route.fulfill({ json: fresh.preview });
+  });
+  await page.goto('/scenes/lab-demo/1');
+  await expect(page.locator('canvas')).toHaveCount(1);
+  await expect(page.getByText('预览的构建输入已变化，当前为旧版采集预览；建议重新采集')).toBeVisible();
+  await page.getByRole('button', { name: '重新采集静态预览' }).click();
+  await expect(page.getByRole('button', { name: '重新采集静态预览' })).toHaveCount(0);
+  await expect(page.locator('canvas')).toHaveCount(1);
 });
 
 test('a slow readonly capture can finish after fifteen seconds', async ({ page, request }) => {
@@ -236,9 +277,10 @@ test('a stuck readonly capture still times out and cannot save a late image', as
 
 test('scene library filters and URL preferences navigate to the exact version', async ({ page, request }) => {
   const { errors, assertStatic } = await watchStaticScene(page, request);
+  const total = (await (await request.get(`${api}/api/v1/library/scenes?view=summary&latest=true`)).json()).scenes.length;
   await page.goto('/scenes');
-  await expect(page.locator('.scene-card')).toHaveCount(7);
-  await expect(page.locator('.scene-result-count')).toHaveText('7 个场景');
+  await expect(page.locator('.scene-card')).toHaveCount(total);
+  await expect(page.locator('.scene-result-count')).toHaveText(`${total} 个场景`);
   await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page).toHaveURL(/view=list/);
   await expect(page.locator('.scene-mini-thumbnail').first()).toHaveCSS('width', '72px');
@@ -298,7 +340,7 @@ test('bundled FR3 preview loads its real GLBs and initial frame without a live s
   page.on('websocket', socket => { if (new URL(socket.url()).pathname.startsWith('/api/')) live.push(socket.url()); });
   page.on('pageerror', error => failures.push(error.message));
   const detail = await (await request.get(`${api}/api/v1/library/scenes/robot-and-tubes/1`)).json();
-  expect(detail.preview.status).toBe('available');
+  expect(['available', 'stale']).toContain(detail.preview.status);
   const manifest = await (await request.get(`${api}${detail.preview.documents.manifest}`)).json() as SceneManifest;
   const bodies = manifest.nodes.filter(node => node.kind === 'body');
   const meshes = manifest.nodes.flatMap(node => node.kind !== 'group' && node.visuals.some(visual => visual.kind !== 'primitive')

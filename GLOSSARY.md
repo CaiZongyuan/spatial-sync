@@ -69,6 +69,14 @@ _Avoid_: Asset, import, download (when meaning the complete attempt)
 An authoring workflow outside the platform that creates or repairs Assets and assembles them into Scenes; its outputs enter the platform by import.
 _Avoid_: Modeling pipeline (when meaning the platform itself)
 
+**Asset Visual** (素材视觉文件):
+A 3D visual file declared by an Asset package (such as `visual.glb`) for rendering only, distinct from physics collision geometry.
+_Avoid_: Thumbnail, mesh (when meaning the declared visual package file)
+
+**Thumbnail** (缩略图):
+A static 2D image used in Asset Library and Scene Library lists or cards (bundled under `previews/` or cached locally); it is a derived display artifact, never validation evidence.
+_Avoid_: Preview (when meaning a 2D list image), screenshot
+
 ## Scenes
 
 **Entity** (实体):
@@ -122,6 +130,10 @@ _Avoid_: Audit, test results
 **Scene Version** (场景版本):
 An immutable, published revision of a scene, written `<name>@<rev>`; sessions and recordings refer to exactly one.
 _Avoid_: Scene revision (the per-session manifest counter), snapshot
+
+**Scene Preview** (场景静态预览):
+A read-only initial scene capture collected from a physics source so people and agents can inspect the 3D viewport or generate a Scene Thumbnail without starting a Session.
+_Avoid_: Snapshot, live session, Validation Report
 
 **Dressing** (布景):
 Scene content that is only rendered: no physics, no behavior, never part of the physics model.

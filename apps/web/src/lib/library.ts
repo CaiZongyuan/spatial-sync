@@ -3,7 +3,7 @@ import { readRecording, type Recording } from './replay/reader';
 
 export type SceneSource = 'synthetic' | 'newton';
 export interface ScenePreview {
-  status: 'available' | 'unavailable';
+  status: 'available' | 'stale' | 'unavailable';
   source: SceneSource;
   reason: string | null;
   entityCount: number | null;
@@ -87,6 +87,10 @@ export const getSceneDetail = async (name: string, rev: string, source?: SceneSo
   const value = await request<SceneDetail>(`/library/scenes/${encodeURIComponent(name)}/${encodeURIComponent(rev)}${source ? `?source=${source}` : ''}`, { signal });
   return { ...value, recordings: value.recordings.map(readRecording) };
 };
+export const captureScenePreview = (name: string, rev: string, source?: SceneSource, signal?: AbortSignal) =>
+  request<ScenePreview>(`/library/scenes/${encodeURIComponent(name)}/${encodeURIComponent(rev)}/preview${source ? `?source=${encodeURIComponent(source)}` : ''}`, {
+    method: 'POST', signal,
+  });
 export const launchScene = (sceneVersion: string, source: SceneSource) => request<SessionLaunch>('/sessions', {
   method: 'POST', body: JSON.stringify({ sceneVersion, source }),
 });

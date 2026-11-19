@@ -1,8 +1,12 @@
 """Read-only, exact-version scene captures. Importing this module starts no source."""
 
+import asyncio
 import hashlib
 import json
+import os
 import re
+import sys
+from contextlib import suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Annotated
 
@@ -144,16 +148,26 @@ class PreviewRepository:
         self.cache = ReadCache()
 
     def _capture(self, version, source):
+        directory, capture, stale = self._capture_with_state(version, source, allow_stale=False)
+        if stale:
+            raise ValueError("预览的构建输入已变化，需要重新捕获")
+        return directory, capture
+
+    def _capture_with_state(self, version, source, *, allow_stale=False):
         key = (version.id, version.content_hash, source, version.template_error, version.asset_error,
                tuple(sorted((item["id"], item["contentHash"]) for item in
                             (*version.template_assets.values(), *version.runtime_assets.values()))))
         cached = self.cache.get(key)
         if cached is not None:
-            return cached
+            directory, value, stale = cached
+            if stale and not allow_stale:
+                raise ValueError("预览的构建输入已变化，需要重新捕获")
+            return directory, value, stale
         paths = tree_paths(version.path, version.path.parents[2])
         for root in self.roots:
             directory = root / version.name / str(version.rev) / version.content_hash / source
             paths.update(tree_paths(directory, root))
+            paths.add(directory / "error.json")
             try:
                 capture = json.loads((directory / "capture.json").read_bytes())
                 paths.update(dependency_path(item) for item in capture["dependencies"])
@@ -167,7 +181,10 @@ class PreviewRepository:
         paths = tuple(sorted(paths))
         recorded = stamps(paths)
         result = self._inspect(version, source)
-        return self.cache.put(key, result, paths, recorded)
+        directory, value, stale = self.cache.put(key, result, paths, recorded)
+        if stale and not allow_stale:
+            raise ValueError("预览的构建输入已变化，需要重新捕获")
+        return directory, value, stale
 
     def _inspect(self, version, source):
         if source not in version.metadata["sources"]:
@@ -177,8 +194,20 @@ class PreviewRepository:
             directory = root / version.name / str(version.rev) / version.content_hash / source
             if directory.is_symlink() or not directory.resolve().is_relative_to(root.resolve()):
                 continue
+            error_file = relative_file(directory, "error.json")
             index = relative_file(directory, "capture.json")
             if not index.is_file():
+                if error_file.is_file():
+                    try:
+                        err = json.loads(error_file.read_bytes())
+                        if (
+                            err.get("sceneContentHash") == version.content_hash
+                            and isinstance(err.get("message"), str)
+                            and err["message"].strip()
+                        ):
+                            reason = err["message"].strip()
+                    except (OSError, ValueError, TypeError):
+                        pass
                 continue
             try:
                 expected_templates = version.template_dependencies()
@@ -206,8 +235,9 @@ class PreviewRepository:
                 }:
                     raise ValueError("Preview USD asset dependencies are incomplete or differ; recapture")
                 dependencies = value["dependencies"]
-                if not dependencies or not inputs_current(dependencies):
+                if not dependencies:
                     raise ValueError("预览的构建输入已变化，需要重新捕获")
+                stale = not inputs_current(dependencies)
                 files = value["files"]
                 if not isinstance(files, dict) or not files:
                     raise ValueError("预览文件索引为空")
@@ -254,19 +284,20 @@ class PreviewRepository:
                 }
                 if value["counts"] != counts:
                     raise ValueError("预览统计与真实快照不一致")
-                return directory, value
+                return directory, value, stale
             except (OSError, KeyError, TypeError, ValueError) as exc:
                 reason = str(exc)
         raise ValueError(reason)
 
     def describe(self, version, source):
         try:
-            _, capture = self._capture(version, source)
+            _, capture, stale = self._capture_with_state(version, source, allow_stale=True)
         except (OSError, ValueError) as exc:
             return {"status": "unavailable", "source": source, "reason": str(exc),
                     "entityCount": None, "bindingCount": None}
         base = f"/api/v1/library/scenes/{version.name}/{version.rev}/preview/{source}/"
-        return {"status": "available", "source": source, "reason": None,
+        return {"status": "stale" if stale else "available", "source": source,
+                "reason": "预览的构建输入已变化，当前为旧版采集预览；建议重新采集" if stale else None,
                 "sceneVersion": version.id, "sceneContentHash": version.content_hash,
                 "capturedAt": capture["capturedAt"], "simTime": capture["simTime"],
                 "entityCount": capture["counts"]["physicalEntities"],
@@ -276,12 +307,12 @@ class PreviewRepository:
                 "documents": {key: base + name for key, name in capture["documents"].items()},
                 "thumbnail": {key: base + name for key, name in capture.get("thumbnail", {}).items()}}
 
-    def read(self, version, source, relative):
-        directory, capture = self._capture(version, source)
+    def read(self, version, source, relative, *, allow_stale=True):
+        directory, capture, stale = self._capture_with_state(version, source, allow_stale=allow_stale)
         # Cache metadata and decoding, never authorization to serve altered source/package bytes.
         version.template_dependencies()
         version.asset_dependencies()
-        if content_hash(version.path) != version.content_hash or not inputs_current(capture["dependencies"]):
+        if content_hash(version.path) != version.content_hash or (not allow_stale and stale):
             raise ValueError("预览的构建输入已变化，需要重新捕获")
         if relative not in capture["files"]:
             raise ValueError("预览文件不在索引中")
@@ -290,3 +321,126 @@ class PreviewRepository:
         if hashlib.sha256(payload).hexdigest() != capture["files"][relative]:
             raise ValueError("预览文件校验失败")
         return payload
+
+
+class ScenePreviewCapturer:
+    """Run tools/capture_scene_preview.py out-of-process for newly imported or stale scenes."""
+
+    def __init__(self, previews: PreviewRepository, state_root: Path, user_root: Path):
+        self.previews = previews
+        self.state_root = Path(state_root)
+        self.user_root = Path(user_root)
+        self._tasks: dict[tuple[str, str, str], asyncio.Task] = {}
+        self._procs: set[asyncio.subprocess.Process] = set()
+
+    def _write_error(self, version, source: str, message: str):
+        directory = self.previews.roots[0] / version.name / str(version.rev) / version.content_hash / source
+        if (directory / "capture.json").is_file():
+            return
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "error.json").write_text(
+            json.dumps(
+                {"sceneContentHash": version.content_hash, "source": source, "message": message},
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        self.previews.cache.clear()
+
+    def _clear_error(self, version, source: str):
+        error_file = (
+            self.previews.roots[0]
+            / version.name
+            / str(version.rev)
+            / version.content_hash
+            / source
+            / "error.json"
+        )
+        error_file.unlink(missing_ok=True)
+        self.previews.cache.clear()
+
+    def schedule(self, version, source: str):
+        key = (version.id, version.content_hash, source)
+        existing = self._tasks.get(key)
+        if existing is not None and not existing.done():
+            return existing
+        task = asyncio.create_task(self._run_safe(version, source))
+        self._tasks[key] = task
+        task.add_done_callback(lambda _done: self._tasks.pop(key, None))
+        return task
+
+    async def _run_safe(self, version, source: str):
+        with suppress(asyncio.CancelledError, OSError, ValueError, RuntimeError):
+            await self.capture_now(version, source, overwrite=False)
+
+    async def capture_now(self, version, source: str, *, overwrite: bool = True):
+        if source not in version.metadata["sources"]:
+            raise ValueError("所选物理源不支持此场景版本")
+        version.require_launchable()
+        target = self.previews.roots[0] / version.name / str(version.rev) / version.content_hash / source
+        if not overwrite and (target / "capture.json").is_file():
+            return
+        script = REPO_ROOT / "tools/capture_scene_preview.py"
+        env = os.environ.copy()
+        env["LW_LIBRARY"] = str(self.user_root)
+        env["SPATIAL_STATE_ROOT"] = str(self.state_root)
+        env["PYTHONPATH"] = str(REPO_ROOT) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        command = [
+            sys.executable,
+            str(script),
+            version.id,
+            "--source",
+            source,
+            "--cache-root",
+            str(self.previews.roots[0]),
+        ]
+        if not overwrite:
+            command.append("--no-overwrite")
+        proc = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(REPO_ROOT),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        self._procs.add(proc)
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            message = "静态预览采集超时"
+            self._write_error(version, source, message)
+            raise RuntimeError(message) from None
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.terminate()
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                if proc.returncode is None:
+                    proc.kill()
+                    await proc.wait()
+            raise
+        finally:
+            self._procs.discard(proc)
+        if proc.returncode != 0:
+            raw = stderr.decode("utf-8", errors="replace").strip().splitlines()
+            detail = raw[-1] if raw else f"exit {proc.returncode}"
+            message = (
+                "自动采集静态预览失败（当前环境可能缺少对应物理源依赖）：" + detail[:240]
+            )
+            self._write_error(version, source, message)
+            raise RuntimeError(message)
+        self._clear_error(version, source)
+
+    async def close(self):
+        tasks = list(self._tasks.values())
+        for task in tasks:
+            task.cancel()
+        for proc in list(self._procs):
+            if proc.returncode is None:
+                proc.terminate()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.clear()

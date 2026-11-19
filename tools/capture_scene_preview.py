@@ -6,6 +6,7 @@ import importlib.metadata
 import inspect
 import json
 import os
+import shutil
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -181,7 +182,7 @@ def module_inputs(*objects):
     return paths
 
 
-async def capture(version, source_kind, root):
+async def capture(version, source_kind, root, *, overwrite=True):
     if source_kind == "synthetic":
         from apps.api.app.sources.synthetic_source import SyntheticSource as Source
     elif source_kind == "newton":
@@ -255,45 +256,61 @@ async def capture(version, source_kind, root):
     dependencies.update(path for path in opened if path.is_file())
     dependencies.update(ROOT / name for name in native["files"])
     dependencies.add(ROOT / "uv.lock")
-    directory = Path(root) / version.name / str(version.rev) / version.content_hash / source_kind
-    directory.mkdir(parents=True, exist_ok=False)
-    documents = {"manifest": "manifest.json", "catalog": "catalog.json", "spatial": "snapshot.bin",
-                 "state": "state.json"}
-    codec = FrameCodec(manifest.sessionId, manifest.sceneRevision, manifest.revisionNumericId)
-    payloads = {
-        "manifest.json": json.dumps(frozen, separators=(",", ":")).encode(),
-        "catalog.json": catalog.model_dump_json().encode(),
-        "state.json": state.model_dump_json().encode(),
-        "snapshot.bin": codec.encode(frame),
-        **assets,
-    }
-    for name, payload in payloads.items():
-        destination = directory / name
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(payload)
-    counts = {
-        "physicalEntities": sum(node.kind in ("body", "static")
-                                and not node.entityKey.startswith("/World/Dressing/")
-                                for node in manifest.nodes),
-        "bindings": len(catalog.entities), "groups": sum(node.kind == "group" for node in manifest.nodes),
-    }
-    value = {
-        "schema": SCHEMA, "sceneVersion": version.id, "sceneContentHash": version.content_hash,
-        "templateAssets": template_assets,
-        "libraryAssets": library_assets,
-        "source": source_kind, "capturedAt": datetime.now(UTC).isoformat(), "simTime": frame.simTime,
-        "runtime": {"python": sys.version.split()[0], "source": Source.__name__, "device": "cpu",
-                    **{name: importlib.metadata.version(name) for name in (
-                        ("numpy", "newton", "warp-lang", "mujoco", "usd-core")
-                        if source_kind == "newton" else ("numpy",)
-                    )}},
-        "dependencyDigest": DEPENDENCY_DIGEST,
-        "dependencies": [{"path": path.relative_to(ROOT).as_posix(), "sha256": input_hash(path)}
-                         for path in sorted(dependencies)],
-        "documents": documents, "files": {name: file_hash(directory / name) for name in payloads},
-        "counts": counts, "bounds": None, "thumbnail": {},
-    }
-    (directory / "capture.json").write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+    directory = cache_root / version.name / str(version.rev) / version.content_hash / source_kind
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".capture-{source_kind}-", dir=directory.parent) as staging:
+        staged = Path(staging) / "capture"
+        staged.mkdir()
+        documents = {"manifest": "manifest.json", "catalog": "catalog.json", "spatial": "snapshot.bin",
+                     "state": "state.json"}
+        codec = FrameCodec(manifest.sessionId, manifest.sceneRevision, manifest.revisionNumericId)
+        payloads = {
+            "manifest.json": json.dumps(frozen, separators=(",", ":")).encode(),
+            "catalog.json": catalog.model_dump_json().encode(),
+            "state.json": state.model_dump_json().encode(),
+            "snapshot.bin": codec.encode(frame),
+            **assets,
+        }
+        for name, payload in payloads.items():
+            destination = staged / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(payload)
+        counts = {
+            "physicalEntities": sum(node.kind in ("body", "static")
+                                    and not node.entityKey.startswith("/World/Dressing/")
+                                    for node in manifest.nodes),
+            "bindings": len(catalog.entities), "groups": sum(node.kind == "group" for node in manifest.nodes),
+        }
+        value = {
+            "schema": SCHEMA, "sceneVersion": version.id, "sceneContentHash": version.content_hash,
+            "templateAssets": template_assets,
+            "libraryAssets": library_assets,
+            "source": source_kind, "capturedAt": datetime.now(UTC).isoformat(), "simTime": frame.simTime,
+            "runtime": {"python": sys.version.split()[0], "source": Source.__name__, "device": "cpu",
+                        **{name: importlib.metadata.version(name) for name in (
+                            ("numpy", "newton", "warp-lang", "mujoco", "usd-core")
+                            if source_kind == "newton" else ("numpy",)
+                        )}},
+            "dependencyDigest": DEPENDENCY_DIGEST,
+            "dependencies": [{"path": path.relative_to(ROOT).as_posix(), "sha256": input_hash(path)}
+                             for path in sorted(dependencies)],
+            "documents": documents, "files": {name: file_hash(staged / name) for name in payloads},
+            "counts": counts, "bounds": None, "thumbnail": {},
+        }
+        (staged / "capture.json").write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        previous = Path(staging) / "previous"
+        if directory.exists():
+            if not overwrite and (directory / "capture.json").is_file():
+                return value
+            directory.replace(previous)
+        try:
+            staged.replace(directory)
+        except Exception:
+            if previous.exists() and not directory.exists():
+                previous.replace(directory)
+            raise
+        if previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
     return value
 
 
@@ -302,9 +319,10 @@ def main():
     parser.add_argument("scene_version")
     parser.add_argument("--source", choices=["synthetic", "newton"], required=True)
     parser.add_argument("--cache-root", type=Path, required=True)
+    parser.add_argument("--no-overwrite", action="store_true")
     args = parser.parse_args()
     version = SceneLibrary().resolve(args.scene_version, launch=True, source=args.source)
-    value = asyncio.run(capture(version, args.source, args.cache_root))
+    value = asyncio.run(capture(version, args.source, args.cache_root, overwrite=not args.no_overwrite))
     print(json.dumps({"sceneVersion": value["sceneVersion"], "sceneContentHash": value["sceneContentHash"],
                       "counts": value["counts"], "dependencies": len(value["dependencies"])}, indent=2))
 

@@ -497,6 +497,7 @@ def _local_asset(local):
         "validationStatus": summary.get("validationStatus"),
         "thumbnailUrl": summary.get("thumbnailUrl"),
         "visualUrl": summary.get("visualUrl"),
+        "hasFallbackVisuals": bool(summary.get("fallbackVisuals")),
     }
 
 

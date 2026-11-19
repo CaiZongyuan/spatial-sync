@@ -103,12 +103,18 @@ MCP shares these HTTP operations and still has no approval tool. Legacy HTTP
 DELETE approvals and old receipts remain supported. Removed-version recovery
 does not reuse revision numbers for new imports or bypass reference protection.
 
-Library cards load static PNGs near the viewport. Detail pages can generate a
-thumbnail from the real read-only preview/model, allowing up to two minutes for
-large scene captures to load and frame; these images are derived viewer
-state, not validation evidence. The cache accepts bounded static RGB/RGBA PNGs
-and retains at most 128 entries / 64 MiB. Missing/invalidated images are truthful
-placeholders; lists create no WebGL/GLB work. `/trash` exposes recovery.
+Library cards load static PNGs near the viewport. When a visible local card lacks a
+cached PNG (and is not a declared package `previews/` image), an `operator`
+browser session with WebGL queues it into a shared serial offscreen renderer to
+generate and persist the thumbnail (allowing up to two minutes for large scene
+captures in detail view, and 60 seconds per background queue item); `viewer`
+roles and browsers without WebGL keep truthful placeholders with zero WebGL/GLB
+work. These images are derived viewer state, not validation evidence. The cache
+accepts bounded static RGB/RGBA PNGs, keys on package `contentHash` plus an
+explicit renderer version (without watching `apps/web/src`), and retains at most
+512 entries / 128 MiB. Scene Previews auto-capture on launchable scene import
+and degrade to a `stale` viewable state when code/device inputs drift. `/trash`
+exposes recovery.
 Approval navigation reads counts only; the approval page has pending/processed
 filters and cursor pages, with server-projected recent decisions.
 

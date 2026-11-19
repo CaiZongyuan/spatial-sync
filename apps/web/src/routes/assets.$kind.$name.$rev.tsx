@@ -29,10 +29,11 @@ function AssetDetails() {
     return () => controller.abort();
   }, [kind, name, rev, attempt]);
   const license = asset && licenseFile(asset);
+  const hasViewport = Boolean(asset && (asset.visualUrl || asset.fallbackVisuals?.length));
   return <main className="asset-page asset-detail-page">{error ? <div className="asset-empty" role="alert">{error}<button onClick={() => setAttempt(attempt + 1)}>重试</button><Link to="/assets">返回素材库</Link></div> : !asset ? <div className="asset-empty" role="status">正在读取素材版本…</div> : <>
     <header className="asset-page-heading"><h1>{asset.title}</h1><p><code>{asset.id}</code><span>·</span>{assetKinds[asset.kind]}<span>·</span>{dimensionsLabel(asset.dimensionsM)}</p></header>
     <div className="asset-detail-grid"><div className="asset-detail-stack">
-      <section className="asset-panel"><header><h2>预览</h2></header><figure className="asset-detail-figure"><div className="asset-detail-model">{asset.visualUrl ? <Suspense fallback={null}><AssetModelViewport key={asset.contentHash} url={asset.visualUrl} /></Suspense> : asset.thumbnailUrl ? <AssetImage url={asset.thumbnailUrl} label={`${asset.id} 的素材预览`} /> : <div className="asset-empty">此素材没有视觉文件</div>}</div><figcaption className="asset-figure-caption"><b>图 1</b><code>{asset.id}</code></figcaption></figure></section>
+      <section className="asset-panel"><header><h2>预览</h2></header><figure className="asset-detail-figure"><div className="asset-detail-model">{hasViewport ? <Suspense fallback={null}><AssetModelViewport key={asset.contentHash} url={asset.visualUrl} fallbackVisuals={asset.fallbackVisuals} /></Suspense> : asset.thumbnailUrl ? <AssetImage url={asset.thumbnailUrl} label={`${asset.id} 的素材预览`} /> : <div className="asset-empty">此素材没有视觉文件</div>}</div><figcaption className="asset-figure-caption"><b>图 1</b><code>{asset.id}</code>{!asset.visualUrl && asset.fallbackVisuals?.length ? <span className="asset-small-note">回退几何 · 未提供 PBR 视觉文件</span> : null}</figcaption></figure></section>
       <section className="asset-panel"><header><h2>完整度清单</h2><span className="asset-small-note">{asset.gapCount} 缺口 / 警告</span></header><div className="asset-panel-body"><AssetCompleteness asset={asset} /><p className="asset-small-note">{asset.validationCoverage}</p></div></section>
       <AssetBindings asset={asset} />
       <section className="asset-panel"><header><h2>验证报告</h2><ValidationStatus status={asset.validationStatus} /></header><ValidationReport report={asset.validation} /></section>

@@ -388,6 +388,7 @@ def compact_candidate(candidate):
         asset["validationStatus"] = clip(asset.get("validationStatus"), 80)
         asset["thumbnailUrl"] = clip(asset.get("thumbnailUrl"), 500)
         asset["visualUrl"] = clip(asset.get("visualUrl"), 500)
+        asset["hasFallbackVisuals"] = bool(asset.get("hasFallbackVisuals"))
         dimensions = asset.get("dimensionsM")
         if isinstance(dimensions, list):
             asset["dimensionsM"] = dimensions[:3]

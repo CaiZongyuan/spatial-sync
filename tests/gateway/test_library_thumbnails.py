@@ -55,3 +55,26 @@ def test_invalid_image_and_cache_eviction_do_not_change_assets(monkeypatch):
         assert client.get(path(first)).status_code == 404
         assert client.get(path(second)).content == PNG
         assert client.get("/api/v1/library/assets/labware/test-tube/1").status_code == 200
+
+
+def test_thumbnail_cache_does_not_watch_web_source_tree(tmp_path):
+    import json
+
+    with TestClient(create_app()) as client:
+        value = upload(client).json()
+        url = path(value)
+        response = client.post(url, content=PNG, headers={"Content-Type": "image/png"})
+        assert response.status_code == 200, response.text
+        index_files = list((client.app.state.settings.state_root / "library-thumbnails").glob("*.json"))
+        assert len(index_files) == 1
+        recorded_paths = json.loads(index_files[0].read_bytes())["paths"]
+        assert not any(
+            "apps/web/src" in item.replace("\\", "/") or item.endswith("pnpm-lock.yaml")
+            for item in recorded_paths
+        )
+        # Adding another package or touching the library root must not invalidate existing thumbnails.
+        user_root = client.app.state.library_assets.roots["user"]
+        marker = user_root / ".unrelated-lock-touch"
+        marker.write_text("x", encoding="utf-8")
+        marker.unlink()
+        assert client.get(url).content == PNG

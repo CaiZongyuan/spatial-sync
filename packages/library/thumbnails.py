@@ -13,8 +13,9 @@ from packages.library.read_cache import ReadCache, stamps
 from packages.library.transactions import durable_json
 
 MAX_PNG_BYTES = 1024 * 1024
-MAX_CACHE_BYTES = 64 * 1024 * 1024
-MAX_ENTRIES = 128
+MAX_CACHE_BYTES = 128 * 1024 * 1024
+MAX_ENTRIES = 512
+RENDERER_VERSION = "renderer/1"
 
 
 def validate_png(payload):
@@ -89,7 +90,7 @@ class ThumbnailStore:
 
     def key(self, resource, version, theme):
         return hashlib.sha256(
-            f"thumbnail/1:{REPO_ROOT}:{resource}:{version.id}:{version.content_hash}:{theme}".encode()
+            f"thumbnail/2:{RENDERER_VERSION}:{REPO_ROOT}:{resource}:{version.id}:{version.content_hash}:{theme}".encode()
         ).hexdigest()
 
     def url(self, resource, version, theme="light"):

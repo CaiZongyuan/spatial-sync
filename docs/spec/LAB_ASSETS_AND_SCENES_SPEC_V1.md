@@ -117,7 +117,7 @@ assets/device/labspin-centrifuge/1/
   provenance.json      来源：上游仓库与提交、制作工具与版本、文件哈希
   LICENSE  NOTICE      许可原文
   validation.json      验证报告（导入时生成）
-  previews/            缩略图（导入时生成或随包提供）
+  previews/            缩略图（随包提供；缺省时由 Web UI 共享离屏队列在 operator 下按需补齐到运行时缓存）
 ```
 
 ### 5.2 `asset.yaml`
@@ -160,7 +160,7 @@ scenes/fr3-lab/2/
   devices.yaml        设备绑定
   locations.yaml      示教位置
   validation.json     验证报告
-  previews/           缩略图与多角度图
+  previews/           缩略图与多角度图（随包提供；Scene Preview 初始快照于导入/发布后在后台异步采集到受管预览根目录，构建输入变更时降级为 stale 可浏览并支持重新采集）
 ```
 
 ### 6.2 `scene.yaml`

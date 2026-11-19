@@ -14,6 +14,6 @@ function SceneCapture({ scene, done }: { scene: SceneVersion; done: (png?: strin
 export default function ThumbnailCaptureRenderer({ scene, asset, done }: {
   scene?: SceneVersion; asset?: AssetVersion; done: (png?: string) => void;
 }) {
-  return scene ? <SceneCapture scene={scene} done={done} /> : asset?.visualUrl ?
-    <AssetModelViewport url={asset.visualUrl} capture={done} captureKey={asset.contentHash} /> : null;
+  return scene ? <SceneCapture scene={scene} done={done} /> : (asset?.visualUrl || asset?.fallbackVisuals?.length) ?
+    <AssetModelViewport url={asset.visualUrl} fallbackVisuals={asset.fallbackVisuals} capture={done} captureKey={asset.contentHash} /> : null;
 }

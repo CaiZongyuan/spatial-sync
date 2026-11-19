@@ -615,11 +615,11 @@ export const SceneViewport = memo(function SceneViewport(props: ViewportProps) {
     <div ref={element} className="viewport" data-testid="scene-viewport" data-camera-fitted={fittedKey === framingKey}>
       {displayScene ? <Canvas
         flat={!hasAuthoredVisuals(props.manifest)}
-        shadows
+        shadows={!props.capture}
         frameloop={!visible && !props.capture ? 'never' : continuous ? 'always' : 'demand'}
         events={visibleEvents}
         camera={{ position: [4.2, 3, 4.8], fov: 44, near: 0.01, far: 100 }}
-        dpr={[1, 1.75]}
+        dpr={props.capture ? 1 : [1, 1.75]}
         gl={{ antialias: true, alpha: true, preserveDrawingBuffer: Boolean(props.capture) }}
         onPointerMissed={() => props.select('')}
       >

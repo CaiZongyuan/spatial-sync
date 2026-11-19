@@ -60,7 +60,6 @@ test('real asset API, URL filters, shared thumbnails and FR3 completeness stay s
   await expect(page.getByRole('heading', { name: '素材库', exact: true })).toBeVisible();
   const image = page.getByRole('img', { name: 'robot/fr3@1 的静态预览' });
   await expect(image).toBeVisible();
-  await expect(page.locator('canvas')).toHaveCount(0);
   const frameBounds = await opaqueBounds(image);
   expect(frameBounds.right).toBeGreaterThan(frameBounds.left);
   expect(frameBounds.bottom).toBeGreaterThan(frameBounds.top);
@@ -70,7 +69,6 @@ test('real asset API, URL filters, shared thumbnails and FR3 completeness stay s
   const darkImage = await image.getAttribute('data-thumbnail-source');
   await page.getByLabel('Color theme').selectOption('light');
   await expect.poll(async () => (await image.getAttribute('data-thumbnail-source')) !== darkImage).toBe(true);
-  await expect(page.locator('canvas')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('asset-card-light-1600.png'), fullPage: false });
   const lightImage = await image.getAttribute('data-thumbnail-source');
   await page.reload();
@@ -142,7 +140,6 @@ test('late old-theme thumbnail upload cannot replace the current static preview'
     const bounds = await opaqueBounds(image);
     expect(bounds.right).toBeGreaterThan(bounds.left);
     expect(bounds.bottom).toBeGreaterThan(bounds.top);
-    await expect(page.locator('canvas')).toHaveCount(0);
   } finally { release(); }
 });
 
@@ -242,8 +239,9 @@ test('real imported gap package exposes its provenance, license and actual refer
   await expect(page.locator('.asset-list-table tbody tr')).toHaveCount(1);
   await page.locator('.asset-list-table a').filter({ hasText: selector }).click();
   await expect(page.getByRole('heading', { name: 'UI Cylinder', exact: true })).toBeVisible();
-  await expect(page.getByText('此素材没有视觉文件', { exact: true })).toBeVisible();
-  await expect(page.locator('canvas')).toHaveCount(0);
+  await expect(page.getByLabel('素材静态模型预览')).toHaveAttribute('data-model-state', 'ready');
+  await expect(page.getByText('回退几何 · 未提供 PBR 视觉文件', { exact: true })).toBeVisible();
+  await expect(page.locator('canvas')).toHaveCount(1);
   await expect(page.getByRole('list', { name: '六项完整度' }).locator('li')).toHaveCount(6);
   await expect(page.getByText('此素材没有绑定模板。', { exact: true })).toBeVisible();
   const license = page.getByRole('link', { name: 'LICENSE.txt ↗', exact: true });
@@ -274,6 +272,17 @@ test('real imported gap package exposes its provenance, license and actual refer
 test('an actually imported invalid thumbnail shows a truthful preview error', async ({ page }, testInfo) => {
   const directory = testInfo.outputPath('invalid-thumbnail-package');
   await gapPackage(directory);
+  await writeFile(resolve(directory, 'asset.yaml'), 'id: labware/ui-invalid-thumb\nkind: labware\ntitle: UI Invalid Thumbnail\nstage: asset.usda\n');
+  const stage = '#usda 1.0\n(defaultPrim = "Asset"\n upAxis = "Z"\n metersPerUnit = 1)\ndef Xform "Asset" {}\n';
+  await writeFile(resolve(directory, 'asset.usda'), stage);
+  const license = await readFile(resolve(directory, 'LICENSE.txt'));
+  await writeFile(resolve(directory, 'provenance.json'), JSON.stringify({
+    source: 'Hand-authored USD browser fixture', license: 'CC0-1.0',
+    files: {
+      'asset.usda': { sha256: createHash('sha256').update(stage).digest('hex'), bytes: Buffer.byteLength(stage) },
+      'LICENSE.txt': { sha256: createHash('sha256').update(license).digest('hex'), bytes: license.length },
+    },
+  }));
   await mkdir(resolve(directory, 'previews'), { recursive: true });
   await writeFile(resolve(directory, 'previews/thumbnail.png'), 'Invalid image bytes retained as a test input');
   const imported = await importPackage(directory, 'asset');
@@ -282,7 +291,7 @@ test('an actually imported invalid thumbnail shows a truthful preview error', as
   const card = page.locator('.asset-card').filter({ hasText: selector });
   await expect(card).toContainText('预览加载失败');
   await expect(page.locator('canvas')).toHaveCount(0);
-  await card.getByRole('link', { name: /^labware\/ui-cylinder@/ }).click();
+  await card.getByRole('link', { name: /^labware\/ui-invalid-thumb@/ }).click();
   await expect(page.getByRole('alert')).toContainText('预览图无法载入。');
   await expect(page.getByRole('button', { name: '重试预览', exact: true })).toBeVisible();
 });

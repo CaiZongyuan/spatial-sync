@@ -28,6 +28,7 @@ from packages.library.reports import (
     validation_read,
     validation_status,
 )
+from packages.library.usd_primitives import fallback_asset_visuals
 
 
 def gaps(data, path, report=None):
@@ -153,6 +154,7 @@ class AssetVersion:
             "validationStatus": validation_status(report),
             "thumbnailUrl": self.url(thumbnail) if thumbnail else None,
             "visualUrl": self.url(self.metadata["visual"]) if self.metadata.get("visual") else None,
+            "fallbackVisuals": fallback_asset_visuals(self.metadata, self.path),
         }
 
 
