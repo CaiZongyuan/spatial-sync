@@ -92,7 +92,7 @@ def test_mjlab_simulation_compares_compiled_meshes_in_the_link_frame(tmp_path):
 def pytest_generate_tests(metafunc):
     if "joint_or_body_case" in metafunc.fixturenames:
         metafunc.parametrize("joint_or_body_case", [
-            "range", "unlimited", "limits-disabled", "order", "armature",
+            "range", "margin", "unlimited", "limits-disabled", "order", "armature",
             "mass", "inertia", "com", "attached-mass", "equivalent",
         ])
 
@@ -568,12 +568,15 @@ def check_joint_and_body_parameters(path, case):
     ))
     robot = "/World/Lab/Robot"
     derived = usd_mjcf.derive_usd_mjcf(path, prim_path=robot, include_static_colliders=False)
+    position = .25 if case == "margin" else .55
 
     def mutate(spec):
         joint = spec.joint("robot/AB")
         body = spec.body("robot/B")
         if case == "range":
             joint.range[:] = [-.9, .9]
+        elif case == "margin":
+            joint.margin = .2
         elif case == "unlimited":
             joint.limited = mujoco.mjtLimited.mjLIMITED_FALSE
         elif case == "armature":
@@ -591,8 +594,12 @@ def check_joint_and_body_parameters(path, case):
             body.iquat[:] = [-1., 0., 0., 0.]
             body.inertia[:] = [.02, .01, .025]
             body.add_body(name="marker_frame")
-            # An inactive range's stored endpoints have no physical effect.
-            spec.joint("robot/BC").range[:] = [-.8, .8]
+            # An unlimited joint ignores both stored endpoints and margin.
+            unlimited = spec.joint("robot/BC")
+            unlimited.range[:] = [-.8, .8]
+            unlimited.margin = .2
+            joint.solref_limit[:] = [.03, .9]
+            joint.solimp_limit[:] = [.85, .9, .001, .5, 2.]
 
     def build(changed):
         def robot_spec():
@@ -612,9 +619,12 @@ def check_joint_and_body_parameters(path, case):
                        spec_fn=mutate if changed else None)
         verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
         disabled = ("limit",) if changed and case == "limits-disabled" else ()
-        settings = MujocoCfg(timestep=.005, iterations=13, cone="elliptic", disableflags=disabled)
+        settings = MujocoCfg(
+            timestep=.005, iterations=13, cone="elliptic", solver="cg", disableflags=disabled,
+        )
         model = Scene(cfg, device="cpu").compile()
         sim = Simulation(1, SimulationCfg(mujoco=settings), model, device="cpu")
+        assert sim.mj_model.opt.solver == mujoco.mjtSolver.mjSOL_CG
         return sim.mj_model, verify
 
     def observe(model):
@@ -622,7 +632,7 @@ def check_joint_and_body_parameters(path, case):
         body = model.body("robot/B")
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, model.key("init_state").id)
-        data.qpos[joint.qposadr[0]] = .55
+        data.qpos[joint.qposadr[0]] = position
         mujoco.mj_forward(model, data)
         has_limit = int(np.count_nonzero((data.efc_type == mujoco.mjtConstraint.mjCNSTR_LIMIT_JOINT)
                                          & (data.efc_id == joint.id)))
@@ -639,26 +649,29 @@ def check_joint_and_body_parameters(path, case):
             "com": rotation.T @ (data.xipos[body.id] - data.xpos[body.id]),
             "total_mass": model.body_mass.sum(),
         }
-        print(f"{case} range={joint.range.tolist()} {result}", flush=True)
+        print(f"{case} q={position} range={joint.range.tolist()} margin={joint.margin[0]} "
+              f"solver={model.opt.solver} {result}", flush=True)
         return result
 
     source, verify_source = build(False)
     expected = observe(source)
     verify_source(source)
-    assert expected["limit"] == 1 and expected["order"] == ["AB", "BC"]
+    assert expected["limit"] == (0 if case == "margin" else 1)
+    assert expected["order"] == ["AB", "BC"]
     assert expected["mass"] == 2. and np.isclose(expected["armature"], .03)
     np.testing.assert_allclose(expected["com"], [.02, -.03, .04], atol=1e-7)
     np.testing.assert_allclose(expected["inertia"], np.diag([.02, .01, .025]), atol=1e-7)
     # The hinge first rotates the authored COM about X and the placed robot
     # then turns it 90° about Z. The B anchor is .1 m along the robot's X.
-    c, s = math.cos(.55), math.sin(.55)
+    c, s = math.cos(position), math.sin(position)
     np.testing.assert_allclose(expected["world_com"], [.25 + .03 * c + .04 * s, .47, 1.1 - .03 * s + .04 * c],
                                rtol=0., atol=1e-7)
     model, verify = build(True)
     actual = observe(model)
     diagnostics = {
-        "range": ("AB", "joint limit"), "unlimited": ("AB", "joint limit"),
-        "limits-disabled": ("AB", "joint limit"), "order": ("AB", "joint coordinate order"),
+        "range": ("AB", "joint limit"), "margin": ("AB", "activation margin"),
+        "unlimited": ("AB", "joint limit"), "limits-disabled": ("AB", "joint limit"),
+        "order": ("AB", "joint coordinate order"),
         "armature": ("AB", "joint armature"), "mass": ("B", "link mass"),
         "inertia": ("B", "link inertia"), "com": ("B", "link center of mass"),
         "attached-mass": ("B", "attached body"),
@@ -666,10 +679,14 @@ def check_joint_and_body_parameters(path, case):
     if case == "equivalent":
         np.testing.assert_allclose(actual["world_com"], expected["world_com"], atol=1e-7)
         np.testing.assert_allclose(actual["inertia"], expected["inertia"], atol=1e-7)
+        assert actual["limit"] == expected["limit"]
         verify(model)
         return
     if case in ("range", "unlimited", "limits-disabled"):
         assert actual["limit"] == 0
+    elif case == "margin":
+        np.testing.assert_array_equal(model.joint("robot/AB").range, source.joint("robot/AB").range)
+        assert actual["limit"] == 1
     elif case == "order":
         assert actual["order"] == ["BC", "AB"]
     elif case == "armature":

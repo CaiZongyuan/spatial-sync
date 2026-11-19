@@ -915,7 +915,10 @@ def _mjlab_articulation(model, derived, coordinates, *, prefix=""):
         # Translating a hinge anchor along its own axis preserves the joint line.
         anchor = model.jnt_pos[index]
         hinge_line = anchor - (anchor @ axis) * axis if joint.kind == "hinge" else None
-        joints_by_id[index] = (axis, hinge_line, mujoco_joint_limits(model, index),
+        limits = mujoco_joint_limits(model, index)
+        # A limit activates when the coordinate is closer to a bound than its margin.
+        margin = model.jnt_margin[index] if limits is not None else 0.
+        joints_by_id[index] = (axis, hinge_line, limits, margin,
                               model.dof_armature[model.jnt_dofadr[index]])
     # Compare the order of all USD scalar coordinates, including passive
     # joints. Free-root coordinates occupy a separate representation.
@@ -979,8 +982,8 @@ def _check_mjlab_articulation(reference, candidate):
             raise UnsupportedUsdPhysics(
                 path, f"Simulation changed USD scalar joint coordinate order (found {actual_path})",
             )
-    for path, (axis, anchor, limits, armature) in expected_joints.items():
-        actual_axis, actual_anchor, actual_limits, actual_armature = actual_joints[path]
+    for path, (axis, anchor, limits, margin, armature) in expected_joints.items():
+        actual_axis, actual_anchor, actual_limits, actual_margin, actual_armature = actual_joints[path]
         if not np.allclose(axis, actual_axis, rtol=0., atol=1e-5):
             raise UnsupportedUsdPhysics(path, "Simulation changed USD joint axis")
         if anchor is not None and not np.allclose(anchor, actual_anchor, rtol=0., atol=1e-5):
@@ -989,6 +992,11 @@ def _check_mjlab_articulation(reference, candidate):
         if ((limits is None) != (actual_limits is None)
                 or limits is not None and not np.allclose(limits, actual_limits, rtol=0., atol=1e-6)):
             raise UnsupportedUsdPhysics(path, "Simulation changed USD joint limits")
+        if not np.isclose(margin, actual_margin, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(
+                path,
+                f"Simulation changed USD joint limit activation margin ({margin:g} to {actual_margin:g})",
+            )
         if not np.isclose(armature, actual_armature, rtol=0., atol=1e-6):
             raise UnsupportedUsdPhysics(path, "Simulation changed USD joint armature")
 
