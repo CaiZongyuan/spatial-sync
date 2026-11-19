@@ -23,7 +23,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T23:03:32.497198+00:00",
+  "capturedAt": "2026-11-19T23:50:55.321083+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -266,6 +266,10 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/policies/action_contract.py",
+      "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
+    },
+    {
       "path": "packages/policies/inference.py",
       "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
     },
@@ -279,7 +283,7 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "03e28b5616d44993dfdfe52d7465d8efac127c20854146dead0d0107724c25d1"
+      "sha256": "acb43f32e80f5041bc05d96bfdda164a98cf8aa5988a94459ba01348c79844f4"
     },
     {
       "path": "packages/policies/subjects.py",
@@ -487,7 +491,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "f4826739dd9d2e3a0b4f767397d8ca3a790c5d7328c4ad5f4131c7a97f6a89da"
+      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -513,10 +517,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "869c165294379cbe06a741ad4a08734346260b8c6d5576435717ecd9cc7502af",
-    "catalog.json": "51f98268506d15e54735ebb37e97aa2487457b1e3a18dacd63e110ce00d2cac7",
-    "state.json": "02cd85c4ee2e6d4905d74bf12aa9bb2fcc85deb9ee1eefad38a8a69784dcaf07",
-    "snapshot.bin": "9201af070a66c570015ed0a7fb2394a19e68507cdcb1f0e1b9d500feb76f9270",
+    "manifest.json": "87137aedbbf9267c12a9f35c49721739c97853f4c8f16767313caa928b110947",
+    "catalog.json": "78bfcef31c21c0f66b051a4ee38c3a9026a146ef9c26c3dec9233359b46b3c94",
+    "state.json": "6740739c4320b3d7852429240db1cfe627b53d95391f1058bdbdf59e8be73f9f",
+    "snapshot.bin": "ce9489d501e7ec3be4e5d09d51d9e0f4ba31b987dfc6f4ea4380d3e5efa3afc3",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",

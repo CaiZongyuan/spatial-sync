@@ -18,7 +18,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T23:02:27.670161+00:00",
+  "capturedAt": "2026-11-19T23:49:49.843582+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -257,6 +257,10 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/policies/action_contract.py",
+      "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
+    },
+    {
       "path": "packages/policies/inference.py",
       "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
     },
@@ -270,7 +274,7 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "03e28b5616d44993dfdfe52d7465d8efac127c20854146dead0d0107724c25d1"
+      "sha256": "acb43f32e80f5041bc05d96bfdda164a98cf8aa5988a94459ba01348c79844f4"
     },
     {
       "path": "packages/policies/subjects.py",
@@ -474,7 +478,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "f4826739dd9d2e3a0b4f767397d8ca3a790c5d7328c4ad5f4131c7a97f6a89da"
+      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -500,10 +504,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "822df97696c8c8efffe1c8464f66ee3ce9a2d224b0dd4bc6d287b48b9675c3de",
-    "catalog.json": "9b53cc2f9978289fe2d05154d3d1e5815d8920329b9b3041dddabc52841ca1ff",
-    "state.json": "55557ce71f0181c133661690b738c4bbea8c12a451f5a0639d9a938e4d9883fb",
-    "snapshot.bin": "b8a19c9e9606076aec43a10c4beb02b997a22911890e084899c60a702f22caf1",
+    "manifest.json": "2373253826adcba6e06bbf6e40679a30dc577230595783c9e426be72b5bfc561",
+    "catalog.json": "c5319850e54ed88d81cb2cdc96fcf5391e8c77639e0bbfd0d1609ea3a1ab5369",
+    "state.json": "06a16f6908c7b9c62e2163dbcd5dbeea267941468e1a97d39197e288315975b5",
+    "snapshot.bin": "bba4bc3d0a070f713750625f98264c83b2f24aaec96182b526f9d8825b0cfa9d",
     "assets/sha256-5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71.glb": "5d059f21efc8091a9e36c14f73b47100fa5ddcb9614620bee0101dd756df3c71",
     "assets/sha256-5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12.glb": "5b1550db1b97a00e33ace90b021761bc0b185a4b68e287672f4778c9ebe24c12",
     "assets/sha256-a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89.glb": "a9ff055bba09fae93f8ccd7d6b46650c031a04b3791572b6685829176c48dd89"

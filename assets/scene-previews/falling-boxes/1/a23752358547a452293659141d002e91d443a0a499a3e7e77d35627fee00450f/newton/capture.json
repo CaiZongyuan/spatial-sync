@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T23:02:15.038737+00:00",
+  "capturedAt": "2026-11-19T23:49:36.877262+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -132,6 +132,10 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/policies/action_contract.py",
+      "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
+    },
+    {
       "path": "packages/policies/inference.py",
       "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
     },
@@ -145,7 +149,7 @@
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "03e28b5616d44993dfdfe52d7465d8efac127c20854146dead0d0107724c25d1"
+      "sha256": "acb43f32e80f5041bc05d96bfdda164a98cf8aa5988a94459ba01348c79844f4"
     },
     {
       "path": "packages/policies/subjects.py",
@@ -337,7 +341,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "f4826739dd9d2e3a0b4f767397d8ca3a790c5d7328c4ad5f4131c7a97f6a89da"
+      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -363,10 +367,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "8f2150f3e8327eb34acde36098100473fce48c687a7635cc1114a69688f4edea",
-    "catalog.json": "6f837a8bfb5d172fd6d2950e0d04f56729e65ae4b67d25b4e5e8b50de4cf1975",
-    "state.json": "52c1e2e8a613e016ce03c31fe33cb61313c5caf84b3002cfa6c722867bf486a0",
-    "snapshot.bin": "32b8158d36da6b01c735a0ed03a30e9eb3e862ec5e6d2a74ac35e4a18ee0e529"
+    "manifest.json": "12a38288dd9ae5173f91adb7b47105057637b72e20ba8155b5aebe136752a63b",
+    "catalog.json": "25d2709261f9afebc4ef7477adcb6c00b517fa12248e82bb9e15622a37f7e656",
+    "state.json": "09ffa5839a63ce2af0f2b4f71937470e3c996a6b55ec81f78a279e1c967528a1",
+    "snapshot.bin": "a7f29a45e0c141b03a192c8152440d9d67713d6f0b2b015ee6356615987214b6"
   },
   "counts": {
     "physicalEntities": 3,
