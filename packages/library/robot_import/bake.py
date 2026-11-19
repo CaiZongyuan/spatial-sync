@@ -294,7 +294,11 @@ def bake(robot, recipe, output):
                     triangle_count += len(mesh.faces)
                     if triangle_count > 500000:
                         raise invalid("Asset Visual exceeds 500000 triangles", path=geom_path)
-                    mesh.visual.face_colors = rgba
+                    # GLB stores vertex colors. Keep unreferenced vertices zero
+                    # as in the uniform face-to-vertex conversion.
+                    colors = np.zeros((len(mesh.vertices), 4), dtype=np.uint8)
+                    colors[mesh.faces.ravel()] = rgba
+                    mesh.visual.vertex_colors = colors
                     visual.geometry[digest] = mesh
                 # glTF is Y-up, while the stage remains Z-up.
                 pose = tf.rotation_matrix(-math.pi / 2, [1., 0., 0.]) @ rest[body.name]

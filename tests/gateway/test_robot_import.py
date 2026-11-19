@@ -1,10 +1,12 @@
 """External robot archives use the public immutable Asset transaction."""
 
 import hashlib
+import io
 import json
 import math
 
 import pytest
+import trimesh
 from fastapi.testclient import TestClient
 from test_asset_imports import upload
 
@@ -12,7 +14,12 @@ from apps.api.app.main import create_app
 from packages.library.physics import skipped
 
 URDF = b"""<robot name="probe">
-  <link name="base"><collision><geometry><box size=".2 .4 .6"/></geometry></collision></link>
+  <link name="base">
+    <collision><geometry><box size=".2 .4 .6"/></geometry></collision>
+    <visual><geometry><box size=".2 .4 .6"/></geometry>
+      <material name="paint"><color rgba=".2 .4 .6 1"/></material>
+    </visual>
+  </link>
   <link name="tip"><collision><geometry><box size=".1 .1 .1"/></geometry></collision></link>
   <joint name="motor-a" type="revolute">
     <parent link="base"/><child link="tip"/><origin xyz=".2 0 0"/>
@@ -65,7 +72,10 @@ def test_robot_archive_publishes_pinned_calibration(client):
     joint = mapping["joints"][0]
     assert joint["sign"] * (.40 - joint["zeroOffset"]) == pytest.approx(-.15)
     visual = client.get(detail["files"]["visual.glb"])
-    assert visual.content.startswith(b"glTF")
+    assert visual.status_code == 200
+    scene = trimesh.load_scene(io.BytesIO(visual.content), file_type="glb", process=False)
+    colors = {tuple(color) for mesh in scene.geometry.values() for color in mesh.visual.vertex_colors}
+    assert colors == {(51, 102, 153, 255), (166, 166, 166, 255)}
     assert client.get(detail["files"]["LICENSE"]).content == files()["LICENSE"]
     provenance = client.get(detail["files"]["provenance.json"]).json()
     assert provenance["files"]["source/probe.urdf"]["sha256"] == hashlib.sha256(URDF).hexdigest()
