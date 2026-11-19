@@ -82,15 +82,11 @@ class CostLedger:
             attempts = job.get("attempts", [])
             attempt = attempts[-1] if attempts else None
             node_id = attempt["nodeId"] if attempt else job["nodeId"]
-            if attempt and attempt["leaseId"] != state.get("leaseId"):
-                state["lastObservedAt"] = max(state["lastObservedAt"], attempt["startedAt"])
-                state.update(leaseId=attempt["leaseId"], attemptThroughSeconds=0.0)
-            elif not attempt and job["leaseId"] and job["leaseId"] != state.get("leaseId"):
+            if not attempt and job["leaseId"] and job["leaseId"] != state.get("leaseId"):
                 node = self.manager.jobs.nodes.get(job["nodeId"], {})
                 lease = node.get("leases", {}).get(job["resourceId"])
                 if lease and lease["leaseId"] == job["leaseId"]:
-                    # Queue time is known not to own this GPU. Only a new
-                    # fenced dispatch advances the initial observation bound.
+                    # Queue time is known not to own this GPU.
                     state["lastObservedAt"] = max(state["lastObservedAt"], lease["assignedAt"])
                     state["leaseId"] = job["leaseId"]
             report = job.get("lastNodeReport") or {}
@@ -101,30 +97,49 @@ class CostLedger:
                 if memory is not None and state.get("memoryReport") != signature:
                     state["memorySamples"].append({"at": now, "memoryUsedMb": memory, "nodeId": node_id})
                     state["memoryReport"] = signature
-            charged = job["chargedGpuHours"] * 3600
-            delta = (attempt["gpuSeconds"] - state.get("attemptThroughSeconds", 0.0)
-                     if attempt else charged - state["throughSeconds"])
-            if delta <= 0:
-                continue
-            if prices is None:
-                try:
-                    prices = self.resources.prices()
-                except (OSError, ValueError):
-                    prices = {"revision": None, "gpus": [], "unavailable": True}
-            rate = next((row["usdPerHour"] for row in prices["gpus"] if row["nodeId"] == node_id), None)
-            reported_seconds = attempt["reportedGpuSeconds"] if attempt else state["reportedSeconds"]
-            attempt_seconds = attempt["gpuSeconds"] if attempt else charged
-            attempt_provenance = (
-                {"leaseId": attempt["leaseId"], "attemptThroughSeconds": attempt_seconds} if attempt else {}
-            )
-            state["entries"].append(
-                {
-                    "nodeId": node_id,
-                    **attempt_provenance,
-                    "startAt": min(now, state["lastObservedAt"]),
-                    "endAt": now,
+            pending = [(attempt, now)]
+            if attempt and attempt["leaseId"] != state.get("leaseId"):
+                previous = next(
+                    (row for row in reversed(attempts) if row["leaseId"] == state.get("leaseId")), None,
+                )
+                if previous is not None:
+                    # Reconciliation can accrue the prior lease's timeout and assign
+                    # the next lease before either change reaches this transaction.
+                    pending.insert(0, (previous, previous["finishedAt"]))
+
+            for charged_attempt, at in pending:
+                if charged_attempt:
+                    if charged_attempt["leaseId"] != state.get("leaseId"):
+                        state.update(
+                            leaseId=charged_attempt["leaseId"], attemptThroughSeconds=0.0,
+                            lastObservedAt=max(state["lastObservedAt"], charged_attempt["startedAt"]),
+                        )
+                    attempt_seconds = charged_attempt["gpuSeconds"]
+                    delta = attempt_seconds - state.get("attemptThroughSeconds", 0.0)
+                    reported_seconds = charged_attempt["reportedGpuSeconds"]
+                    charged_node = charged_attempt["nodeId"]
+                else:
+                    attempt_seconds = job["chargedGpuHours"] * 3600
+                    delta = attempt_seconds - state["throughSeconds"]
+                    reported_seconds = state["reportedSeconds"]
+                    charged_node = node_id
+                if delta <= 0:
+                    continue
+                if prices is None:
+                    try:
+                        prices = self.resources.prices()
+                    except (OSError, ValueError):
+                        prices = {"revision": None, "gpus": [], "unavailable": True}
+                rate = next(
+                    (row["usdPerHour"] for row in prices["gpus"] if row["nodeId"] == charged_node), None,
+                )
+                through_seconds = state["throughSeconds"] + delta
+                entry = {
+                    "nodeId": charged_node,
+                    "startAt": min(at, state["lastObservedAt"]),
+                    "endAt": at,
                     "gpuSeconds": delta,
-                    "throughSeconds": charged,
+                    "throughSeconds": through_seconds,
                     "source": "lease-timeout" if attempt_seconds > reported_seconds else "node-report",
                     "priceRevision": prices["revision"],
                     "usdPerHour": rate,
@@ -136,10 +151,11 @@ class CostLedger:
                     if rate is None
                     else None,
                 }
-            )
-            state.update(throughSeconds=charged, lastObservedAt=now)
-            if attempt:
-                state["attemptThroughSeconds"] = attempt_seconds
+                if charged_attempt:
+                    entry.update(leaseId=charged_attempt["leaseId"], attemptThroughSeconds=attempt_seconds)
+                    state["attemptThroughSeconds"] = attempt_seconds
+                state["entries"].append(entry)
+                state.update(throughSeconds=through_seconds, lastObservedAt=at)
 
     @staticmethod
     def attribution(job):

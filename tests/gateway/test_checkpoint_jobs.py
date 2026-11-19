@@ -645,3 +645,139 @@ def witness_artifacts(
         "finalizedCheckpointSha256": checkpoint["sha256"],
     }
     (evidence / "native-capture.json").write_text(json.dumps(receipt))
+
+
+def test_automatic_resume_accounts_for_the_closed_attempt_in_the_same_heartbeat(tmp_path):
+    settings = remote_settings()
+    clock = [1000.0]
+
+    def app():
+        server = create_app(settings)
+        server.state.jobs.clock = lambda: clock[0]
+        return server
+
+    with TestClient(app()) as client:
+        task = client.post(
+            "/api/v1/tasks",
+            headers=OPERATOR | {"Content-Type": "application/x-tar"},
+            content=task_archive(_build_mjlab_task_package(tmp_path / "billing-task")),
+        ).json()
+        submitted = client.post(
+            "/api/v1/plans",
+            headers=OPERATOR,
+            json=training_plan(
+                task["id"], algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"}
+            ),
+        )
+        assert submitted.status_code == 201, submitted.text
+        plan = submitted.json()
+        approved = client.post(
+            f"/api/v1/approvals/{plan['approvalId']}/decision",
+            headers=OPERATOR,
+            json={"decision": "approve"},
+        )
+        assert approved.is_success, approved.text
+        nodes = {identity: register(client, identity) for identity in ("a", "b")}
+        priced = client.put(
+            "/api/v1/prices",
+            headers=OPERATOR,
+            json={
+                "revision": 0,
+                "gpus": [{"nodeId": "a", "usdPerHour": 3.6}, {"nodeId": "b", "usdPerHour": 7.2}],
+            },
+        )
+        assert priced.is_success, priced.text
+
+        def capabilities(identity):
+            gpu = {"id": f"GPU-{identity}", "name": identity}
+            runtime = {
+                "trainingEntries": {"mjlab": "mjlab:managed"},
+                "trainerVersions": MJLAB_VERSIONS,
+                "compilerHash": COMPILER,
+            }
+            key = node_profile_key(
+                plan,
+                task["contentHash"],
+                runtime | {"id": identity, "hardware": "fixture"},
+                gpu,
+                backend="mjlab",
+            )
+            return runtime | {
+                "gpus": [gpu],
+                "checkpointVersion": 1,
+                "profiles": [
+                    {
+                        "key": key,
+                        "iterationSeconds": 20,
+                        "samples": 2,
+                        "measuredAt": 999,
+                        "evidence": "fixture",
+                    }
+                ],
+            }
+
+        a, b = nodes["a"], nodes["b"]
+        first, second = capabilities("a"), capabilities("b")
+        assert beat(client, a, **first).is_success
+        started = client.post("/api/v1/jobs", headers=OPERATOR, json={"planId": plan["id"], "seed": 42})
+        assert started.status_code == 202, started.text
+        job = started.json()
+        url = f"/api/v1/jobs/{job['jobId']}"
+        lease = a | {"X-Lease-Id": job["leaseId"]}
+        dispatch = client.get(url + "/inputs", headers=lease).json()
+        clock[0] = 1059
+        report = {
+            "jobId": job["jobId"],
+            "leaseId": job["leaseId"],
+            "status": "running",
+            "iteration": 4,
+            "elapsedSeconds": 59,
+        }
+        assert beat(client, a, **first, reports=[report]).is_success
+        saved = client.post(url + "/checkpoints", headers=lease, content=checkpoint_archive(dispatch))
+        assert saved.status_code == 201, saved.text
+
+        clock[0] = 1120
+        # This single B heartbeat expires A and leases B before the Job and ledger are saved.
+        (assignment,) = beat(client, b, **second).json()["assignments"]
+        assert assignment["jobId"] == job["jobId"] and assignment["leaseId"] != job["leaseId"]
+        charged_a = client.get("/api/v1/cost/summary?range=all&node=a", headers=OPERATOR).json()["totals"]
+        assert charged_a["gpuSeconds"] == 120
+        assert charged_a["estimatedGpuSeconds"] == 61
+
+        clock[0] = 1140
+        settled = report | {"leaseId": assignment["leaseId"], "status": "failed", "elapsedSeconds": 20}
+        assert beat(client, b, **second, reports=[settled]).is_success
+
+    def verify_charges(client):
+        public = client.get(url, headers=OPERATOR).json()
+        assert public["status"] == "failed"
+        assert [row["gpuSeconds"] for row in public["attempts"]] == [120, 20]
+        assert public["chargedGpuHours"] == pytest.approx(140 / 3600)
+        total = client.get("/api/v1/cost/summary?range=all", headers=OPERATOR).json()["totals"]
+        assert total["gpuSeconds"] == 140 and total["reportedGpuSeconds"] == 79
+        assert total["estimatedGpuSeconds"] == 61 and total["gpuUsd"] == pytest.approx(0.16)
+        rows = client.get("/api/v1/cost/breakdown?range=all&by=node", headers=OPERATOR).json()["rows"]
+        assert {row["key"]: row["gpuSeconds"] for row in rows} == {"a": 120, "b": 20}
+        for start, end, reported, estimated in (
+            ("00:16:40", "00:17:39", 59, 0),
+            ("00:17:39", "00:18:40", 0, 61),
+        ):
+            ranged = client.get(
+                "/api/v1/cost/summary",
+                headers=OPERATOR,
+                params={
+                    "range": "custom",
+                    "start": f"1970-01-01T{start}Z",
+                    "end": f"1970-01-01T{end}Z",
+                    "node": "a",
+                },
+            ).json()["totals"]
+            assert (ranged["reportedGpuSeconds"], ranged["estimatedGpuSeconds"]) == (reported, estimated)
+
+    with TestClient(app()) as client:
+        verify_charges(client)
+        for _ in range(2):
+            assert beat(client, b, **second, reports=[settled]).is_success
+        assert beat(client, a, **first, reports=[report]).status_code == 403
+        verify_charges(client)

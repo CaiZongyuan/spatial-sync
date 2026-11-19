@@ -430,8 +430,10 @@ def test_remote_node_retries_cleanup_after_reply_is_lost(tmp_path, monkeypatch, 
         server_thread.join(10)
 
 
-@pytest.mark.parametrize("lose_node_owner", [False, True])
-def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tmp_path, lose_node_owner):
+@pytest.mark.parametrize("settlement", ["finish", "owner-lost", "upgrade-drain"])
+def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tmp_path, settlement):
+    lose_node_owner = settlement == "owner-lost"
+    drain_for_upgrade = settlement == "upgrade-drain"
     package = task_directory(tmp_path / "task")
     (package / "probe.py").write_text('def register(): return "installed-source-marker"\n', encoding="utf-8")
     plan = training_plan(hyperparameters={"num_envs": 4, "max_iterations": 1, "device": "cpu"})
@@ -449,9 +451,9 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
     )
     trainer = Path(__file__).resolve().parents[1] / "fixtures/fake_trainer.py"
     settings = Settings(
-        node_trainer=(sys.executable, str(trainer), *(("--hold",) if lose_node_owner else ())),
+        node_trainer=(sys.executable, str(trainer), *(("--hold",) if settlement != "finish" else ())),
         node_capabilities=capabilities,
-        node_interval=0.1 if lose_node_owner else 1,
+        node_interval=0.1 if settlement != "finish" else 1,
         node_job_timeout=30,
     )
     app, server, thread = start_server(settings)
@@ -532,6 +534,12 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                 # The node may be lost, but its lease cannot turn idle before descendant cleanup.
                 assert http.get("/api/v1/nodes").json()["nodes"][0]["leases"]
                 app.state.jobs.node.start()
+            elif drain_for_upgrade:
+                url = f"/api/v1/jobs/{identity}"
+                running = http.get(url).json()
+                assert running["status"] == "running" and running["leaseId"]
+                preparing = http.post(url + "/cancel").json()
+                assert preparing["cancelRequested"] and preparing["leaseId"] == running["leaseId"]
             else:
                 draining = wait_for(
                     lambda: http.get(f"/api/v1/jobs/{identity}").json(),
@@ -542,9 +550,10 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                 assert not http.get(f"/api/v1/jobs/{identity}/logs").json()["complete"]
             finished = wait_for(
                 lambda: http.get(f"/api/v1/jobs/{identity}").json(),
-                lambda value: value["status"] in ("succeeded", "failed"),
+                lambda value: value["status"] in ("succeeded", "failed", "cancelled"),
             )
-            assert finished["status"] == ("failed" if lose_node_owner else "succeeded"), finished
+            expected = {"finish": "succeeded", "owner-lost": "failed", "upgrade-drain": "cancelled"}
+            assert finished["status"] == expected[settlement], finished
             wait_for(lambda: http.get("/api/v1/nodes").json(), lambda value: not value["nodes"][0]["leases"])
             try:
                 process = psutil.Process(descendant["pid"])
@@ -554,16 +563,13 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
             assert len((marker[0].parent / "actual-starts.txt").read_text().splitlines()) == 1
             assert finished["chargedGpuHours"] == 0 and finished["gpuId"] is None
             assert http.get("/api/v1/health").json()["sessionCount"] == 0
+            if drain_for_upgrade:
+                assert finished["artifacts"] == []
             if not lose_node_owner:
-                assert {row["path"] for row in finished["artifacts"]} >= {
-                    "versions.json",
-                    "stdout.log",
-                    "stderr.log",
-                    "policy.onnx",
-                }
                 assert "Fake trainer" in "\n".join(http.get(f"/api/v1/jobs/{identity}/logs").json()["lines"])
                 cursor, lines = 0, []
                 while True:
+                    final_cursor = cursor
                     chunk = http.get(f"/api/v1/jobs/{identity}/logs", params={"after": cursor}).json()
                     lines.extend(chunk["lines"])
                     cursor = chunk["cursor"]
@@ -571,6 +577,13 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
                         break
                 numbers = [int(line.split("LOGTAIL_")[1]) for line in lines if "LOGTAIL_" in line]
                 assert numbers == list(range(1201))
+            if settlement == "finish":
+                assert {row["path"] for row in finished["artifacts"]} >= {
+                    "versions.json",
+                    "stdout.log",
+                    "stderr.log",
+                    "policy.onnx",
+                }
                 assert finished["versions"]["hardware"]["gpu"] is None
     finally:
         if identity:
@@ -585,3 +598,11 @@ def test_real_local_node_installs_inputs_once_and_reaps_resistant_descendants(tm
         owner = app.state.jobs.node.process
         if owner:
             owner.wait(timeout=5)
+
+    if drain_for_upgrade:
+        with TestClient(create_app(Settings(state_root=settings.state_root))) as reopened:
+            retained = reopened.get(f"/api/v1/jobs/{identity}").json()
+            assert retained["status"] == "cancelled" and retained["artifacts"] == []
+            assert not reopened.get("/api/v1/nodes/local").json()["leases"]
+            reopened_tail = reopened.get(f"/api/v1/jobs/{identity}/logs", params={"after": final_cursor})
+            assert reopened_tail.json() == chunk

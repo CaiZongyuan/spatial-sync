@@ -163,13 +163,17 @@ def test_bucket_allocation_conserves_accepted_gpu_seconds_across_an_hour():
         assert narrowed["gpuSeconds"] == pytest.approx(300)
 
 
-def test_reopened_gateway_retains_usage_price_snapshots_and_read_receipts():
+@pytest.mark.parametrize("historical", [False, True], ids=["attempt-entries", "legacy-entries"])
+def test_reopened_gateway_retains_usage_price_snapshots_and_read_receipts(historical):
     settings = Settings(node_token=TOKEN)
     clock = [1000.0]
     first = create_app(settings)
     first.state.jobs.clock = lambda: clock[0]
     with TestClient(first) as http:
         _, body, job = admitted(http, clock)
+        assert http.put(
+            "/api/v1/prices", json={"revision": 0, "gpus": [{"nodeId": "local", "usdPerHour": 3.6}]},
+        ).is_success
         clock[0] += 10
         assert report(http, body, job, 10, "failed").status_code == 200
         anomalies = http.get("/api/v1/cost/anomalies").json()
@@ -177,11 +181,28 @@ def test_reopened_gateway_retains_usage_price_snapshots_and_read_receipts():
         identity = anomalies["anomalies"][0]["id"]
         assert http.post(f"/api/v1/cost/anomalies/{identity}/read").status_code == 200
         assert http.get("/api/v1/cost/anomalies").json()["unreadCount"] == 0
+    if historical:
+        # Project the charged entry to the pre-attempt persisted schema.
+        path = settings.state_root / "jobs.json"
+        saved = json.loads(path.read_bytes())
+        retained = saved["jobs"][job["jobId"]]
+        retained.pop("attempts")
+        ledger = retained["costLedger"]
+        ledger.pop("attemptThroughSeconds")
+        for entry in ledger["entries"]:
+            for field in ("nodeId", "leaseId", "attemptThroughSeconds"):
+                entry.pop(field)
+        for sample in ledger["memorySamples"]:
+            sample.pop("nodeId")
+        path.write_text(json.dumps(saved), encoding="utf-8")
     second = create_app(settings)
     second.state.jobs.clock = lambda: clock[0]
     with TestClient(second) as http:
         assert report(http, body, job, 10, "failed").status_code == 200
-        assert totals(http)["gpuSeconds"] == pytest.approx(10)
+        actual = totals(http, node="local")
+        assert actual["gpuSeconds"] == pytest.approx(10)
+        assert actual["gpuUsd"] == pytest.approx(0.01)
+        assert actual["priceRevisions"] == [1]
         assert http.get("/api/v1/cost/anomalies").json()["unreadCount"] == 0
         assert http.post("/api/v1/cost/anomalies/absent/read").status_code == 404
 

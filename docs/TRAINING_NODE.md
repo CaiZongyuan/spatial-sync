@@ -36,6 +36,37 @@ Use actual returned IDs. Stable request IDs make retries return the same Job,
 including after a newer unapproved plan revision exists. Each Job retains its
 original approved revision; it never substitutes the latest plan content.
 
+## Upgrade a deployment with legacy local Jobs
+
+A gateway restart can leave the old local node and its trainer alive while a Job
+owns a lease. Before upgrading from a release whose node uploads pickle
+checkpoints, pause new Job submissions and cancel queued Jobs, including Jobs
+waiting for approval. Cancel each active legacy Job through the old gateway
+while its owning node can still report process cleanup and final logs.
+
+```text
+lw job ls --json
+lw job cancel job-id --json
+lw job logs job-id --follow --json
+lw job show job-id --json
+lw node ls --json
+```
+
+Use the actual Job IDs. Wait for terminal Job status, a log chunk with
+`complete: true`, and an empty local lease and quarantine set. Then shut down
+the old gateway normally so its supervisor can stop the idle local node. Start
+the upgraded gateway and node with the same state and library directories.
+Cancelling a legacy Job preserves its logs and cost history. Any unfinished
+training must start again from the approved plan.
+
+If the gateway has already been replaced and the legacy node still owns the
+same lease, use the same cancellation and settlement commands while the node
+remains connected. The upgraded gateway rejects legacy `.pt` uploads. A Job
+whose upload was already rejected may finish as failed. If a lease remains
+quarantined, wait for its existing owner reconciliation before starting more
+work on that device. Previously committed Job artifacts and frozen Policies
+remain readable using their original references.
+
 ## First measured profile
 
 The node advertises its actual hardware/resources and begins with no invented
@@ -110,11 +141,14 @@ trainer does not establish that FR3 journey.
 The supported launcher maps the approved RSL-RL PPO settings, sets
 `PXR_WORK_THREAD_LIMIT=1`, and installs the bridge through the stock zero-argument
 registration callback. The bridge preserves CLI arguments, observes the actual
-learned runner and exports ONNX after learning. `export.json` links exact final
-checkpoint/policy hashes, including valid zero-based `model_0.pt`. Required
-outputs are checkpoints, ONNX, TensorBoard events, stdout/stderr, runtime versions,
-seed and exact input identities. A model file produced by a contract fixture
-proves transport only.
+learned runner and exports ONNX after learning. `export.json` links the exact
+ONNX and checkpoint-source hashes. Portable Jobs send safetensors and JSON.
+Other Jobs send `checkpoint-origin.json` with the digest of the exact
+node-local checkpoint, including a valid zero-based `model_0.pt`. The node
+retains the pickle file locally. Outputs include stdout/stderr, runtime versions,
+seed and exact input identities. Ordinary legacy-runtime training also includes
+TensorBoard events. A model file produced by a contract fixture proves transport
+only.
 
 With plan hyperparameter `device: cpu`, the launcher also sets
 `CUDA_VISIBLE_DEVICES=-1`, `--device cpu` and `agent.device=cpu`. Native MuJoCo CPU
