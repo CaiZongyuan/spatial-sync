@@ -198,6 +198,8 @@ async def capture(version, source_kind, root, *, overwrite=True):
     version.require_launchable()
     template_assets = version.template_dependencies()
     library_assets = version.asset_dependencies()
+    snapshots = version.entity_type_snapshots()
+    entity_types = [snapshots[name].identity for name in sorted(snapshots)]
     if source_kind not in version.metadata["sources"]:
         raise ValueError("Source is not supported by this version")
     opened = set()
@@ -249,6 +251,8 @@ async def capture(version, source_kind, root, *, overwrite=True):
         raise ValueError("Template dependencies changed while capturing")
     if version.asset_dependencies() != library_assets:
         raise ValueError("USD asset dependencies changed while capturing")
+    if version.entity_type_snapshots() != snapshots:
+        raise ValueError("EntityType dependencies changed while capturing")
     dependencies = module_inputs(
         type(version), Source, FrameCodec, freeze_manifest, AssetRegistry, capture, capture_runner,
         native_capture_inputs,
@@ -292,6 +296,7 @@ async def capture(version, source_kind, root, *, overwrite=True):
                             if source_kind == "newton" else ("numpy",)
                         )}},
             "dependencyDigest": DEPENDENCY_DIGEST,
+            **({"entityTypes": entity_types} if entity_types else {}),
             "dependencies": [{"path": path.relative_to(ROOT).as_posix(), "sha256": input_hash(path)}
                              for path in sorted(dependencies)],
             "documents": documents, "files": {name: file_hash(staged / name) for name in payloads},

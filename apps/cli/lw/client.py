@@ -115,6 +115,29 @@ class GatewayClient:
     async def models(self, query=None):
         return (await self.request("GET", "/api/v1/models", params={"q": query} if query else {}))["models"]
 
+    async def entity_types_list(self):
+        return (await self.request("GET", "/api/v1/library/entity-types"))["types"]
+
+    async def entity_type_show(self, id):
+        name, separator, version = id.partition("/")
+        if not separator or "/" in version:
+            raise GatewayError("Use an exact EntityType name/vN")
+        return await self.request(
+            "GET", f"/api/v1/library/entity-types/{quote(name, safe='')}/{quote(version, safe='')}"
+        )
+
+    async def entity_type_register(self, document):
+        return await self.request("POST", "/api/v1/library/entity-types", json=document)
+
+    async def robot_register(self, document):
+        return await self.request("POST", "/api/v1/embodiments", json=document)
+
+    async def robot_model_register(self, document):
+        return await self.request("POST", "/api/v1/robot-models", json=document)
+
+    async def controller_register(self, document):
+        return await self.request("POST", "/api/v1/controllers", json=document)
+
     async def robots_list(self):
         return (await self.request("GET", "/api/v1/embodiments"))["embodiments"]
 

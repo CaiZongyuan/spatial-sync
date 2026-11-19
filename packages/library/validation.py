@@ -11,6 +11,7 @@ from pathlib import Path
 
 from packages.library.archive import destination_parent, import_lock, package_files
 from packages.library.common import REPO_ROOT, LibraryError, content_hash, load_entity_types
+from packages.library.entity_types import EntityTypes
 from packages.library.physics import availability as physics_availability
 from packages.library.reports import latest_physics_evidence, merge_physics, parse_report, pinned_assets
 
@@ -49,6 +50,15 @@ class StructuralValidator:
         self, path, kind, subject, metadata, assets, bindings=None, locations=None, *,
         expected_assets=(), include_physics
     ):
+        types = load_entity_types()
+        entity_types = EntityTypes(assets.roots["user"])
+        declarations = (
+            (bindings or {}).get("entities", []) if kind == "scene" else metadata.get("implements", [])
+        )
+        for binding in declarations:
+            snapshot = entity_types.require_pin(binding)
+            if snapshot:
+                types[binding["type"]] = snapshot.declaration
         payload = {
             "kind": kind,
             "subject": subject,
@@ -65,7 +75,7 @@ class StructuralValidator:
                 )
                 for version in assets.versions.values()
             ],
-            "types": load_entity_types(),
+            "types": types,
             "programs": self.programs() if self.programs else {},
             "expectedAssets": list(expected_assets),
         }

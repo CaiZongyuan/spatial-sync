@@ -485,7 +485,9 @@ def create_app(
     install_alert_routes(app, manager, lambda headers: _role(headers, settings))
     install_recording_routes(app, recordings)
     install_resource_routes(app, settings, lambda headers: _role(headers, settings))
-    install_robot_resource_routes(app, library_assets, manager.library, manager)
+    install_robot_resource_routes(
+        app, library_assets, manager.library, manager, lambda headers: _role(headers, settings)
+    )
     from apps.api.app.controller_promotion_routes import install_controller_promotion_routes
 
     controller_promotions = install_controller_promotion_routes(

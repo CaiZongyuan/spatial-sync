@@ -160,7 +160,7 @@ def compile_catalog(scene_revision, types, entities, configs, *, sites=()):
             for key, value in type_declarations.items()
         },
         entities={
-            key: value.model_dump(mode="json", exclude={"alerts"}, exclude_none=True)
+            key: value.model_dump(mode="json", exclude={"alerts", "typeContentHash"}, exclude_none=True)
             for key, value in binding_declarations.items()
         },
     )

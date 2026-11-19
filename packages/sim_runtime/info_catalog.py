@@ -41,7 +41,7 @@ def load_info_catalog(
         if not scene_package.bindings["entities"]:
             catalog = Catalog(sceneRevision=manifest.sceneRevision)
         else:
-            extra = extra_entity_types()
+            extra = extra_entity_types() | scene_package.entity_types()
             catalog = load_catalog(
                 manifest,
                 scene_package.name,

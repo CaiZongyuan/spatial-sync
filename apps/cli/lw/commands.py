@@ -690,6 +690,11 @@ COMMANDS = (
         path=("suite", "ls"), help="List public train metadata for pinned Agent and embodied suites.",
         method="suites_list", output_type=list[dict[str, Any]], mcp_name="suite_list",
     ),
+    Command(path=("entity-type", "ls"), help="List built-in and published robot EntityTypes.",
+            method="entity_types_list", mcp_name="entity_type_list", output_type=list[dict[str, Any]]),
+    Command(path=("entity-type", "show"), help="Read one exact EntityType declaration and its content hash.",
+            method="entity_type_show", mcp_name="entity_type_show", arguments=(
+                Argument("id", ("name/vN",), str, "Exact EntityType version"),)),
     Command(path=("robot", "ls"), help="Read robot Embodiments and scene bindings; starts no Source.",
             method="robots_list", mcp_name="robot_list", output_type=list[dict[str, Any]]),
     Command(path=("robot", "show"), help="Read an Embodiment, control composition and version history.",
@@ -703,6 +708,18 @@ COMMANDS = (
     Command(path=("controller", "show"), help="Read the explicitly current Controller and retained versions.",
             method="controller_show", mcp_name="controller_show", arguments=(
                 Argument("id", ("controller",), str, "Controller ID, such as fr3-arm"),)),
+    *(
+        Command(
+            path=(kind, "register"), help=help_text, method=method, mcp_name=method,
+            arguments=(Argument("document", ("document",), dict[str, Any], "Registration JSON/YAML file"),),
+        )
+        for kind, method, help_text in (
+            ("entity-type", "entity_type_register", "Publish an immutable robot EntityType."),
+            ("robot", "robot_register", "Register an immutable Embodiment."),
+            ("robot-model", "robot_model_register", "Register an immutable Robot Model."),
+            ("controller", "controller_register", "Register an empty Controller header."),
+        )
+    ),
     Command(
         path=("suite", "show"), help="Describe a pinned suite without private seeds or grading.",
         method="suite_show", arguments=(

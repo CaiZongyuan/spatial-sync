@@ -9,7 +9,8 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from packages.library.archive import package_files
-from packages.library.common import REPO_ROOT
+from packages.library.common import REPO_ROOT, LibraryError
+from packages.library.entity_types import EntityTypes
 
 TEXT = {".py", ".yaml", ".yml", ".json", ".lock"}
 ENVIRONMENT = (
@@ -182,6 +183,12 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             [*scene.asset_dependencies(), *scene.template_dependencies()], key=lambda item: item["id"]
         ),
     }
+    try:
+        snapshots = scene.entity_type_snapshots() if hasattr(scene, "entity_type_snapshots") else {}
+    except LibraryError as exc:
+        raise ValueError("Scene EntityType evidence is unavailable") from exc
+    if snapshots:
+        inputs["entityTypes"] = [snapshots[name].identity for name in sorted(snapshots)]
     environment_facts = {
         "code": digest_files(environment),
         "inputs": inputs,
@@ -206,6 +213,8 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
     with ZipFile(archive, "x", compression=ZIP_DEFLATED) as output:
         for name, raw in sorted(original.items()):
             output.writestr("code/" + name, raw)
+        for name, snapshot in sorted(snapshots.items()):
+            output.writestr(f"entity-types/{name}.yaml", snapshot.content)
         packages = [(suite.path, "suite"), (scene.path, "scene")]
         dependencies = getattr(scene, "template_assets", {}) | getattr(scene, "runtime_assets", {})
         packages.extend(
@@ -309,12 +318,23 @@ def comparison_identity(value):
     )
 
 
-def verify_identity(frozen, *, root=REPO_ROOT, directory=None):
+def verify_identity(frozen, *, root=REPO_ROOT, directory=None, user_root=None):
     if frozen is None:
         return
     current = source_files((*ENVIRONMENT, *JUDGE), root=root)
     if {name: hashlib.sha256(raw).hexdigest() for name, raw in current.items()} != frozen["files"]:
         raise ValueError("Fixed evaluation implementation changed")
+    inputs = frozen.get("environmentInputs", {}).get("inputs", {})
+    entity_types = inputs.get("entityTypes", [])
+    if entity_types:
+        if user_root is None:
+            raise ValueError("Evaluation EntityType library is unavailable")
+        library = EntityTypes(user_root)
+        try:
+            for item in entity_types:
+                library.snapshot(item["id"], item["contentHash"])
+        except LibraryError as exc:
+            raise ValueError("Fixed evaluation EntityType changed or is unavailable") from exc
     if directory is not None:
         archive = directory / frozen["recovery"]["file"]
         if (
@@ -325,6 +345,12 @@ def verify_identity(frozen, *, root=REPO_ROOT, directory=None):
             or hashlib.sha256(archive.read_bytes()).hexdigest() != frozen["recovery"]["sha256"]
         ):
             raise ValueError("Recoverable evaluation implementation snapshot is unavailable")
+        if entity_types:
+            with ZipFile(archive) as recovery:
+                for item in entity_types:
+                    recovered = recovery.read(f"entity-types/{item['id']}.yaml")
+                    if hashlib.sha256(recovered).hexdigest() != item["contentHash"]:
+                        raise ValueError("Recoverable evaluation EntityType snapshot differs")
 
 
 def comparable(first, second):

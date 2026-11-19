@@ -19,6 +19,7 @@ from packages.catalog import AssetCatalog
 from packages.library.assets import MAX_UPLOAD_BYTES, AssetLibrary, invalid
 from packages.library.authoring import LIST_DEFAULT, invalid_authoring
 from packages.library.description_views import description_view
+from packages.library.entity_types import EntityTypes, RobotEntityType
 from packages.library.imports import LibraryImports
 from packages.library.read_cache import stamps, tree_paths
 from packages.library.removals import RemovalRequest
@@ -31,6 +32,23 @@ def install_library_routes(
 ):
     validator = StructuralValidator(assets.jobs_root.parent, program_schemas)
     catalog = catalog if catalog is not None else AssetCatalog(None)
+
+    entity_types = EntityTypes(assets.roots["user"])
+
+    @app.get("/api/v1/library/entity-types")
+    async def list_entity_types():
+        return {"types": await anyio.to_thread.run_sync(entity_types.list)}
+
+    @app.get("/api/v1/library/entity-types/{name}/{version}")
+    async def show_entity_type(name: str, version: str):
+        return await anyio.to_thread.run_sync(entity_types.describe, f"{name}/{version}")
+
+    @app.post("/api/v1/library/entity-types", status_code=201)
+    async def publish_entity_type(body: RobotEntityType, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        value, created = await anyio.to_thread.run_sync(entity_types.publish, body)
+        return JSONResponse(value, status_code=201 if created else 200)
 
     @app.post("/api/v1/library/authoring-reports")
     async def submit_authoring_report(request: Request):

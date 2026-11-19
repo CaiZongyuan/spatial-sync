@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T03:57:33.148795+00:00",
+  "capturedAt": "2026-11-19T13:27:51.737996+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -177,11 +177,15 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "96f31032addaa0901ace62097610d3ae62ff686ad5db855bdf4e0bea780a33fa"
+      "sha256": "600c176ffb5d566a814794d7d639587b493e72acb593b5197a2da45b73347463"
     },
     {
       "path": "packages/info/conditions.py",
       "sha256": "15024a91f38dda4a563dca1f5f56fce9c14571a9adbf1b0e5b54519f936afa31"
+    },
+    {
+      "path": "packages/info/declarations.py",
+      "sha256": "af14520093aac28d80ad7d6fae3f0be5d50efdb0e8ce779def0ae55abbae2d2c"
     },
     {
       "path": "packages/info/diff.py",
@@ -212,6 +216,10 @@
       "sha256": "0a7a9779b7a1be341b94bb3c9da5e887f93c7c8e9f707ffc403692d31e2da405"
     },
     {
+      "path": "packages/library/entity_types.py",
+      "sha256": "2ba1bc32435f662578e09cf2fde6d75d74957b8decb5d2002d76d196ef1decb8"
+    },
+    {
       "path": "packages/library/grasp_calibration.py",
       "sha256": "2f1d5f20e91eac29f7bbf1e52abc7d18544ce572b224c7e698d3e3d1b1aedbfd"
     },
@@ -225,7 +233,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "eb24d219c105b2509ee2b3734499f233074e92b17ab7bce86dab8d85476eca75"
+      "sha256": "80e2dc9249c841c8b96977dd3754862c1591f9ea30902e1ac6b4e3b49d665e07"
     },
     {
       "path": "packages/library/python_stages.py",
@@ -237,7 +245,7 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
+      "sha256": "95d991701ac47a2dad702fe57f6ca918fedb1a4f5e2cf35ca14999baef759da4"
     },
     {
       "path": "packages/library/structural.py",
@@ -245,7 +253,7 @@
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
+      "sha256": "072a862f6922ebb7970e653d195c980427252ff2e601f1ba8dfd99e1de0ef719"
     },
     {
       "path": "packages/library/transactions.py",
@@ -393,7 +401,7 @@
     },
     {
       "path": "packages/sim_runtime/info_catalog.py",
-      "sha256": "ca7dc86c86f1714fe8b9a612e5be949d312f6c21b53ff1ca9f33c5841d825f7f"
+      "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
     {
       "path": "packages/sim_runtime/info_host.py",
@@ -469,7 +477,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "ac1de1057bced1359beebd86597a2256c8a02419b56105cd51c674bec56fa70a"
+      "sha256": "f3e6335753b5cbf5bdcbc8eb47c4a42447d859f7dd097f01488aa6670c4712c4"
     },
     {
       "path": "uv.lock",
@@ -483,11 +491,11 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "2f7e65c0106b4cae582dbb868c537d465e69d169ec8771f2c61315a23c4ef4a4",
-    "catalog.json": "fc1f5e096e51e01e8e213618e043ea7ec41cc076ac6d5987a9f84c52a1c91bad",
-    "state.json": "51bf859b71f68f5702f897c0bc11880ddf7d7a71c54f42de58b879fe4ba729af",
-    "snapshot.bin": "66016501aa38410357c073e153be620dcab790f66759c58aea2fc6d9dc3fabe1",
-    "assets/sha256-75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8.glb": "75838e48dd88b319efd75c8f448ccebb9b116eafa4311cbf1f26c56980bc35a8",
+    "manifest.json": "ba90a77d740e23cd76f350883485b2d3b8856c0544ee23042fc2409771ed9a8a",
+    "catalog.json": "2dbf301526318c9e248244f033f7683c269b503a68e5de347a916bf1b484bf25",
+    "state.json": "9dca85ca2caf687669f1ddea4017be0d517d692245a76ed630965eaa7c901831",
+    "snapshot.bin": "0a7f5a80b57388703094953abbc8652c78003d1a2229b012e0fa624863cde990",
+    "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
     "assets/sha256-363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c.glb": "363009f5671fba4b25b357c97b8b82c6deca00c9f8761fe1337a18f11f1b4a9c",

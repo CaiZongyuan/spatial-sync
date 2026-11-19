@@ -13,6 +13,8 @@ TOOLS = {
     "suite_push", "agent_rsi", "agent_harness", "agent_baseline", "agent_candidate", "agent_tool_trace",
     "agent_round_start", "agent_round_settle", "agent_contamination", "agent_promotion_request",
     "robot_list", "robot_show", "robot_model_list", "robot_model_show", "controller_show",
+    "entity_type_list", "entity_type_show", "entity_type_register",
+    "robot_register", "robot_model_register", "controller_register",
     "policy_create", "policy_list", "policy_show",
     "policy_promote", "program_promote", "controller_promotion_show",
     "policy_check_observations", "policy_observation_checks", "policy_observation_check_show",

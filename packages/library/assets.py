@@ -306,7 +306,13 @@ class AssetLibrary:
                 provenance = json.loads(provenance_file.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 provenance = {"error": "Provenance has not passed S4 validation"}
+        from packages.library.entity_types import EntityTypes
+
         definitions = load_entity_types()
+        for binding in version.metadata.get("implements", []):
+            snapshot = EntityTypes(self.roots["user"]).require_pin(binding)
+            if snapshot:
+                definitions[binding["type"]] = snapshot.declaration
         report = version.report()
         return deepcopy(
             version.summary()

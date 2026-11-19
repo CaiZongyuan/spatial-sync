@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-19T03:55:43.525272+00:00",
+  "capturedAt": "2026-11-19T13:26:04.092315+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -21,7 +21,7 @@
     },
     {
       "path": "apps/api/app/sources/synthetic_source.py",
-      "sha256": "5e30e27861c6a195519513308f541f34bc3d08ad6cc45e3729dd241f247c22de"
+      "sha256": "9617dd02dd5ff5b1ff908a13a4c87910b7d6a0c85a27925953faed460d8d676f"
     },
     {
       "path": "assets/registry.yaml",
@@ -89,7 +89,7 @@
     },
     {
       "path": "packages/info/catalog.py",
-      "sha256": "96f31032addaa0901ace62097610d3ae62ff686ad5db855bdf4e0bea780a33fa"
+      "sha256": "600c176ffb5d566a814794d7d639587b493e72acb593b5197a2da45b73347463"
     },
     {
       "path": "packages/info/conditions.py",
@@ -97,7 +97,7 @@
     },
     {
       "path": "packages/info/declarations.py",
-      "sha256": "c6ed9509200157374509b73a9c90e51797673827dae69cb89c8eb52eb31d07d6"
+      "sha256": "af14520093aac28d80ad7d6fae3f0be5d50efdb0e8ce779def0ae55abbae2d2c"
     },
     {
       "path": "packages/info/diff.py",
@@ -124,8 +124,12 @@
       "sha256": "0a7a9779b7a1be341b94bb3c9da5e887f93c7c8e9f707ffc403692d31e2da405"
     },
     {
+      "path": "packages/library/entity_types.py",
+      "sha256": "2ba1bc32435f662578e09cf2fde6d75d74957b8decb5d2002d76d196ef1decb8"
+    },
+    {
       "path": "packages/library/previews.py",
-      "sha256": "eb24d219c105b2509ee2b3734499f233074e92b17ab7bce86dab8d85476eca75"
+      "sha256": "80e2dc9249c841c8b96977dd3754862c1591f9ea30902e1ac6b4e3b49d665e07"
     },
     {
       "path": "packages/library/reports.py",
@@ -133,11 +137,15 @@
     },
     {
       "path": "packages/library/scenes.py",
-      "sha256": "bc23f21ec21fcf884c8145499c2d8ce26ac717e911b642deb5720a0128d6f836"
+      "sha256": "95d991701ac47a2dad702fe57f6ca918fedb1a4f5e2cf35ca14999baef759da4"
     },
     {
       "path": "packages/library/templates.py",
-      "sha256": "749c6a24fed465f95a2f28f59ad1025df35d2484b04be3c0039a665b30535b33"
+      "sha256": "072a862f6922ebb7970e653d195c980427252ff2e601f1ba8dfd99e1de0ef719"
+    },
+    {
+      "path": "packages/library/transactions.py",
+      "sha256": "be2942b24274a8d12b6a66f7378fc856eef59b149679671d7fcded1eb581f238"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -209,7 +217,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "ac1de1057bced1359beebd86597a2256c8a02419b56105cd51c674bec56fa70a"
+      "sha256": "f3e6335753b5cbf5bdcbc8eb47c4a42447d859f7dd097f01488aa6670c4712c4"
     },
     {
       "path": "uv.lock",
@@ -223,10 +231,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "288798050e2a551af1ada0832be0dbe819d8f26091a5bb701d8da55510cb86fa",
-    "catalog.json": "6299d86252538df31554b9fb2632a00c44834cfb7847d71d62676666c89bbc3b",
-    "state.json": "5a93de80aeb43bb1e96a5a0d2efe3b7f78d01b5f4df11fe0723ca4bb8bc376e2",
-    "snapshot.bin": "8504d3493c06ca6884d5d280475b3942898176dc0b7c1aa1a2ad141b38e5fd84"
+    "manifest.json": "00748371eea783f749c4d3c8b8ca6288538e10779f0d346c3d084259d7291485",
+    "catalog.json": "18db29f105c51aa08aa29837e2f297184031db5b0ca7902687223b6a41570544",
+    "state.json": "72489ca1598d4c851c0ce696674ea1c3d2366e2bc22f7e1c044c37bd707bd70a",
+    "snapshot.bin": "d3e95830e3b5f4dc1db0a2a32268528f4ee4719a3294672ade0febc4dae2d8ea"
   },
   "counts": {
     "physicalEntities": 33,

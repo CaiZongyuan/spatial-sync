@@ -87,7 +87,8 @@ class SyntheticSource:
             self.manifest,
             self.scene_package.name if self.scene_package else scene_id,
             REGISTRY,
-            **({"scene_file": self.scene_package.path / "devices.yaml"} if self.scene_package else {}),
+            **({"scene_file": self.scene_package.path / "devices.yaml",
+                "extra_types": self.scene_package.entity_types() or None} if self.scene_package else {}),
             template_assets=self.scene_package.template_assets if self.scene_package else None,
         )
         self.host = HostCore(
