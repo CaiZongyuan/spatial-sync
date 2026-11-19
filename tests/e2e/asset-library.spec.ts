@@ -40,6 +40,7 @@ async function opaqueBounds(image: Locator) {
   });
 }
 test('real asset API, URL filters, shared thumbnails and FR3 completeness stay static', async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1600, height: 1000 });
   const assets = (await (await request.get(`${api}/api/v1/library/assets?kind=robot&q=Franka&gaps=true`)).json()).assets;
   const asset = assets.find((value: { id: string }) => value.id === 'robot/fr3@1');

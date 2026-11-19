@@ -119,11 +119,21 @@ export function useThumbnailQueue<T>({ theme, prepare }: {
   }, [canPersist]);
 
   useEffect(() => {
-    if (!busyRef.current && canPersist) {
-      if (pendingRef.current.length > 0) pump();
-      else setActive(undefined);
+    if (busyRef.current || !canPersist) return;
+    if (pendingRef.current.length === 0) {
+      setActive(undefined);
+      return;
     }
-  }, [canPersist, queueVersion, pump]);
+    if (active) {
+      pump();
+      return;
+    }
+    // Defer the first offscreen WebGL capture briefly so initial navigation and quick theme/filter toggles stay snappy.
+    const timer = setTimeout(() => {
+      if (!busyRef.current && pendingRef.current.length > 0) pump();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [active, canPersist, queueVersion, pump]);
 
   useEffect(() => {
     if (!active) return;

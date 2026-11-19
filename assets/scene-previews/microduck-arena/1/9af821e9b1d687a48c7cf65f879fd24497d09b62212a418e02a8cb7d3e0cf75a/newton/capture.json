@@ -15,7 +15,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T03:19:34.050122+00:00",
+  "capturedAt": "2026-11-19T03:56:04.187885+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -457,10 +457,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "cf5267632e5c20e23d9624c681c2799fa5f169dcf26d2142c97ed6539209ba54",
-    "catalog.json": "a4aa8fc176799f054cd7b597a8f45528face60e2ed0f3e2f7c8c4fb52bcc0677",
-    "state.json": "08c7295f2d602396e463f933b51cce8624e1f6e9f195b710e8f8777ebe17fd01",
-    "snapshot.bin": "8ee1289f13322ae0b3979635ba966c7126207774ecb9bd1ab512b70cccd47b68",
+    "manifest.json": "786597f98ed93b84a90746496ba4c0c739adc08e1b08dbde09812ebc76523ce4",
+    "catalog.json": "151a60625da3d0ac001eb460fd37061108571db3d5e55c7bc087d7d58cbfe53b",
+    "state.json": "abe376dada89010c57c37d4d10d11fe5b89fc61231cade43c87b5d7313b259a8",
+    "snapshot.bin": "4871a6891a13b01d16958440c70d8aff597f7fdd3b77df3003a83310c410c195",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",
