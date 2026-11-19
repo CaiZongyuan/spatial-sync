@@ -10,7 +10,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-19T13:26:53.746905+00:00",
+  "capturedAt": "2026-11-19T14:30:34.750021+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -294,7 +294,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
+      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
     },
     {
       "path": "packages/library/scenes.py",
@@ -302,7 +302,7 @@
     },
     {
       "path": "packages/library/structural.py",
-      "sha256": "fa5eebb0c73986e9d07e3d1fb7f3156042e14fdb0b08a58085e4cf8193318add"
+      "sha256": "fb2bd0bda5463369b40e4bfe4e0e5fc587889cd7948b9376d52b3c45c1169203"
     },
     {
       "path": "packages/library/templates.py",
@@ -474,7 +474,7 @@
     },
     {
       "path": "packages/sim_runtime/loaders.py",
-      "sha256": "d41a0d4126e9ab9aca62dc017d124c4d6401f0174eb91fbc0d5f9211df9f0082"
+      "sha256": "71c0deed5d73db10ac4783d7b5b55bea480f60e68a1cc78a7bc7255508cbc0b3"
     },
     {
       "path": "packages/sim_runtime/manifest_export.py",
@@ -552,10 +552,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "cf830c0a9761376a79b8dbcc895d2e5bcdd14a17b5ea62f41d3fb853c26c62bd",
-    "catalog.json": "bdee43a679bcfeb1e302400aa2843d27637a1fb0165231d9b488c3bed3d31266",
-    "state.json": "3363aca4a9c1fff4b5151cfa5d9927ffbb019a81121bf4ecc1037efbdde9c739",
-    "snapshot.bin": "60fc89c5a2151376125edd571b02070210091d256beb0c151e1ff3e565f5cf7c",
+    "manifest.json": "62cffdb3fc8f235c350c55b58b7f66735c6abc09fc8e9d434680a4a11e96bf7f",
+    "catalog.json": "b70013952a26f76318a7ab36e892226419e3da77b3a5c8236b34bb5635c75dcc",
+    "state.json": "85e6bb2cf3116b3ef93b771e3a899b287ebf16464a3c93fe8ab97de5ed0e217a",
+    "snapshot.bin": "86b7c3b283de57a60deadea1a780d811fa1a087f68a7db0e9e6e10e2c29d9e22",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",

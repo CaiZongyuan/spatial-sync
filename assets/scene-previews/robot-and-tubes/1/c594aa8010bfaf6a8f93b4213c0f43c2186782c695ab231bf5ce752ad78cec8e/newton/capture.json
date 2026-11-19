@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T13:27:51.737996+00:00",
+  "capturedAt": "2026-11-19T14:29:39.963948+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -241,7 +241,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
+      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
     },
     {
       "path": "packages/library/scenes.py",
@@ -249,7 +249,7 @@
     },
     {
       "path": "packages/library/structural.py",
-      "sha256": "fa5eebb0c73986e9d07e3d1fb7f3156042e14fdb0b08a58085e4cf8193318add"
+      "sha256": "fb2bd0bda5463369b40e4bfe4e0e5fc587889cd7948b9376d52b3c45c1169203"
     },
     {
       "path": "packages/library/templates.py",
@@ -491,10 +491,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "ba90a77d740e23cd76f350883485b2d3b8856c0544ee23042fc2409771ed9a8a",
-    "catalog.json": "2dbf301526318c9e248244f033f7683c269b503a68e5de347a916bf1b484bf25",
-    "state.json": "9dca85ca2caf687669f1ddea4017be0d517d692245a76ed630965eaa7c901831",
-    "snapshot.bin": "0a7f5a80b57388703094953abbc8652c78003d1a2229b012e0fa624863cde990",
+    "manifest.json": "137768fd0c038d705a55fe7a4f25773b80c029b0d1575c7b6379ae59d44d5353",
+    "catalog.json": "6dab3965da9f4d5dc431e25a2b94ad9efee60e20413a68eb87b25e546cd7b71c",
+    "state.json": "f088923d7dfcf9a350abce5a44c68cf26809d00bdba4d24b892741000f617d18",
+    "snapshot.bin": "c44b6d52e018a1a4d81e547d09acd0fbf4672f40bb8d9401eebbe8f5b9736f38",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

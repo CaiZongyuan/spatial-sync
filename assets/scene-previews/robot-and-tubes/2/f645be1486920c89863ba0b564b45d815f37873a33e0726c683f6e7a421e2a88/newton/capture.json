@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T13:28:11.366499+00:00",
+  "capturedAt": "2026-11-19T14:29:58.915493+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -354,7 +354,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
+      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
     },
     {
       "path": "packages/library/scenes.py",
@@ -362,7 +362,7 @@
     },
     {
       "path": "packages/library/structural.py",
-      "sha256": "fa5eebb0c73986e9d07e3d1fb7f3156042e14fdb0b08a58085e4cf8193318add"
+      "sha256": "fb2bd0bda5463369b40e4bfe4e0e5fc587889cd7948b9376d52b3c45c1169203"
     },
     {
       "path": "packages/library/templates.py",
@@ -604,10 +604,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "f9dc828331a10717641c6370a0fd0e6beff8074d4b96269167c728a7f7637672",
-    "catalog.json": "0015ba6298a64bbc79fae289d4bec063d94edaf3e694a64ae66b748c0680ae92",
-    "state.json": "0b9b9dfb885b4c4168147a4823db9d5a4866287cdac9ddf3e599edbd5ac0ff23",
-    "snapshot.bin": "3646501c18a1ea1f94c9209089e6db00201e46203774f05f0a0b2bf584897e54",
+    "manifest.json": "4fdd131345ec08a5f7387634450942c9f43aea917c6d06fcd0d2429530d52431",
+    "catalog.json": "a4af03a2add611b850deb379e3822cdb2dbe0763d505ca2094c59505bda87a60",
+    "state.json": "8a7174f4c38ecf3c79955202efe302132a81db6de687b80f4a0f96f0cef074b6",
+    "snapshot.bin": "0bd6b327ad6c0960044c2efe4b5c7f65efb59fa7bf6f99bb64ebda0f875a40be",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

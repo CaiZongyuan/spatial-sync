@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-19T13:26:03.190550+00:00",
+  "capturedAt": "2026-11-19T14:28:54.847438+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -133,7 +133,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "6badbf816c2bc8f86be7d7c61c5c521c2397ce1421dade577410f150f6a3ec66"
+      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
     },
     {
       "path": "packages/library/scenes.py",
@@ -231,10 +231,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "ca4d2ca935d00440673deeaa7a03823d915b8e6900040ae321f6874352c4296b",
-    "catalog.json": "b6bbe18e9bee5ef514dc54f7c3429cc3bf8e08701ea27a11b037093b1adbc8c7",
-    "state.json": "e7078100daea5de0a4c8151cc8e4d1692c794987a46d1ea0fbce1965c2d605c9",
-    "snapshot.bin": "0b030bc57d8ed70ace3b71b338712affd69ef397b6029d5ec046f25e1a490346"
+    "manifest.json": "447d8efeecbc4590fd79826511d01ab1bafb4f506ba9aefc40b680fa1e283dfa",
+    "catalog.json": "9d11ffde3bafb63f8674ebc9838a611d53ecd15054855cb1c5775f6e4e66f041",
+    "state.json": "4a20af0db21308a8b4ccde521662c23df1d322dc9620454dd238b6df49d0fe1a",
+    "snapshot.bin": "92abfa53bb78d8bcb9a6049b4c6d73386b052a7ca8daf37d1d0829edc4119d38"
   },
   "counts": {
     "physicalEntities": 30,
