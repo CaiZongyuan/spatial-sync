@@ -97,7 +97,7 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
             task_document=task,
         )
         registered = client.post(
-            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
         )
         assert registered.status_code == 201, registered.text
         response = client.get("/api/v1/policies/training-probe/1/export")
