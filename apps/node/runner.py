@@ -31,6 +31,29 @@ from packages.training.inputs import pack_package
 GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
 
 
+def work_directory_id(job_id, lease_id):
+    return hashlib.sha256((job_id + lease_id).encode()).hexdigest()[:24]
+
+
+def owned_processes_clean(root):
+    try:
+        for path in root.iterdir():
+            if not path.match("process-*.json"):
+                continue
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            if not cleanup_confirmed(root, receipt):
+                return False
+            try:
+                process = psutil.Process(receipt["pid"])
+                if process.create_time() == receipt["createdAt"] and process.cmdline() == receipt["command"]:
+                    return False
+            except psutil.NoSuchProcess:
+                continue
+    except (OSError, ValueError, KeyError, TypeError, psutil.AccessDenied):
+        return False
+    return True
+
+
 def trainer_environment():
     return {key: value for key, value in os.environ.items() if key not in GATEWAY_CREDENTIALS}
 
@@ -177,8 +200,7 @@ def mjlab_trainer_arguments(inputs, callback):
 class OwnedRun:
     def __init__(self, node, assignment):
         self.node, self.assignment = node, assignment
-        identity = hashlib.sha256((assignment["jobId"] + assignment["leaseId"]).encode()).hexdigest()[:24]
-        self.root = node.root / "work" / identity
+        self.root = node.root / "work" / work_directory_id(assignment["jobId"], assignment["leaseId"])
         self.view_directory = self.root / "view-state"
         self.view_active = threading.Event()
         self.cancel = threading.Event()
@@ -495,30 +517,17 @@ class OwnedRun:
     def report(self):
         # An exit during any producer-owned read requires another report for its final data.
         producer_finished = not self.thread.is_alive() and not self.uncertain_owner
-        if self.uncertain_owner:
-            alive = False
-            for receipt in self.root.glob("process-*.json"):
-                value = json.loads(receipt.read_text(encoding="utf-8"))
-                if not cleanup_confirmed(self.root, value):
-                    alive = True
-                try:
-                    process = psutil.Process(value["pid"])
-                    alive |= (
-                        process.create_time() == value["createdAt"] and process.cmdline() == value["command"]
-                    )
-                except psutil.NoSuchProcess:
-                    continue
-                except psutil.AccessDenied:
-                    alive = True
-            if not alive:
-                result = self.root / "result.json"
-                if result.exists():
-                    saved = json.loads(result.read_text(encoding="utf-8"))
-                    self.status, self.reason = saved["status"], saved["reason"]
-                else:
-                    self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
-                self.uncertain_owner = False
-                self.finished = time.monotonic()
+        if self.uncertain_owner and owned_processes_clean(self.root):
+            result = self.root / "result.json"
+            if result.exists():
+                saved = json.loads(result.read_text(encoding="utf-8"))
+                self.status, self.reason = saved["status"], saved["reason"]
+            else:
+                self.status, self.reason = "failed", "node_restart_after_owned_process_exit"
+            self.uncertain_owner = False
+            self.finished = time.monotonic()
+        if producer_finished and "cleanup" in self.assignment and not owned_processes_clean(self.root):
+            producer_finished = False
         metrics = self.root / "output/metrics.jsonl"
         if metrics.exists():
             complete = metrics.read_text(encoding="utf-8").splitlines()
@@ -599,14 +608,48 @@ class LocalNode:
         self.active = {}
         self.capabilities_path = None
         self.process_memory = {}
+        self.cleanup_receipts = self.root / "cleanup-receipts"
+
+    def _remember_cleanup(self, assignment):
+        capability = assignment.get("cleanup")
+        if capability is None or capability["schemaVersion"] != 1:
+            return
+        job, lease = assignment["jobId"], assignment["leaseId"]
+        # Save the capability before starting any subprocess. The work directory then records each launcher.
+        durable_json(self.cleanup_receipts / f"{work_directory_id(job, lease)}.json", {
+            "url": self.url, "token": capability["token"],
+            "receipt": {
+                "schemaVersion": 1, "nodeId": self.node_id, "instanceId": self.instance,
+                "jobId": job, "leaseId": lease, "gpuId": assignment["gpuId"],
+            },
+        })
+
+    async def _send_cleanup(self, http, *, stopping=False):
+        active = {run.root.name for run in self.active.values()}
+        for path in self.cleanup_receipts.glob("*.json"):
+            if not stopping and path.stem in active:
+                continue
+            if not await asyncio.to_thread(owned_processes_clean, self.root / "work" / path.stem):
+                continue
+            try:
+                pending = json.loads(path.read_text(encoding="utf-8"))
+                if pending["url"] != self.url:
+                    continue
+                response = await http.post(
+                    "/api/v1/nodes/cleanup", json=pending["receipt"],
+                    headers={"X-Node-Cleanup-Token": pending["token"]},
+                )
+                if response.status_code == 204:
+                    path.unlink()
+            except (OSError, ValueError, KeyError, httpx.TransportError):
+                continue  # Retain the receipt for a later poll or a subsequent runner process.
 
     async def run(self):
         view_worker = asyncio.create_task(relay_views(self), name="node-view-relays")
-        async with httpx.AsyncClient(
-            base_url=self.url, headers=self.headers, trust_env=False, timeout=10
-        ) as http:
+        async with httpx.AsyncClient(base_url=self.url, trust_env=False, timeout=10) as http:
             try:
                 while True:
+                    await self._send_cleanup(http)
                     if (self.root / "stop").exists():
                         return
                     if self.capabilities_path:
@@ -637,6 +680,7 @@ class LocalNode:
                     try:
                         response = await http.post(
                             f"/api/v1/nodes/{self.node_id}/heartbeat",
+                            headers=self.headers,
                             json={
                                 **self.capabilities,
                                 "instanceId": self.instance,
@@ -656,6 +700,7 @@ class LocalNode:
                                 del self.active[identity]
                         for identity, assignment in assignments.items():
                             if identity not in self.active:
+                                self._remember_cleanup(assignment)
                                 self.active[identity] = OwnedRun(self, assignment)
                             elif self.active[identity].assignment["leaseId"] != assignment["leaseId"]:
                                 raise RuntimeError("Node cannot replace an owned live dispatch")
@@ -684,6 +729,7 @@ class LocalNode:
                 await asyncio.gather(
                     *(asyncio.to_thread(owned.thread.join) for owned in self.active.values())
                 )
+                await self._send_cleanup(http, stopping=True)
 
 
 def main():

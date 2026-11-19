@@ -11,6 +11,8 @@ from pathlib import Path
 
 import psutil
 
+from packages.library.transactions import durable_json
+
 
 class CleanupIncomplete(RuntimeError):
     pass
@@ -71,17 +73,15 @@ class OwnedProcess:
                 win32job.SetInformationJobObject(self.job, win32job.JobObjectExtendedLimitInformation, limits)
                 win32job.AssignProcessToJobObject(self.job, int(self.process._handle))
             current = psutil.Process(self.process.pid)
-            (Path(cwd) / f"process-{identity}.json").write_text(
-                json.dumps(
-                    {
-                        "pid": self.process.pid,
-                        "createdAt": current.create_time(),
-                        "command": current.cmdline(),
-                        "cleanup": self.cleanup.name,
-                        "jobName": self.job_name if os.name == "nt" else None,
-                    }
-                ),
-                encoding="utf-8",
+            durable_json(
+                Path(cwd) / f"process-{identity}.json",
+                {
+                    "pid": self.process.pid,
+                    "createdAt": current.create_time(),
+                    "command": current.cmdline(),
+                    "cleanup": self.cleanup.name,
+                    "jobName": self.job_name if os.name == "nt" else None,
+                },
             )
             self.process.stdin.write(
                 (

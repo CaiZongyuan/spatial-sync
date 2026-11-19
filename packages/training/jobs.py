@@ -68,6 +68,8 @@ class TrainingJobs:
         self.path = manager.settings.state_root / "jobs.json"
         self.records, self.nodes = {}, {}
         self.registrations, self.node_credentials = {}, {}
+        self.gpu_quarantine = {}
+        self.cleanup_key = secrets.token_hex(32)
         self.lease_sequence = 0
         self.validation_profiles = {}
         self._worker = None
@@ -91,11 +93,15 @@ class TrainingJobs:
             self.records, self.nodes = saved["jobs"], saved["nodes"]
             self.registrations = saved.get("registrations", {})
             self.node_credentials = saved.get("nodeCredentials", {})
+            self.gpu_quarantine = saved.get("gpuQuarantine", {})
+            self.cleanup_key = saved.get("cleanupKey", self.cleanup_key)
             self.lease_sequence = saved.get("leaseSequence", 0)
         self.manager.costs.prepare(self.records)
         # Retain leases while a live node reconnects; a restart never invents an idle GPU.
+        now = self.clock()
         for node in self.nodes.values():
-            node["reconnectDeadline"] = self.clock() + 60
+            if node["id"] == "local" or not self._offline(node, now):
+                node["reconnectDeadline"] = now + 60
         for approval in list(self.manager.approvals.records.values()):
             if (
                 approval.subject == "job"
@@ -123,6 +129,7 @@ class TrainingJobs:
             durable_json(self.path, {
                 "jobs": self.records, "nodes": self.nodes, "registrations": self.registrations,
                 "nodeCredentials": self.node_credentials, "leaseSequence": self.lease_sequence,
+                "gpuQuarantine": self.gpu_quarantine, "cleanupKey": self.cleanup_key,
             })
         except (OSError, ValueError) as exc:
             self._failure = True
@@ -194,10 +201,11 @@ class TrainingJobs:
         with self.manager._resource_lock:
             if identity not in self.node_credentials:
                 raise PlanError("unknown_node", "Unknown registered Compute Node", status=404)
-            del self.node_credentials[identity]
-            node = self.nodes.pop(identity, None)
+            node = self.nodes.get(identity)
             if node:
                 self._fence_node(node, "node_revoked", self.clock())
+                del self.nodes[identity]
+            del self.node_credentials[identity]
             self._save()
 
     def authenticated_node(self, headers, identity=None):
@@ -213,7 +221,7 @@ class TrainingJobs:
         return bool(record and hmac.compare_digest(_secret_digest(token), record["digest"]))
 
     def _has_lease(self, job):
-        return any(
+        return job["leaseId"] in self.gpu_quarantine or any(
             lease["jobId"] == job["jobId"]
             for node in self.nodes.values()
             for lease in node["leases"].values()
@@ -436,15 +444,7 @@ class TrainingJobs:
         self._require_available()
         now = self.clock()
         for node in self.nodes.values():
-            offline = now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
-            for lease in node["leases"].values():
-                job = self.records[lease["jobId"]]
-                timed_out = (
-                    job["kind"] == "plan_validation" and now - lease["assignedAt"] > VALIDATION_TIMEOUT
-                )
-                if offline or timed_out:
-                    self._fail_lease(lease, "node_lost" if offline else "validation_timeout", now)
-                    lease["quarantined"] = True
+            self._expire_leases(node, now)
         for job in self.records.values():
             if job["status"] != "queued" or job["leaseId"]:
                 continue
@@ -528,7 +528,9 @@ class TrainingJobs:
             for session in self.manager.platform_sessions()
         ):
             return "session_gpu_busy"
-        if resource["id"] in node["leases"] or (
+        if resource["id"] in node["leases"] or any(
+            row["gpuId"] == resource["id"] for row in self.gpu_quarantine.values()
+        ) or (
             resource["id"] != "cpu" and self._colocated(node)
             and any(self._colocated(peer) and resource["id"] in peer["leases"]
                     for peer in self.nodes.values())
@@ -545,6 +547,8 @@ class TrainingJobs:
             self.lease_sequence += 1
             lease = {"jobId": job["jobId"], "leaseId": str(self.lease_sequence), "assignedAt": now,
                      "quarantined": False}
+            if node["id"] != "local" and resource["id"] != "cpu":
+                lease["cleanupVersion"] = 1
             if versions := _trainer_versions(node, backend):
                 lease.update(trainerVersions=versions, backend=backend)
                 if backend == "mjlab":
@@ -557,16 +561,92 @@ class TrainingJobs:
 
     def holds_gpu(self):
         with self.manager._resource_lock:
-            return self._failure or any(any(key != "cpu" for key in node["leases"])
-                                        for node in self.nodes.values() if self._colocated(node))
+            return (
+                self._failure or any(row["colocated"] for row in self.gpu_quarantine.values())
+                or any(any(key != "cpu" for key in node["leases"])
+                       for node in self.nodes.values() if self._colocated(node))
+            )
 
     def _colocated(self, node):
         return node["id"] == "local" or self.node_credentials.get(node["id"], {}).get("colocated", False)
 
     def _fence_node(self, node, reason, now):
-        for lease in node["leases"].values():
-            self._fail_lease(lease, reason, now)
-        node["leases"].clear()
+        for resource in tuple(node["leases"]):
+            self._fence_lease(node, resource, reason, now)
+
+    @staticmethod
+    def _offline(node, now):
+        return now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
+
+    def _validation_expired(self, lease, now):
+        return (
+            self.records[lease["jobId"]]["kind"] == "plan_validation"
+            and now - lease["assignedAt"] > VALIDATION_TIMEOUT
+        )
+
+    def dispatch_expired(self, node, lease):
+        now = self.clock()
+        return lease["quarantined"] or self._offline(node, now) or self._validation_expired(lease, now)
+
+    def _expire_leases(self, node, now):
+        offline = self._offline(node, now)
+        with self.manager._resource_lock:
+            if offline and node["id"] != "local" and node["leases"]:
+                node["instanceExpired"] = True
+            changed = False
+            for resource, lease in tuple(node["leases"].items()):
+                if node["id"] == "local" and lease["quarantined"]:
+                    continue
+                if offline or lease["quarantined"] or self._validation_expired(lease, now):
+                    self._fence_lease(node, resource, "node_lost" if offline else "validation_timeout", now)
+                    changed = True
+            return changed
+
+    def _fence_lease(self, node, resource, reason, now):
+        lease = node["leases"][resource]
+        self._fail_lease(lease, reason, now)
+        if node["id"] == "local":
+            lease["quarantined"] = True  # Retained local owners can still send their legacy terminal report.
+            return
+        if resource != "cpu":
+            receipt = self._cleanup_scope(node, resource, lease)
+            self.gpu_quarantine[lease["leaseId"]] = receipt | {"colocated": self._colocated(node)}
+        del node["leases"][resource]
+
+    def _cleanup_scope(self, node, resource, lease):
+        return {
+            "schemaVersion": lease.get("cleanupVersion"), "nodeId": node["id"],
+            "instanceId": node["instanceId"], "jobId": lease["jobId"],
+            "leaseId": lease["leaseId"], "gpuId": resource,
+        }
+
+    def _cleanup_token(self, receipt):
+        payload = json.dumps(receipt, sort_keys=True).encode()
+        return hmac.digest(bytes.fromhex(self.cleanup_key), payload, "sha256").hex()
+
+    def clean_gpu(self, body, token):
+        self._require_available()
+        receipt = body.model_dump()
+        if not hmac.compare_digest(self._cleanup_token(receipt).encode(), token.encode()):
+            raise PlanError(
+                "cleanup_auth_required", "Cleanup capability does not match this lease", status=403
+            )
+        with self.manager._resource_lock:
+            node = self.nodes.get(body.nodeId)
+            lease = node and node["leases"].get(body.gpuId)
+            if lease and lease["leaseId"] == body.leaseId:
+                if not self.dispatch_expired(node, lease):
+                    raise PlanError("cleanup_lease_active", "The receipt is for an active lease", status=409)
+                self._expire_leases(node, self.clock())
+            reserved = self.gpu_quarantine.get(body.leaseId)
+            if reserved is None:
+                return  # A signed receipt can be retried after this lease has released.
+            if any(reserved[key] != value for key, value in receipt.items()):
+                raise PlanError(
+                    "cleanup_auth_required", "Receipt does not match the quarantined lease", status=403
+                )
+            del self.gpu_quarantine[body.leaseId]
+            self._save()
 
     def _fail_lease(self, lease, reason, now):
         job = self.records[lease["jobId"]]
@@ -620,7 +700,11 @@ class TrainingJobs:
         self._require_available()
         now = self.clock()
         node = self.nodes.get(identity)
+        if node and self._expire_leases(node, now):
+            self._save()
         changed_instance = node is not None and node["instanceId"] != body.instanceId
+        if node and not changed_instance and node.get("instanceExpired"):
+            raise PlanError("node_owner_conflict", "The node instance expired", status=403)
         if changed_instance and (
             body.instanceId in node.get("retiredInstances", [])
             or identity == "local" and node["leases"]
@@ -636,6 +720,10 @@ class TrainingJobs:
         runtimes = {"trainerVersions": body.trainerVersions, "isaaclabVersions": body.isaaclabVersions}
         for report in body.reports:
             job = self.get(report.jobId)
+            if report.leaseId in self.gpu_quarantine or (
+                identity != "local" and job["reason"] == "validation_timeout"
+            ):
+                raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
             data = report.model_dump()
             if report.validation is None:
                 del data["validation"]
@@ -651,10 +739,7 @@ class TrainingJobs:
                 or lease["leaseId"] != report.leaseId
                 or job["nodeId"] != identity
                 or node["instanceId"] != body.instanceId
-                or identity != "local" and (
-                    now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
-                    or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
-                )
+                or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
             if report.elapsedSeconds < job["metrics"].get("elapsedSeconds", 0):
@@ -683,6 +768,8 @@ class TrainingJobs:
                 self._fence_node(node, "node_instance_replaced", now)
                 node.setdefault("retiredInstances", []).append(node["instanceId"])
                 node["instanceId"] = body.instanceId
+                node.pop("instanceExpired", None)
+                self._save()
         if node["leases"] and node.get("hardware", body.hardware) != body.hardware:
             raise PlanError("node_owner_conflict", "Hardware changed while a lease is retained")
         node.update(
@@ -745,10 +832,17 @@ class TrainingJobs:
                     or self.records[lease["jobId"]]["status"] in TERMINAL,
                     **({"timeoutSeconds": VALIDATION_TIMEOUT}
                        if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
+                    **self._cleanup_offer(node, gpu, lease),
                 }
                 for gpu, lease in node["leases"].items()
             ],
         }
+
+    def _cleanup_offer(self, node, resource, lease):
+        if lease.get("cleanupVersion") != 1:
+            return {}
+        scope = self._cleanup_scope(node, resource, lease)
+        return {"cleanup": {"schemaVersion": lease["cleanupVersion"], "token": self._cleanup_token(scope)}}
 
     def list_nodes(self):
         identities = dict.fromkeys((*self.nodes, *self.node_credentials) if self.manager.settings.remote

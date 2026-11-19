@@ -23,6 +23,15 @@ class ExchangeRegistration(Schema):
     code: str = Field(min_length=32, max_length=128)
 
 
+class CleanupReceipt(Schema):
+    schemaVersion: Literal[1]
+    nodeId: NodeId
+    instanceId: Text
+    jobId: Text
+    leaseId: Text
+    gpuId: str = Field(min_length=1, max_length=128)
+
+
 class StartJob(Schema):
     planId: Text
     seed: int | None = None

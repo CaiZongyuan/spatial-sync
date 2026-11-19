@@ -10,7 +10,13 @@ from fastapi.responses import Response
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
 from packages.training.inputs import export_input, input_packages, store_artifacts
-from packages.training.job_contract import ExchangeRegistration, NodeHeartbeat, NodeRegistration, StartJob
+from packages.training.job_contract import (
+    CleanupReceipt,
+    ExchangeRegistration,
+    NodeHeartbeat,
+    NodeRegistration,
+    StartJob,
+)
 
 
 def install_job_routes(app, manager, role_for, views=None):
@@ -35,8 +41,7 @@ def install_job_routes(app, manager, role_for, views=None):
                 or lease["jobId"] != identity
                 or lease["leaseId"] != request.headers.get("x-lease-id")
                 or owner["instanceId"] != request.headers.get("x-node-instance")
-                or lease["quarantined"]
-                or jobs.clock() > max(owner["lastSeen"] + 60, owner.get("reconnectDeadline", 0))
+                or jobs.dispatch_expired(owner, lease)
             ):
                 raise PlanError("lease_mismatch", "Node does not own this dispatch", status=403)
             return job
@@ -90,6 +95,10 @@ def install_job_routes(app, manager, role_for, views=None):
     async def register(body: ExchangeRegistration, response: Response):
         response.headers["Cache-Control"] = "no-store"
         return jobs.register_node(body.code)
+
+    @app.post("/api/v1/nodes/cleanup", status_code=204)
+    async def cleanup(body: CleanupReceipt, request: Request):
+        jobs.clean_gpu(body, request.headers.get("x-node-cleanup-token", ""))
 
     @app.get("/api/v1/nodes/{node_id}")
     async def show_node(node_id: str):

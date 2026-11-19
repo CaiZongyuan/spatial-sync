@@ -540,14 +540,16 @@ def create_app(
                 return JSONResponse(
                     {"detail": {"code": "unauthorized", "message": "Origin is not allowed"}}, status_code=403
                 )
-            exchange = request.method == "POST" and request.url.path == "/api/v1/nodes/register"
+            node_proof = request.method == "POST" and request.url.path in (
+                "/api/v1/nodes/register", "/api/v1/nodes/cleanup",
+            )
             role = _role(request.headers, settings)
-            if role is None and not exchange:
+            if role is None and not node_proof:
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=401)
             if (
                 request.method in ("POST", "DELETE", "PUT", "PATCH")
                 and role != "operator"
-                and not exchange
+                and not node_proof
                 and not request.url.path.endswith("/actions")
             ):
                 return JSONResponse({"detail": {"code": "unauthorized"}}, status_code=403)

@@ -1,5 +1,6 @@
 """Public contracts for operators and outbound Compute Nodes."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -17,8 +18,10 @@ def remote_settings(**kwargs):
     return Settings(remote=True, operator_token="operator-fixture", viewer_token="viewer-fixture", **kwargs)
 
 
-def register(client, node_id):
-    issued = client.post("/api/v1/nodes/registrations", headers=OPERATOR, json={"nodeId": node_id})
+def register(client, node_id, *, colocated=False):
+    issued = client.post(
+        "/api/v1/nodes/registrations", headers=OPERATOR, json={"nodeId": node_id, "colocated": colocated},
+    )
     assert issued.status_code == 201, issued.text
     request = {"code": issued.json()["code"]}
     exchanged = client.post("/api/v1/nodes/register", json=request)
@@ -147,6 +150,7 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         training = client.get(f"/api/v1/jobs/{training['jobId']}", headers=operator).json()
         assert training["nodeId"] == "gpu-b" and training["estimatedGpuHours"] == 105 / 3600
         assert int(training["leaseId"]) > int(assignment["leaseId"])
+        (lease_assignment,) = beat(client, second, gpus=second_gpu, **runtime).json()["assignments"]
         old_lease = second | {"X-Lease-Id": training["leaseId"]}
         training_inputs = f"/api/v1/jobs/{training['jobId']}/inputs"
         assert client.get(training_inputs, headers=old_lease).is_success
@@ -163,6 +167,14 @@ def test_validation_profiles_pending_plan_without_opening_training_gate(tmp_path
         }
         assert beat(client, restarted, reports=[stale]).status_code == 403
 
+        receipt = {
+            "schemaVersion": 1, "nodeId": "gpu-b", "instanceId": second["X-Node-Instance"],
+            "jobId": training["jobId"], "leaseId": training["leaseId"], "gpuId": "GPU-b",
+        }
+        assert client.post(
+            "/api/v1/nodes/cleanup", headers={"X-Node-Cleanup-Token": lease_assignment["cleanup"]["token"]},
+            json=receipt,
+        ).status_code == 204
         extra = client.post("/api/v1/jobs", headers=operator, json=request | {"targetNodeId": "gpu-b"}).json()
         assert int(extra["leaseId"]) > int(training["leaseId"])
         assert client.delete("/api/v1/nodes/gpu-b", headers=operator).status_code == 204
@@ -236,8 +248,122 @@ def test_gateway_cuda_session_does_not_block_automatic_remote_scheduling():
             client.get(f"/api/v1/jobs/{job['jobId']}", headers=OPERATOR).json()["estimatedWallSeconds"] == 20
         )
         client.portal.call(session.close)
+        assert client.delete("/api/v1/nodes/gpu-a", headers=OPERATOR).status_code == 204
         fresh = client.portal.call(
             lambda: app.state.manager.create("falling-boxes", "newton", SessionOptions(device="cuda:0"))
         )
         assert fresh.options.device == "cuda:0"
         client.portal.call(fresh.close)
+
+
+@pytest.mark.parametrize("fence", ["revoke", "replace", "expire"])
+def test_colocated_gpu_releases_only_for_its_cleanup_receipt(fence):
+    from apps.api.app.sources.synthetic_source import SyntheticSource
+    from packages.protocol.internal import SessionOptions
+    from packages.training.jobs import node_profile_key
+    from tests.fixtures.training_task import task_archive, training_plan
+
+    class CaptureNewton(SyntheticSource):
+        configure_scene = None
+
+        async def start(self, scene_id, options):
+            return await super().start("lab-demo", options)
+
+    settings = remote_settings()
+    now = [100.0]
+
+    def gateway():
+        app = create_app(settings, source_factory=lambda kind, identity: CaptureNewton(identity))
+        app.state.jobs.clock = lambda: now[0]
+        return TestClient(app)
+
+    def session_device(client):
+        async def read():
+            manager = client.app.state.manager
+            session = await manager.create("falling-boxes", "newton", SessionOptions(device="cuda:0"))
+            try:
+                return session.options.device
+            finally:
+                await session.close()
+
+        return client.portal.call(read)
+
+    url = "/api/v1/nodes/cleanup"
+    with gateway() as client:
+        task = client.post(
+            "/api/v1/tasks", headers=OPERATOR | {"Content-Type": "application/x-tar"}, content=task_archive()
+        ).json()
+        plan = client.post("/api/v1/plans", headers=OPERATOR, json=training_plan(task["id"])).json()
+        approval_url = f"/api/v1/approvals/{plan['approvalId']}/decision"
+        assert client.post(approval_url, headers=OPERATOR, json={"decision": "approve"}).is_success
+        original = register(client, "workstation", colocated=True)
+        gpu = {"id": "GPU-shared", "name": "Fixture CUDA GPU", "memoryUsedMb": 0.0}
+
+        def announce(client, headers):
+            identity = {"id": headers["X-Node-Id"], "hardware": "fixture", "trainerVersions": ISAAC_VERSIONS}
+            key = node_profile_key(plan, task["contentHash"], identity, gpu, backend="isaaclab")
+            return beat(client, headers, gpus=[gpu], trainerVersions=ISAAC_VERSIONS, profiles=[{
+                "key": key, "iterationSeconds": 1.0, "samples": 2, "measuredAt": now[0], "evidence": "fake",
+            }]).json()["assignments"]
+
+        def queue(client, node_id, seed):
+            response = client.post(
+                "/api/v1/jobs", headers=OPERATOR,
+                json={"planId": plan["id"], "targetNodeId": node_id, "seed": seed},
+            )
+            assert response.status_code == 202, response.text
+            return response.json()
+
+        assert announce(client, original) == []
+        first = queue(client, "workstation", 42)
+        (assignment,) = announce(client, original)
+        old = original | {"X-Lease-Id": first["leaseId"]}
+        job_url = f"/api/v1/jobs/{first['jobId']}"
+        assert client.get(f"{job_url}/inputs", headers=old).is_success
+        cleanup = assignment["cleanup"]
+        receipt = {
+            "schemaVersion": cleanup["schemaVersion"], "nodeId": original["X-Node-Id"],
+            "instanceId": original["X-Node-Instance"], "jobId": first["jobId"],
+            "leaseId": first["leaseId"], "gpuId": gpu["id"],
+        }
+        proof = {"X-Node-Cleanup-Token": cleanup["token"]}
+        assert client.post(url, headers=proof, json=receipt).status_code == 409
+        replacement = original | {"X-Node-Instance": "test-2"}
+        if fence == "revoke":
+            assert client.delete("/api/v1/nodes/workstation", headers=OPERATOR).status_code == 204
+            replacement = register(client, "replacement", colocated=True)
+        if fence == "expire":
+            now[0] += 61
+        assert announce(client, replacement) == []
+        assert queue(client, replacement["X-Node-Id"], 43)["leaseId"] is None
+        assert session_device(client) == "cpu"
+        stale = {"jobId": first["jobId"], "leaseId": first["leaseId"], "status": "cleaned", "logs": ["stale"]}
+        assert beat(client, original, reports=[stale]).status_code in (401, 403, 409)
+        assert client.get(f"{job_url}/inputs", headers=old).status_code in (401, 403)
+        assert client.post(f"{job_url}/artifacts", headers=old, content=b"stale").status_code in (401, 403)
+        assert client.get(f"{job_url}/logs", headers=OPERATOR).json()["lines"] == []
+        assert cleanup["token"] not in client.get("/api/v1/nodes", headers=OPERATOR).text
+        assert cleanup["token"] not in client.get(job_url, headers=OPERATOR).text
+
+    with gateway() as client:
+        now[0] += 900
+        assert announce(client, replacement) == []
+        assert session_device(client) == "cpu"
+        assert client.post(url, headers=original, json=receipt).status_code == 403
+        bad = receipt | {"instanceId": "test-2"}
+        assert client.post(url, headers=proof, json=bad).status_code == 403
+        bad = receipt | {"gpuId": "GPU-other"}
+        assert client.post(url, headers=proof, json=bad).status_code == 403
+        assert client.get("/api/v1/nodes", headers=proof).status_code == 401
+        assert announce(client, replacement) == []
+        assert client.post(url, headers=proof, json=receipt).status_code == 204
+        (new_lease,) = announce(client, replacement)
+        assert new_lease["leaseId"] != receipt["leaseId"]
+        assert client.post(url, headers=proof, json=receipt).status_code == 204
+        wrong_lease = receipt | {"leaseId": new_lease["leaseId"]}
+        assert client.post(url, headers=proof, json=wrong_lease).status_code == 403
+        assert announce(client, replacement) == [new_lease]
+
+    with gateway() as client:
+        assert client.post(url, headers=proof, json=receipt).status_code == 204
+        assert announce(client, replacement) == [new_lease]
