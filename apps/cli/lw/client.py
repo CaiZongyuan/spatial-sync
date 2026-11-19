@@ -636,6 +636,16 @@ class GatewayClient:
     async def library_import(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/library/imports", actor)
 
+    async def robot_calibrate(self, id, recipe, *, actor="cli:lw"):
+        if not re.fullmatch(r"robot/[a-z0-9]+(?:-[a-z0-9]+)*@[1-9][0-9]*", id):
+            raise ValueError("Calibration requires an exact robot/name@rev")
+        with Path(recipe).open("rb") as stream:
+            content = stream.read(1024 * 1024 + 1)
+        if len(content) > 1024 * 1024:
+            raise ValueError("Calibration recipe exceeds 1 MiB")
+        return await self.request("POST", self._library_path(id) + "/calibrate", content=content,
+                                  headers={"Content-Type": "application/json"}, actor=actor, timeout=240)
+
     async def task_push(self, directory, *, actor="cli:lw"):
         return await self._upload_directory(directory, "/api/v1/tasks", actor)
 

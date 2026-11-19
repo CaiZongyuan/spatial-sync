@@ -381,6 +381,18 @@ def install_library_routes(
         version = assets.resolve(f"{kind}/{name}@{rev}")
         return await anyio.to_thread.run_sync(validator.revalidate, version, "asset", assets)
 
+    @app.post("/api/v1/library/assets/robot/{name}/{rev}/calibrate")
+    async def calibrate_robot(name: str, rev: int, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        recipe = bytearray()
+        async for chunk in request.stream():
+            if len(recipe) + len(chunk) > 1024 * 1024:
+                raise invalid("Calibration recipe exceeds 1 MiB", path="calibration")
+            recipe.extend(chunk)
+        importer = LibraryImports(assets, scenes(), validator)
+        return await anyio.to_thread.run_sync(importer.calibrate_robot, f"robot/{name}@{rev}", bytes(recipe))
+
     @app.post("/api/v1/library/scenes/{name}/{rev}/preview")
     async def capture_scene_preview_route(
         name: str, rev: str, request: Request, source: Literal["synthetic", "newton"] | None = None

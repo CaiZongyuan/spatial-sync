@@ -15,7 +15,7 @@ from packages.library.archive import (
     invalid,
     package_files,
 )
-from packages.library.common import content_hash
+from packages.library.common import LibraryError, content_hash
 from packages.library.entity_types import USER_TYPE, EntityTypes
 from packages.library.metadata import asset_metadata, scene_metadata
 from packages.library.templates import TemplateError, load_snapshots, references, resolve
@@ -46,7 +46,48 @@ class LibraryImports:
             stage = Path(temporary) / "package"
             stage.mkdir()
             extract_package(stream, stage)
+            if (stage / "robot.json").is_file():
+                from packages.library.robot_import.prepare import prepare
+
+                if (stage / "asset.yaml").exists() or (stage / "scene.yaml").exists():
+                    raise invalid("Upload a single robot or library manifest", path="robot.json")
+                prepared = stage.parent / "prepared"
+                prepare(stage, prepared)
+                return self.import_staged(prepared, allowed_root=stage.parent)
             return self._publish(stage)
+
+    def calibrate_robot(self, selector, recipe):
+        from packages.library.robot_import.prepare import prepare
+
+        root = self.assets.roots["user"]
+        with tempfile.TemporaryDirectory(prefix=".calibrate-", dir=root) as temporary:
+            workspace = Path(temporary)
+            source = workspace / "source"
+            source.mkdir()
+            with self.assets._lock, import_lock(root):
+                self.assets.startup()
+                version = self.assets.resolve(selector)
+                original = version.path / "source"
+                if (version.metadata["kind"] != "robot" or "source/robot.json" not in version.files
+                        or "joint-calibration.json" not in version.files):
+                    raise LibraryError(
+                        "robot_calibration_unavailable", "Asset has no retained robot source", 409,
+                    )
+                try:
+                    owner = self.assets.roots[version.root]
+                    destination_parent(owner, version.path.relative_to(owner).parts)
+                    package_files(version.path)
+                    if content_hash(version.path) != version.content_hash:
+                        raise ValueError("Immutable package changed after indexing")
+                    copy_stage(original, source, StagedLimits())
+                except (OSError, ValueError) as exc:
+                    raise LibraryError(
+                        "asset_changed", "Immutable package changed after indexing", 409,
+                    ) from exc
+                pin = {"id": version.id, "contentHash": version.content_hash}
+            prepared = workspace / "prepared"
+            prepare(source, prepared, recipe_json=recipe, base=pin)
+            return self.import_staged(prepared, allowed_root=workspace)
 
     def import_staged(self, path, *, allowed_root, limits=None):
         """Publish a package directory that only the server itself staged.

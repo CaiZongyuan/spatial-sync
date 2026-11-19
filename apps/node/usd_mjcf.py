@@ -1372,23 +1372,24 @@ def derive_usd_mjcf(
     include_static_colliders: bool = True,
     model_name: str | None = None,
     allow_multiple_roots: bool = False,
+    source_units: bool = False,
 ) -> DerivedArticulation:
     """Derive a deterministic MuJoCo MJCF model and structured metadata from a Z-up USD stage."""
     stage, _pinned_layers = _open_usd_stage(source, asset_packages)
     up_axis = str(UsdGeom.GetStageUpAxis(stage) or "Z").upper()
-    if up_axis != "Z":
+    if not source_units and up_axis != "Z":
         raise ValueError(f"Expected canonical Z-up USD stage, got upAxis={up_axis!r}")
 
     raw_mpu = float(UsdGeom.GetStageMetersPerUnit(stage))
-    if not math.isclose(raw_mpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
+    if not source_units and not math.isclose(raw_mpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError(f"Expected canonical metersPerUnit=1.0 USD stage, got metersPerUnit={raw_mpu!r}")
-    meters_per_unit = 1.0
+    meters_per_unit = raw_mpu if source_units else 1.0
     raw_kpu = float(UsdPhysics.GetStageKilogramsPerUnit(stage) or 1.0)
-    if not math.isclose(raw_kpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
+    if not source_units and not math.isclose(raw_kpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError(
             f"Expected canonical kilogramsPerUnit=1.0 USD stage, got kilogramsPerUnit={raw_kpu!r}"
         )
-    kg_per_unit = 1.0
+    kg_per_unit = raw_kpu if source_units else 1.0
     xform_cache = UsdGeom.XformCache()
 
     if prim_path is not None:
