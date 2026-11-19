@@ -173,6 +173,9 @@ def test_fixed_world_anchor_under_translated_parent_forwards_to_floor_contacts()
 
 @pytest.mark.parametrize("anchor", ["world", "explicit", "identity", "standalone"])
 def test_rotated_referenced_root_matches_newton_fk(anchor):
+    from dataclasses import replace
+    from xml.etree import ElementTree as ET
+
     from apps.node.usd_mjcf import derive_usd_mjcf
     from packages.library.model_consistency import compare_models
 
@@ -183,6 +186,10 @@ def test_rotated_referenced_root_matches_newton_fk(anchor):
     body = UsdGeom.Xform.Define(asset, "/Asset/Base")
     body.AddTranslateOp().Set((.1, 0., .2))
     UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+    mass = UsdPhysics.MassAPI.Apply(body.GetPrim())
+    mass.CreateMassAttr(1.)
+    mass.CreateCenterOfMassAttr((.02, -.01, .03))
+    mass.CreateDiagonalInertiaAttr((.002, .003, .004))
     box = UsdGeom.Cube.Define(asset, "/Asset/Base/Box")
     box.CreateSizeAttr(.1)
     box.AddRotateXOp().Set(25.)
@@ -196,6 +203,10 @@ def test_rotated_referenced_root_matches_newton_fk(anchor):
     if anchor != "standalone":
         link = UsdGeom.Xform.Define(asset, "/Asset/Link")
         UsdPhysics.RigidBodyAPI.Apply(link.GetPrim())
+        link_mass = UsdPhysics.MassAPI.Apply(link.GetPrim())
+        link_mass.CreateMassAttr(.5)
+        link_mass.CreateCenterOfMassAttr((-.01, .02, .005))
+        link_mass.CreateDiagonalInertiaAttr((.001, .001, .001))
         end = UsdGeom.Sphere.Define(asset, "/Asset/Link/Collider")
         end.CreateRadiusAttr(.025)
         UsdPhysics.CollisionAPI.Apply(end.GetPrim())
@@ -226,3 +237,34 @@ def test_rotated_referenced_root_matches_newton_fk(anchor):
         np.testing.assert_allclose(forward.body("Base").xmat.reshape(3, 3)[:, 0], [0, 1, 0], atol=1e-6)
     report = compare_models(model, derived)
     assert [row["status"] for row in report] == ["pass"], report
+
+    native_center = forward.body("Base").xipos
+    center = [.12, -.01, .23] if anchor == "world" else [.41, -.08, .53]
+    np.testing.assert_allclose(native_center, center, atol=1e-6)
+    state = model.state()
+    newton.eval_fk(model, state.joint_q, state.joint_qd, state)
+    index = model.body_label.index("/Robot/Base")
+    pose = wp.transform(*state.body_q.numpy()[index])
+    newton_center = wp.transform_point(pose, wp.vec3(*model.body_com.numpy()[index]))
+    np.testing.assert_allclose(newton_center, center, atol=1e-6)
+    if anchor != "standalone":
+        link_index = model.body_label.index("/Robot/Link")
+        link_pose = wp.transform(*state.body_q.numpy()[link_index])
+        link_com = wp.transform_point(link_pose, wp.vec3(*model.body_com.numpy()[link_index]))
+        link_center = [.09, .02, .405] if anchor == "world" else [.38, -.11, .705]
+        np.testing.assert_allclose(link_com, link_center, atol=1e-6)
+        np.testing.assert_allclose(forward.body("Link").xipos, link_center, atol=1e-6)
+
+    xml = ET.fromstring(derived.mjcf_xml)
+    xml.find(".//body[@name='Base']/inertial").set("pos", ".12 -.01 .03")
+    changed = replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode"))
+    mutated_model = changed.to_mjmodel()
+    mutated_state = mujoco.MjData(mutated_model)
+    mujoco.mj_forward(mutated_model, mutated_state)
+    np.testing.assert_allclose(np.linalg.norm(mutated_state.body("Base").xipos - native_center), .1)
+    print(f"{anchor} Newton {list(newton_center)}, MuJoCo {native_center}, "
+          f"mutation {mutated_state.body('Base').xipos}")
+    failures = compare_models(model, changed)
+    assert [(check["entityKey"], check["message"]) for check in failures if check["status"] == "fail"] == [
+        ("/Robot/Base", "Body center of mass in the link frame differs between Newton and MuJoCo")
+    ]

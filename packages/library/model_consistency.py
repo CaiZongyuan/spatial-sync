@@ -94,6 +94,7 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     equal("Rigid-body Prim Paths", sorted(newton_bodies),
           sorted(path for path, idx in body_ids.items() if idx > 0))
     mass = reference.body_mass.numpy()
+    centers = reference.body_com.numpy()
     inertia = reference.body_inertia.numpy()
     close("Total mass", float(mass.sum()), float(model.body_mass.sum()), atol=MASS_ATOL)
     for path, idx in body_ids.items():
@@ -105,6 +106,12 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
         close("Body world orientation", newton_body_rotations[ref],
               data.xmat[idx].reshape(3, 3), path, ORIENTATION_ATOL, 0.)
         close("Body mass", mass[ref], model.body_mass[idx], path, MASS_ATOL)
+        # A body with no modeled mass has no physical COM. Fixed and mocap
+        # links can still carry mass and use the same link-local comparison.
+        if mass[ref] > 0. or model.body_mass[idx] > 0.:
+            local_center = data.xmat[idx].reshape(3, 3).T @ (data.xipos[idx] - data.xpos[idx])
+            close("Body center of mass in the link frame", centers[ref], local_center,
+                  path, POSITION_ATOL, 0.)
         principal_axes = rotation(model.body_iquat[idx])
         tensor = (principal_axes * model.body_inertia[idx]) @ principal_axes.T
         close("Body inertia in the link frame", inertia[ref], tensor, path, INERTIA_ATOL)

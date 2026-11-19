@@ -54,6 +54,18 @@ def Xform "World" {
 
 
 def test_final_mjlab_scene_preserves_usd_contacts(tmp_path):
+    run_pinned_composition(tmp_path, "parent")
+
+
+def test_final_mjlab_scene_rejects_lost_ground_pairs(tmp_path):
+    run_pinned_composition(tmp_path, "mask")
+
+
+def test_final_mjlab_scene_rejects_lost_ground_friction(tmp_path):
+    run_pinned_composition(tmp_path, "friction")
+
+
+def run_pinned_composition(tmp_path, case):
     import pytest
 
     trainer = os.environ.get("SPATIAL_MJLAB_TEST_PYTHON")
@@ -64,8 +76,10 @@ def test_final_mjlab_scene_preserves_usd_contacts(tmp_path):
     path.write_text(STAGE)
     root = Path(__file__).resolve().parents[2]
     environment = os.environ | {"PYTHONPATH": str(root), "CUDA_VISIBLE_DEVICES": "", "MUJOCO_GL": "disable"}
-    subprocess.run([trainer, str(Path(__file__).resolve()), str(path)],
-                   cwd=tmp_path, env=environment, check=True, timeout=60)
+    result = subprocess.run([trainer, str(Path(__file__).resolve()), str(path), case], cwd=tmp_path,
+                            env=environment, capture_output=True, text=True, timeout=60)
+    print(result.stdout)
+    assert result.returncode == 0, result.stderr
 
 
 def check_composition(path):
@@ -148,5 +162,87 @@ def check_composition(path):
             raise AssertionError(f"Final scene accepted ground override {override.__name__}")
 
 
+def check_ground_fidelity(path, case):
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # Keep the second collider above the ground to test eligibility independently of current contact.
+    path.write_text(STAGE.replace("(0, 0, 1)", "(0, 0, .075)").replace("(0.1, 0, 0)", "(0.3, 0, .3)"))
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+
+    def scene(callback=None, *, validate=True):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        if validate:
+            usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        return Scene(cfg, device="cpu").compile()
+
+    def ground_contacts(model):
+        ground = model.geom("terrain").id
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        return [(int(contact.dim), float(contact.friction[0])) for contact in data.contact
+                if ground in (contact.geom1, contact.geom2)]
+
+    def mutation(spec):
+        ground = spec.geom("terrain")
+        ground.friction = (.37, .005, .0001)
+        if case == "mask":
+            geom = spec.geom("robot/A_Ball")
+            geom.contype = geom.conaffinity = 2
+        else:
+            ground.priority = 1
+            ground.condim = 1
+
+    original = ground_contacts(scene())
+    altered = ground_contacts(scene(mutation, validate=False))
+    assert len(original) == 1 and original[0][0] == 3
+    if case == "mask":
+        assert altered == []
+    else:
+        assert altered == [(1, .37)]
+    print(f"{case} baseline {original}, mutation {altered}", flush=True)
+    try:
+        scene(mutation)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == "/World/Lab/Floor"
+        assert ("eligibility" if case == "mask" else "contact parameters") in str(exc)
+    else:
+        raise AssertionError(f"Final scene accepted {case} mutation")
+
+    def reencode(spec):
+        for geom in spec.geoms:
+            if geom.contype or geom.conaffinity:
+                geom.contype = geom.conaffinity = 2
+        spec.geom("terrain").priority = 1
+
+    equivalent = ground_contacts(scene(reencode))
+    assert equivalent == original
+
+    def remove_separated_pair(spec):
+        # The unchecked specimen uses the same ground material.
+        spec.geom("terrain").friction = (.37, .005, .0001)
+        geom = spec.geom("robot/B_Ball")
+        geom.contype = geom.conaffinity = 2
+
+    if case == "mask":
+        assert ground_contacts(scene(remove_separated_pair, validate=False)) == original
+        try:
+            scene(remove_separated_pair)
+        except usd_mjcf.UnsupportedUsdPhysics as exc:
+            assert exc.prim_path == "/World/Lab/Floor"
+            assert "robot/B_Ball" in str(exc)
+        else:
+            raise AssertionError("Final scene accepted removal of a separated ground pair")
+
+
 if __name__ == "__main__":
-    check_composition(Path(sys.argv[1]))
+    path, case = Path(sys.argv[1]), sys.argv[2]
+    if case == "parent":
+        check_composition(path)
+    else:
+        check_ground_fidelity(path, case)

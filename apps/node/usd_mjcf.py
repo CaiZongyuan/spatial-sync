@@ -639,39 +639,92 @@ def _contact_attributes(prim):
     return attrs
 
 
-def _check_mjlab_ground(spec, path):
+def _ground_pair_parameters(model, ground, other):
     import mujoco
     import numpy as np
 
-    model = spec.copy().compile()
+    # Match MuJoCo Warp's automatic geom contacts. Explicit pair overrides are
+    # outside the canonical plane composition supported here.
+    priority = model.geom_priority
+    condim = model.geom_condim
+    friction = model.geom_friction
+    mix = model.geom_solmix
+    if priority[ground] != priority[other]:
+        winner = ground if priority[ground] > priority[other] else other
+        dimension = int(condim[winner])
+        coefficients = friction[winner]
+        weight = float(winner == ground)
+    else:
+        dimension = int(max(condim[ground], condim[other]))
+        coefficients = np.maximum(friction[ground], friction[other])
+        left, right = mix[ground], mix[other]
+        if left < mujoco.mjMINVAL or right < mujoco.mjMINVAL:
+            weight = .5 if max(left, right) < mujoco.mjMINVAL else float(left >= mujoco.mjMINVAL)
+        else:
+            weight = left / (left + right)
+
+    solref = model.geom_solref
+    solimp = model.geom_solimp
+    solver = (weight * solref[ground] + (1. - weight) * solref[other]
+              if min(solref[ground, 0], solref[other, 0]) > 0.
+              else np.minimum(solref[ground], solref[other]))
+    # Slide, torsion and rolling coefficients enter the constraint only at
+    # dimensions 3, 4 and 6 respectively.
+    friction_count = {1: 0, 3: 1, 4: 2, 6: 3}[dimension]
+    active = np.maximum(coefficients[:friction_count], mujoco.mjMINMU)
+    return np.concatenate((
+        [dimension], active, solver, weight * solimp[ground] + (1. - weight) * solimp[other],
+        [model.geom_margin[ground] + model.geom_margin[other],
+         model.geom_gap[ground] + model.geom_gap[other]],
+    ))
+
+
+def _mjlab_ground_contacts(model, path):
+    import mujoco
+    import numpy as np
+
     ground = model.geom("terrain").id
     data = mujoco.MjData(model)
     mujoco.mj_kinematics(model, data)
     normal = data.geom_xmat[ground].reshape(3, 3)[:, 2]
-    if (not np.allclose(normal, (0., 0., 1.), rtol=0., atol=1e-6)
+    ground_body = model.geom_bodyid[ground]
+    if (not np.isfinite(data.geom_xpos[ground]).all()
+            or not np.allclose(normal, (0., 0., 1.), rtol=0., atol=1e-6)
             or abs(data.geom_xpos[ground, 2]) > 1e-6
-            or model.body_weldid[model.geom_bodyid[ground]] != 0):
+            or model.body_weldid[ground_body] != 0):
         raise UnsupportedUsdPhysics(path, "Final mjlab terrain must remain a fixed Z-up plane at height zero")
 
-    groups = model.geom_contype | model.geom_conaffinity
-    canonical = ((groups & 1) != 0) & (model.body_weldid[model.geom_bodyid] != 0)
-    actual = (((model.geom_contype & model.geom_conaffinity[ground])
-               | (model.geom_conaffinity & model.geom_contype[ground])) != 0
-              ) & (model.body_weldid[model.geom_bodyid] != 0)
-    ground_body = model.geom_bodyid[ground]
-    for signature in model.exclude_signature:
-        first, second = (int(signature) >> 16) & 0xffff, int(signature) & 0xffff
-        if ground_body in (first, second):
-            actual[model.geom_bodyid == (second if first == ground_body else first)] = False
-    if (not (groups[ground] and np.array_equal(actual, canonical))
-            or model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT
+    disabled = mujoco.mjtDisableBit.mjDSBL_CONTACT | mujoco.mjtDisableBit.mjDSBL_CONSTRAINT
+    if (not (model.geom_contype[ground] | model.geom_conaffinity[ground])
+            or model.opt.disableflags & disabled
+            or model.opt.enableflags & mujoco.mjtEnableBit.mjENBL_OVERRIDE
             or ground in model.pair_geom1 or ground in model.pair_geom2):
         raise UnsupportedUsdPhysics(path, "Final mjlab terrain must retain canonical collision eligibility")
+
+    # The ground is welded to world: same-weld pairs are excluded and the engine
+    # exempts world-weld pairs from parent filtering. Ignore transient separation.
+    bodies = model.geom_bodyid
+    signatures = (np.minimum(bodies, ground_body).astype(np.int64) << 16) | np.maximum(bodies, ground_body)
+    mask = ((model.geom_contype & model.geom_conaffinity[ground])
+            | (model.geom_conaffinity & model.geom_contype[ground])) != 0
+    allowed = mask & (model.body_weldid[bodies] != 0)
+    allowed &= ~np.isin(signatures, model.exclude_signature.astype(np.uint32))
+    pairs = {}
+    for idx in np.flatnonzero(allowed):
+        name = model.geom(int(idx)).name
+        if not name or name in pairs:
+            raise UnsupportedUsdPhysics(path, "Final mjlab terrain requires unique collider names")
+        parameters = _ground_pair_parameters(model, ground, idx)
+        if not np.isfinite(parameters).all():
+            raise UnsupportedUsdPhysics(path, f"Non-finite ground contact parameters for {name}")
+        pairs[name] = parameters
+    return pairs
 
 
 def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     """Carry canonical USD contact settings through mjlab's final SceneCfg attachment."""
     import mujoco
+    import numpy as np
 
     if len(scene_cfg.entities) != 1 or getattr(scene_cfg.terrain, "terrain_type", None) != "plane":
         raise ValueError("USD scene composition requires one mjlab entity and plane terrain")
@@ -702,9 +755,7 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
     plane_path = plane.GetPath()
     previous = scene_cfg.spec_fn
 
-    def apply(spec):
-        if previous is not None:
-            previous(spec)
+    def canonical_ground(spec):
         geom = spec.geom("terrain")
         if geom is None or geom.type != mujoco.mjtGeom.mjGEOM_PLANE:
             raise UnsupportedUsdPhysics(plane_path, "Final mjlab scene requires a plane geom named terrain")
@@ -712,7 +763,28 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
         spec.option.disableflags |= mujoco.mjtDisableBit.mjDSBL_FILTERPARENT
         geom.friction = [float(value) for value in contact["friction"].split()]
         geom.solref = [float(value) for value in contact.get("solref", ".02 1").split()]
-        _check_mjlab_ground(spec, plane_path)
+
+    def apply(spec):
+        expected = None
+        if previous is not None:
+            baseline = spec.copy()
+            canonical_ground(baseline)
+            expected = _mjlab_ground_contacts(baseline.compile(), plane_path)
+            previous(spec)
+        canonical_ground(spec)
+        actual = _mjlab_ground_contacts(spec.copy().compile(), plane_path)
+        if expected is None:
+            return
+        if expected.keys() != actual.keys():
+            names = ", ".join(sorted(expected.keys() ^ actual.keys())[:10])
+            raise UnsupportedUsdPhysics(plane_path, f"Terrain changed collision eligibility for {names}")
+        for name, reference in expected.items():
+            candidate = actual[name]
+            same_parameters = reference.shape == candidate.shape and np.allclose(
+                reference, candidate, rtol=0., atol=1e-8,
+            )
+            if not same_parameters:
+                raise UnsupportedUsdPhysics(plane_path, f"Terrain changed contact parameters for {name}")
 
     scene_cfg.spec_fn = apply
 

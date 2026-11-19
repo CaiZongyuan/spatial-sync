@@ -2188,6 +2188,10 @@ def test_p7_detects_actual_pose_drift_and_passive_coordinate_reorder(change):
     elif change == "body_position":
         assert ("/Asset/Base", "Body world position differs between Newton and MuJoCo") in failures
     elif change == "geom_position":
-        assert failures == [("/Asset/B/Box", "Collider world position differs between Newton and MuJoCo")]
+        # This link has no authored inertial element. Moving its only shape also moves its COM.
+        assert failures == [
+            ("/Asset/B", "Body center of mass in the link frame differs between Newton and MuJoCo"),
+            ("/Asset/B/Box", "Collider world position differs between Newton and MuJoCo"),
+        ]
     else:
         assert [row["status"] for row in rows] == ["pass"], rows
