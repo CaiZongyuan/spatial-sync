@@ -65,6 +65,14 @@ def test_final_mjlab_scene_rejects_lost_ground_friction(tmp_path):
     run_pinned_composition(tmp_path, "friction")
 
 
+def test_mjlab_simulation_rejects_contact_disabled_after_scene_composition(tmp_path):
+    run_pinned_composition(tmp_path, "disable")
+
+
+def test_mjlab_simulation_rejects_robot_exclusion_added_by_scene_callback(tmp_path):
+    run_pinned_composition(tmp_path, "exclude")
+
+
 def run_pinned_composition(tmp_path, case):
     import pytest
 
@@ -123,8 +131,9 @@ def check_composition(path):
     old_model = Scene(cfg, device="cpu").compile()
     assert contacts(old_model) == set()
     original_origin = old_model.site("env_origin_0").pos.copy()
-    usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+    verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
     final = Scene(cfg, device="cpu").compile()
+    verify(final)
     assert contacts(final) == expected
     assert math.isclose(final.geom("terrain").friction[0], .37, abs_tol=1e-7)
     assert final.sensor("floor-position").objid[0] == final.geom("terrain").id
@@ -153,9 +162,9 @@ def check_composition(path):
 
     for override in (move_parent, tilt_plane, disable_contacts):
         altered = SceneCfg(terrain=terrain, entities=cfg.entities, spec_fn=override)
-        usd_mjcf.configure_mjlab_usd_scene(altered, path)
+        verify = usd_mjcf.configure_mjlab_usd_scene(altered, path)
         try:
-            Scene(altered, device="cpu").compile()
+            verify(Scene(altered, device="cpu").compile())
         except usd_mjcf.UnsupportedUsdPhysics as exc:
             assert exc.prim_path == "/World/Lab/Floor"
         else:
@@ -177,9 +186,11 @@ def check_ground_fidelity(path, case):
     def scene(callback=None, *, validate=True):
         cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
                        entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
-        if validate:
-            usd_mjcf.configure_mjlab_usd_scene(cfg, path)
-        return Scene(cfg, device="cpu").compile()
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path) if validate else None
+        model = Scene(cfg, device="cpu").compile()
+        if verify is not None:
+            verify(model)
+        return model
 
     def ground_contacts(model):
         ground = model.geom("terrain").id
@@ -235,14 +246,79 @@ def check_ground_fidelity(path, case):
             scene(remove_separated_pair)
         except usd_mjcf.UnsupportedUsdPhysics as exc:
             assert exc.prim_path == "/World/Lab/Floor"
-            assert "robot/B_Ball" in str(exc)
+            assert "/World/Lab/Robot/B/Ball" in str(exc)
         else:
             raise AssertionError("Final scene accepted removal of a separated ground pair")
+
+
+def check_final_simulation(path, case):
+    import mujoco
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import MujocoCfg, Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    # A touches the floor and overlaps B above it. C remains initially separated.
+    path.write_text(STAGE.replace("(0, 0, 1)", "(0, 0, .075)")
+                    .replace("(0.1, 0, 0)", "(0.1, 0, .10)")
+                    .replace('rel physics:body1 = </World/Lab/Robot/C>',
+                             'rel physics:body1 = </World/Lab/Robot/C>\n'
+                             '                point3f physics:localPos0 = (0.5, 0, 0)'))
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path="/World/Lab/Robot", include_static_colliders=False)
+    callback_calls = []
+
+    def add_exclusion(spec):
+        callback_calls.append(1)
+        spec.add_exclude(bodyname1="robot/A", bodyname2="robot/B")
+
+    def build(*, callback=None, disabled=()):
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=derived.to_mjspec)}, spec_fn=callback)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        scene = Scene(cfg, device="cpu")
+        settings = MujocoCfg(timestep=.005, iterations=13, cone="elliptic", disableflags=disabled)
+        sim = Simulation(1, SimulationCfg(mujoco=settings), scene.compile(), device="cpu")
+        assert sim.mj_model.opt.timestep == .005 and sim.mj_model.opt.iterations == 13
+        assert sim.mj_model.opt.cone == mujoco.mjtCone.mjCONE_ELLIPTIC
+        data = mujoco.MjData(sim.mj_model)
+        mujoco.mj_forward(sim.mj_model, data)
+        contacts = {frozenset(sim.mj_model.geom(i).name for i in (row.geom1, row.geom2))
+                    for row in data.contact}
+        return sim, verify, contacts
+
+    expected = {frozenset(("terrain", "robot/A_Ball")), frozenset(("robot/A_Ball", "robot/B_Ball"))}
+    good_sim, good_verify, original = build()
+    assert original == expected
+    good_verify(good_sim.mj_model)
+    if case == "disable":
+        sim, verify, actual = build(disabled=("contact",))
+        assert actual == set()
+        assert sim.mj_model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT
+    else:
+        sim, verify, actual = build(callback=add_exclusion)
+        assert actual == {frozenset(("terrain", "robot/A_Ball"))}
+        assert len(callback_calls) == 1
+    print(f"{case} original={sorted(map(sorted, original))} final={sorted(map(sorted, actual))} "
+          f"disableflags={sim.mj_model.opt.disableflags}", flush=True)
+    try:
+        verify(sim.mj_model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        if case == "disable":
+            assert exc.prim_path == "/World/Lab/Floor"
+        else:
+            assert exc.prim_path == "/World/Lab/Robot/A/Ball"
+            assert "/World/Lab/Robot/B/Ball" in str(exc)
+    else:
+        raise AssertionError(f"Final Simulation accepted {case}")
 
 
 if __name__ == "__main__":
     path, case = Path(sys.argv[1]), sys.argv[2]
     if case == "parent":
         check_composition(path)
-    else:
+    elif case in ("mask", "friction"):
         check_ground_fidelity(path, case)
+    else:
+        check_final_simulation(path, case)

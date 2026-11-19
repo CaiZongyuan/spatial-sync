@@ -11,10 +11,10 @@ from apps.node.mjlab_launcher import main
 
 @pytest.mark.parametrize("validation", [False, True], ids=["training", "validation"])
 @pytest.mark.parametrize("usd", [True, False], ids=["usd", "scene-package"])
-def test_launcher_composes_the_dispatched_usd_scene_before_environment_creation(
+def test_launcher_validates_the_dispatched_usd_scene_before_wrapping_environment(
     monkeypatch, tmp_path, validation, usd,
 ):
-    class EnvironmentConstructed(Exception):
+    class SetupStopped(Exception):
         pass
 
     original_callback = object()
@@ -22,6 +22,8 @@ def test_launcher_composes_the_dispatched_usd_scene_before_environment_creation(
     scene = SimpleNamespace(num_envs=1, spec_fn=original_callback)
     env_cfg = SimpleNamespace(scene=scene, sim=SimpleNamespace(mujoco=SimpleNamespace()))
     stage = str(tmp_path / "frozen-scene.usda")
+    final_model = object()
+    events = []
 
     def configure_mjlab_usd_scene(scene_cfg, source):
         assert scene_cfg is scene and source == stage
@@ -29,11 +31,25 @@ def test_launcher_composes_the_dispatched_usd_scene_before_environment_creation(
         assert scene_cfg.num_envs == 8 and env_cfg.sim.mujoco.timestep == 0.005
         assert env_cfg.decimation == 4
         scene_cfg.spec_fn = composed_callback
+        return verify
+
+    def verify(model):
+        assert model is final_model and events == ["constructed"]
+        events.append("validated")
+        raise SetupStopped
 
     def construct_env(*, cfg, device, render_mode):
         assert cfg.scene.spec_fn is (composed_callback if usd else original_callback)
         assert device == "cpu" and render_mode is None
-        raise EnvironmentConstructed
+        events.append("constructed")
+        return SimpleNamespace(
+            sim=SimpleNamespace(mj_model=final_model), close=lambda: events.append("closed"),
+        )
+
+    def wrap(env, *, clip_actions):
+        assert not usd and env.sim.mj_model is final_model and clip_actions is None
+        events.append("wrapped")
+        raise SetupStopped
 
     def noop(*args):
         pass
@@ -43,10 +59,10 @@ def test_launcher_composes_the_dispatched_usd_scene_before_environment_creation(
         "mjlab": SimpleNamespace(),
         "mjlab.tasks": SimpleNamespace(),
         "mjlab.envs": SimpleNamespace(ManagerBasedRlEnv=construct_env),
-        "mjlab.rl": SimpleNamespace(MjlabOnPolicyRunner=None, RslRlVecEnvWrapper=None),
+        "mjlab.rl": SimpleNamespace(MjlabOnPolicyRunner=None, RslRlVecEnvWrapper=wrap),
         "mjlab.tasks.registry": SimpleNamespace(
             list_tasks=lambda: ["Fixture-v0"], load_env_cfg=lambda _: env_cfg,
-            load_rl_cfg=lambda _: SimpleNamespace(), load_runner_cls=lambda _: None,
+            load_rl_cfg=lambda _: SimpleNamespace(clip_actions=None), load_runner_cls=lambda _: None,
         ),
         "mjlab.utils.os": SimpleNamespace(dump_yaml=noop),
         "mjlab.utils.torch": SimpleNamespace(configure_torch_backends=noop),
@@ -70,5 +86,6 @@ def test_launcher_composes_the_dispatched_usd_scene_before_environment_creation(
         monkeypatch.setenv("LW_NODE_INPUTS", str(inputs))
         argv += ["--validation-iterations", "3"]
 
-    with pytest.raises(EnvironmentConstructed):
+    with pytest.raises(SetupStopped):
         main(argv)
+    assert events == ["constructed", "validated" if usd else "wrapped", "closed"]

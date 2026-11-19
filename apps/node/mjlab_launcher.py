@@ -284,11 +284,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         agent_cfg.actor.obs_normalization = obs_norm
         agent_cfg.critic.obs_normalization = obs_norm
 
+    verify_usd_model = None
     stage = os.environ.get("LW_SCENE_STAGE")
     if stage is not None:
         from lw_usd_mjcf import configure_mjlab_usd_scene
 
-        configure_mjlab_usd_scene(env_cfg.scene, stage)
+        verify_usd_model = configure_mjlab_usd_scene(env_cfg.scene, stage)
 
     log_dir = (
         Path("logs")
@@ -302,8 +303,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         ensure_bridged(runner_cls)
     env_cls = getattr(env_cfg, "class_type", None) or ManagerBasedRlEnv
     env = env_cls(cfg=env_cfg, device=device, render_mode=None)
-    vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
     try:
+        if verify_usd_model is not None:
+            verify_usd_model(env.sim.mj_model)
+        vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
         agent_dict = asdict(agent_cfg)
         if validation:
             def synchronize():
@@ -328,7 +331,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         runner = runner_cls(vec_env, agent_dict, str(log_dir), device=device)
         runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
     finally:
-        vec_env.close()
+        env.close()
 
 
 if __name__ == "__main__":

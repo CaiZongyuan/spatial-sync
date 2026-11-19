@@ -10,34 +10,6 @@ POSITION_ATOL = 1e-5  # m, accounting for Newton's Float32 transforms
 ORIENTATION_ATOL = 1e-5  # Unit rotation basis vectors
 
 
-def _mujoco_contact_pairs(model):
-    """Compiled contact eligibility before pose-dependent broad/narrow phase."""
-    import mujoco
-    import numpy as np
-
-    if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT:
-        return set()
-    enabled_geoms = np.flatnonzero(model.geom_contype | model.geom_conaffinity)
-    first, second = (enabled_geoms[ids] for ids in np.triu_indices(len(enabled_geoms), k=1))
-    a, b = model.geom_bodyid[first], model.geom_bodyid[second]
-    weld_a, weld_b = model.body_weldid[a], model.body_weldid[b]
-    allowed = (weld_a != weld_b) & (
-        ((model.geom_contype[first] & model.geom_conaffinity[second]) != 0)
-        | ((model.geom_contype[second] & model.geom_conaffinity[first]) != 0)
-    )
-    if not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_FILTERPARENT:
-        parent = model.body_weldid[model.body_parentid]
-        allowed &= (weld_a == 0) | (weld_b == 0) | (
-            (parent[weld_a] != weld_b) & (parent[weld_b] != weld_a)
-        )
-    signatures = (np.minimum(a, b).astype(np.int64) << 16) | np.maximum(a, b)
-    allowed &= ~np.isin(signatures, model.exclude_signature.astype(np.uint32))
-    pairs = set(zip(first[allowed], second[allowed], strict=True))
-    # Explicit contact pairs bypass masks and body-level filtering in MuJoCo Warp.
-    pairs.update(tuple(sorted(pair)) for pair in zip(model.pair_geom1, model.pair_geom2, strict=True))
-    return pairs
-
-
 def _named_pairs(pairs, names):
     return {tuple(sorted((names.get(a, f"geom {a}"), names.get(b, f"geom {b}")))) for a, b in pairs}
 
@@ -46,6 +18,8 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     import mujoco
     import newton
     import numpy as np
+
+    from apps.node.usd_mjcf import mujoco_contact_pairs
 
     model = mujoco.MjModel.from_xml_string(derived.mjcf_xml)
     reference = newton_model
@@ -221,7 +195,7 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
         source_paths = newton_paths
     else:
         # The live solver applies additional filtering, such as fixed bodies welded to the world.
-        eligible = _mujoco_contact_pairs(mujoco_solver.mj_model)
+        eligible = mujoco_contact_pairs(mujoco_solver.mj_model)
         source_paths = {
             geom: newton_paths[shape]
             for geom, shape in enumerate(mujoco_solver.mjc_geom_to_newton_shape.numpy()[0])
@@ -229,7 +203,7 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
         }
     expected_pairs = _named_pairs(((a, b) for a, b in eligible if a in source_paths and b in source_paths),
                                  source_paths)
-    actual_pairs = _named_pairs(_mujoco_contact_pairs(model), geom_paths)
+    actual_pairs = _named_pairs(mujoco_contact_pairs(model), geom_paths)
     if expected_pairs != actual_pairs:
         missing, unexpected = expected_pairs - actual_pairs, actual_pairs - expected_pairs
         failures.append(check("P7", "fail", "Effective collision pairs differ between Newton and MuJoCo",
