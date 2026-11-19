@@ -1038,6 +1038,9 @@ def test_native_capture_with_command_source_passes_evidence_verifier_and_qualifi
     task_pkg_dir.mkdir()
     policy_task(task_pkg_dir, spec=spec, task=task_doc)
     (task_pkg_dir / "native_provider.py").write_bytes(Path(__file__).read_bytes())
+    from tests.fixtures.training_task import audit_task
+
+    audit_task(task_pkg_dir)
     monkeypatch.setenv("LW_TASK_PACKAGE", str(task_pkg_dir))
 
     # First verify malformed command payloads (bool, NaN, non-list) are rejected fail-closed

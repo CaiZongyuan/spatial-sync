@@ -21,11 +21,19 @@ from pathlib import Path
 from typing import Sequence
 
 
+def compiler_sources():
+    node = Path(__file__).parent
+    return {
+        name: node / name
+        for name in ("mjlab_launcher.py", "usd_mjcf.py", "declarative_mjlab.py", "declarative_capture.py")
+    } | {"motion.py": node.parents[1] / "packages/policies/motion.py"}
+
+
 def compiler_hash(directory=None, *, prefix=""):
-    directory = directory or Path(__file__).parent
     digest = hashlib.sha256()
-    for name in ("mjlab_launcher.py", "usd_mjcf.py"):
-        digest.update((directory / (prefix + name)).read_bytes())
+    for name, source in sorted(compiler_sources().items()):
+        path = source if directory is None else directory / (prefix + name)
+        digest.update(name.encode() + b"\0" + hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
 
 
@@ -93,7 +101,8 @@ def _load_registered_mjlab_tasks(target_task: str) -> None:
         raise ValueError(f"mjlab task {target_task!r} was not registered by any mjlab.tasks entry point")
 
 
-def profile_training(runner, env, *, device, num_envs, iterations, synchronize, setup_started):
+def profile_training(runner, env, *, device, num_envs, iterations, synchronize, setup_started,
+                     init_at_random_ep_len=True):
     import torch
 
     def check_batch(observations, rewards=None):
@@ -221,7 +230,7 @@ def profile_training(runner, env, *, device, num_envs, iterations, synchronize, 
             alg.act, env.step, alg.update, runner.logger.log = act, step, update, log
             synchronize()
             setup_seconds = time.perf_counter() - setup_started
-            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=True)
+            runner.learn(num_learning_iterations=iterations, init_at_random_ep_len=init_at_random_ep_len)
         finally:
             alg.act, env.step, alg.update, runner.logger.log = (
                 original_act, original_step, original_update, original_log,
@@ -245,17 +254,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         os.environ.setdefault("MUJOCO_EGL_DEVICE_ID", "0")
 
     validation = args.validation_iterations is not None
+    input_path = os.getenv("LW_NODE_INPUTS")
+    inputs = json.loads(Path(input_path).read_text(encoding="utf-8")) if input_path else {}
+    task = inputs.get("task", {})
+    declarative = task.get("declarative") is not None
     if validation:
         from lw_training_bridge import verify_trainer_versions
 
-        inputs = json.loads(Path(os.environ["LW_NODE_INPUTS"]).read_text(encoding="utf-8"))
         verify_trainer_versions(inputs, True)
         callback_module = None
     else:
         callback_module = _invoke_callback(args.external_callback)
     setup_started = time.perf_counter()
     _seed_everything(args.seed, device)
-    _load_registered_mjlab_tasks(args.task)
+    if not declarative:
+        _load_registered_mjlab_tasks(args.task)
 
     from mjlab.envs import ManagerBasedRlEnv
     from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
@@ -264,8 +277,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     from mjlab.utils.torch import configure_torch_backends
 
     configure_torch_backends()
-    env_cfg = load_env_cfg(args.task)
-    agent_cfg = load_rl_cfg(args.task)
+    if declarative:
+        import yaml
+        from lw_declarative_mjlab import compile_environment
+
+        package = Path(os.environ["LW_TASK_PACKAGE"])
+        spec = yaml.safe_load((package / task["observation"]).read_bytes())
+        env_cfg, agent_cfg, runner_cls = compile_environment(task, spec, os.environ["LW_SCENE_STAGE"])
+    else:
+        env_cfg = load_env_cfg(args.task)
+        agent_cfg = load_rl_cfg(args.task)
+        runner_cls = load_runner_cls(args.task) or MjlabOnPolicyRunner
 
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.seed = args.seed
@@ -314,7 +336,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         / agent_cfg.experiment_name
         / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
-    runner_cls = load_runner_cls(args.task) or MjlabOnPolicyRunner
     ensure_bridged = getattr(callback_module, "ensure_runner_bridged", None)
     if callable(ensure_bridged):
         ensure_bridged(runner_cls)
@@ -337,7 +358,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             runner = runner_cls(vec_env, agent_dict, None, device=device)
             timing = profile_training(
                 runner, vec_env, device=device, num_envs=args.num_envs, iterations=args.validation_iterations,
-                synchronize=synchronize, setup_started=setup_started,
+                synchronize=synchronize, setup_started=setup_started, init_at_random_ep_len=not declarative,
             )
             (Path(os.environ["LW_NODE_OUTPUT"]) / "validation.json").write_text(
                 json.dumps(timing, allow_nan=False), encoding="utf-8"
@@ -346,7 +367,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         dump_yaml(log_dir / "params" / "env.yaml", asdict(env_cfg))
         dump_yaml(log_dir / "params" / "agent.yaml", agent_dict)
         runner = runner_cls(vec_env, agent_dict, str(log_dir), device=device)
-        runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+        runner.learn(
+            num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=not declarative
+        )
     finally:
         env.close()
 

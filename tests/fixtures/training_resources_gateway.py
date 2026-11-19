@@ -16,6 +16,9 @@ for variable, name in (("LW_LIBRARY", "library"), ("SPATIAL_STATE_ROOT", "state"
                        ("SPATIAL_RECORDINGS_ROOT", "recordings")):
     os.environ.setdefault(variable, str(ROOT / ".scratch/training-resources-e2e" / name))
 
+# Browser fixtures review only the exact archives their fixture builder produced.
+os.environ.setdefault("LW_TASK_AUDIT_FILE", str(Path(os.environ["SPATIAL_STATE_ROOT"]) / "task-audits.json"))
+
 TOKEN = "training-resources-browser-fixture-token"
 HARDWARE = "GPU-free browser node; no training is executed"
 GPU_ID = "GPU-training-resources-fixture"

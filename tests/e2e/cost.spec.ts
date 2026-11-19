@@ -30,6 +30,7 @@ test('cost ranges, filters, actual fake-node counters and anomaly acknowledgemen
   };
   const env = { ...process.env, SPATIAL_REMOTE: '0', SPATIAL_ALLOWED_ORIGINS: web, SPATIAL_API_URL: api,
     SPATIAL_NODE_TRAINER: '[]', SPATIAL_LIVE_BINDINGS: '', LW_LIBRARY: info.outputPath('library'),
+    LW_TASK_AUDIT_FILE: info.outputPath('state', 'task-audits.json'),
     SPATIAL_STATE_ROOT: info.outputPath('state'), SPATIAL_RECORDINGS_ROOT: info.outputPath('recordings') };
   const http = await playwright.request.newContext();
   const headers = { 'X-Node-Token': 'training-resources-browser-fixture-token', 'X-Node-Instance': 'training-resources-browser-node' };
@@ -57,7 +58,7 @@ test('cost ranges, filters, actual fake-node counters and anomaly acknowledgemen
     const roots = await (await http.get(`${api}/e2e/storage-roots`)).json();
     for (const path of Object.values(roots) as string[]) expect(resolve(path).startsWith(resolve(info.outputDir))).toBe(true);
     const now = Date.now() / 1000;
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `cost-${randomUUID()}`], { encoding: 'buffer' });
+    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `cost-${randomUUID()}`], { encoding: 'buffer', env });
     const uploaded = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(uploaded.ok(), await uploaded.text()).toBe(true); const task = await uploaded.json();
     const admit = async (goal: string, agent: string, at: number) => {

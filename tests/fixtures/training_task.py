@@ -1,12 +1,31 @@
 """A static downstream Task fixture; importing its Python intentionally fails."""
 
 import io
+import json
+import os
 import sys
 import tarfile
 import tempfile
 from pathlib import Path
 
 import yaml
+
+from packages.library.archive import import_lock
+from packages.library.common import content_hash
+from packages.library.transactions import durable_json
+
+
+def audit_task(path):
+    """Review exact bytes for tests exercising the operator-only Python Task seam."""
+    registry = os.getenv("LW_TASK_AUDIT_FILE")
+    if registry:
+        file = Path(registry)
+        with import_lock(file.parent):
+            entries = json.loads(file.read_bytes()) if file.exists() else []
+            sha = content_hash(path)
+            if not any(entry["contentHash"] == sha for entry in entries):
+                entry = {"contentHash": sha, "reviewer": "test-fixture", "note": "owned fixture"}
+                durable_json(file, [*entries, entry])
 
 
 def task_document(name="training-probe"):
@@ -40,11 +59,13 @@ def task_directory(path, name="training-probe"):
     )
     (path / "probe.py").write_text('raise RuntimeError("Task package must never execute on push")\n',
                                   encoding="utf-8")
+    audit_task(path)
     return path
 
 
 def task_archive(path=None, name="training-probe"):
     def pack(root):
+        audit_task(root)
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w") as tar:
             for file in sorted(root.rglob("*")):

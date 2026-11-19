@@ -5,7 +5,7 @@ import numpy as np
 from .observations import assemble, vector
 
 
-def compare_observations(spec, samples):
+def compare_observations(spec, samples, *, motion=None):
     if not samples:
         raise ValueError("At least one independently observed training state is required")
     maximum = 0.0
@@ -18,6 +18,7 @@ def compare_observations(spec, samples):
             previous_action=sample["previousAction"],
             command=sample.get("command"),
             references=sample.get("references", {}),
+            motion=motion,
         )
         error = np.abs(actual - expected)
         maximum = max(maximum, float(error.max()))

@@ -32,6 +32,7 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
   };
   const env = { ...process.env, SPATIAL_REMOTE: '0', SPATIAL_ALLOWED_ORIGINS: web,
     SPATIAL_API_URL: api, SPATIAL_NODE_TRAINER: '[]', SPATIAL_LIVE_BINDINGS: '',
+    LW_TASK_AUDIT_FILE: info.outputPath('state', 'task-audits.json'),
     LW_LIBRARY: info.outputPath('library'), SPATIAL_STATE_ROOT: info.outputPath('state'),
     SPATIAL_RECORDINGS_ROOT: info.outputPath('recordings') };
   const http = await playwright.request.newContext();
@@ -63,7 +64,7 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     }, { timeout: 20_000 }).toBe(true);
     const roots = await (await http.get(`${api}/e2e/storage-roots`)).json();
     for (const path of Object.values(roots) as string[]) expect(resolve(path).startsWith(resolve(info.outputDir))).toBe(true);
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `resources-${randomUUID()}`], { encoding: 'buffer' });
+    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `resources-${randomUUID()}`], { encoding: 'buffer', env });
     const upload = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(upload.ok(), await upload.text()).toBe(true);
     const task = await upload.json();

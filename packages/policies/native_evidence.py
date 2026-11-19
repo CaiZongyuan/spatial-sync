@@ -1,5 +1,6 @@
 """Versioned native input evidence; these data models do not grant source trust."""
 
+import math
 from typing import Literal
 
 from pydantic import AwareDatetime, Field, JsonValue, TypeAdapter, model_validator
@@ -40,6 +41,7 @@ class NativeProfile(NativeRuntime):
     id: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     evidenceMode: Literal["native", "controlled"]
     taskContentHash: Hash
+    compilerHash: Hash | None = Field(default=None, exclude_if=lambda value: value is None)
     stateProviderFile: Text
     versions: dict[Text, Text]
     inputWidth: int = Field(ge=1, le=4096)
@@ -55,11 +57,14 @@ class NativeCapture(Schema):
     profile: Text
     profileSha256: Hash
     runtime: NativeRuntime
+    compilerHash: Hash | None = Field(default=None, exclude_if=lambda value: value is None)
     capturedAt: AwareDatetime
 
 
 class NativeSamples(Schema):
-    schema_version: Literal["lw.policy-native-observation-samples/1"] = Field(alias="schema")
+    schema_version: Literal[
+        "lw.policy-native-observation-samples/1", "lw.policy-native-observation-samples/2"
+    ] = Field(alias="schema")
     source: Source
     policy: Weights
     capture: NativeCapture
@@ -76,7 +81,9 @@ class Witness(Schema):
 
 
 class NativeReceipt(Schema):
-    schema_version: Literal["lw.policy-native-observation-capture/1"] = Field(alias="schema")
+    schema_version: Literal[
+        "lw.policy-native-observation-capture/1", "lw.policy-native-observation-capture/2"
+    ] = Field(alias="schema")
     source: Source
     policy: Weights
     capture: NativeCapture
@@ -96,10 +103,24 @@ class FinalizedNativeReceipt(NativeReceipt):
     finalizedCheckpointSha256: Hash
 
 
-def validate_witnesses(receipt, envelope):
+def validate_native_schema(receipt, envelope, *, compiler, finalized):
+    sample_version = 2 if compiler else 1
+    receipt_version = 2 if compiler or finalized else 1
+    if (
+        receipt.schema_version != f"lw.policy-native-observation-capture/{receipt_version}"
+        or envelope.schema_version != f"lw.policy-native-observation-samples/{sample_version}"
+        or receipt.capture != envelope.capture
+        or receipt.capture.compilerHash != compiler
+        or receipt.afterLearn == finalized
+    ):
+        raise ValueError("Native input schema does not match its source authority")
+
+
+def validate_witnesses(receipt, envelope, *, task=None):
     from apps.node.observation_capture import canonical_hash
 
     unique, scopes = set(), {}
+    physical_states, motion_steps = set(), {}
     for sample, witness in zip(envelope.samples, receipt.witnesses, strict=True):
         state = {key: getattr(sample, key) for key in ("state", "references", "previousAction")}
         if sample.command is not None:
@@ -116,11 +137,34 @@ def validate_witnesses(receipt, envelope):
             or witness.environment not in receipt.capture.runtime.environments
         ):
             raise ValueError("Actual native state/input witnesses are duplicate, foreign or inconsistent")
+        if task is not None:
+            physical = {key: sample.state[key] for key in ("joints", "bodies", "sites")}
+            physical_hash = canonical_hash(physical)
+            if physical_hash in physical_states or not (physical["bodies"] and physical["joints"]):
+                raise ValueError("Declarative capture requires distinct measured physical states")
+            physical_states.add(physical_hash)
+            if task.get("referenceMotion") is not None:
+                _validate_motion_step(sample, witness, task, motion_steps)
         unique.add(witness.stateSha256)
         scopes[witness.environment] = scope
     if len(unique) != 256:
         raise ValueError("Native source did not capture 256 distinct actual policy states")
     return len(unique)
+
+
+def _validate_motion_step(sample, witness, task, motion_steps):
+    step, elapsed = sample.state["motionStep"], sample.state["motionElapsed"]
+    if (
+        type(step) is not int or step < 0 or isinstance(elapsed, bool)
+        or not math.isclose(elapsed, step / task["control"]["hz"], rel_tol=0., abs_tol=1e-9)
+    ):
+        raise ValueError("Phase witness differs from the pinned control clock")
+    prior = motion_steps.get(witness.environment)
+    if prior and prior[0] == witness.epoch and (
+        (step - prior[2]) * task["mjlab"]["decimation"] != witness.physicsStep - prior[1]
+    ):
+        raise ValueError("Phase witness step did not advance with physical simulation")
+    motion_steps[witness.environment] = (witness.epoch, witness.physicsStep, step)
 
 
 NATIVE_RECEIPTS = TypeAdapter(NativeReceipt | FinalizedNativeReceipt)

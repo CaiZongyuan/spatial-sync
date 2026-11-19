@@ -39,6 +39,7 @@ test('public fake node renders four isolated Job views, reconnects, resets and r
   };
   const env = { ...process.env, SPATIAL_REMOTE: '0', SPATIAL_ALLOWED_ORIGINS: web, SPATIAL_API_URL: api,
     SPATIAL_NODE_TRAINER: '[]', SPATIAL_LIVE_BINDINGS: '', LW_LIBRARY: info.outputPath('library'),
+    LW_TASK_AUDIT_FILE: info.outputPath('state', 'task-audits.json'),
     SPATIAL_STATE_ROOT: info.outputPath('state'), SPATIAL_RECORDINGS_ROOT: info.outputPath('recordings') };
   const http = await playwright.request.newContext();
   const token = 'training-resources-browser-fixture-token', instance = 'training-resources-browser-node';
@@ -75,7 +76,7 @@ test('public fake node renders four isolated Job views, reconnects, resets and r
       try { return (await http.get(`${api}/api/v1/health`, { timeout: 500 })).ok() && (await http.get(web, { timeout: 500 })).ok(); }
       catch { return false; }
     }, { timeout: 20_000 }).toBe(true);
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `view-${randomUUID()}`], { encoding: 'buffer' });
+    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `view-${randomUUID()}`], { encoding: 'buffer', env });
     const uploaded = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(uploaded.ok(), await uploaded.text()).toBe(true);
     const task = await uploaded.json();

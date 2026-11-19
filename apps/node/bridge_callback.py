@@ -101,6 +101,8 @@ def install():
             for name in ("jobId", "task", "taskContentHash", "scene", "sceneContentHash", "seed")
         },
     }
+    if declared.get("declarative") is not None:
+        versions["runtimeIdentity"] = inputs["runtimeIdentity"]
     presets = (
         declared.get("isaaclab", {}).get("presets", [])
         if isinstance(declared, dict) and not is_mjlab
@@ -182,7 +184,12 @@ def install():
 
                             observer = stack.enter_context(observe_training(runner, inputs))
                             if profile := inputs.get("nativeObservationProfile"):
-                                from lw_native_observation_capture import NativeObservationCapture
+                                if profile.get("compilerHash"):
+                                    from lw_declarative_capture import (
+                                        DeclarativeCapture as NativeObservationCapture,
+                                    )
+                                else:
+                                    from lw_native_observation_capture import NativeObservationCapture
 
                                 native = stack.enter_context(
                                     NativeObservationCapture(runner, observer, profile, inputs)

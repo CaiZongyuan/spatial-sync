@@ -7,10 +7,18 @@ import struct
 import tarfile
 from copy import deepcopy
 
+import onnx
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
+from apps.node.mjlab_launcher import compiler_hash
+from apps.node.observation_capture import canonical_hash
+from packages.library.common import BUILTIN_ROOT
+from packages.policies.native_evidence import NativeProfile
+from packages.training.inputs import pack_package
+from tests.fixtures.policy import observation_spec
 from tests.fixtures.training_task import task_archive, training_plan
 from tests.gateway.test_mjlab_node_jobs import _build_mjlab_task_package
 from tests.gateway.test_remote_training_nodes import (
@@ -53,7 +61,29 @@ def checkpoint_archive(dispatch, *, corrupt=False):
     return output.getvalue()
 
 
-def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_path):
+def declarative_archive(directory):
+    directory.mkdir()
+    task = yaml.safe_load((BUILTIN_ROOT / "tasks/microduck-stand-up/1/package/task.yaml").read_bytes())
+    task.update(
+        name="checkpoint-motion",
+        declarative={
+            "baseBody": task["robot"] + "/trunk_base",
+            "episodeSeconds": 8.0,
+            "rewards": [{"kind": "upright", "weight": 1.0}],
+        },
+    )
+    spec = observation_spec()
+    spec["schema"] = "lw.obs-spec/2"
+    joint = task["robot"] + "/joints/left_hip_yaw"
+    spec["observations"][0]["keys"] = spec["action"]["jointKeys"] = [joint]
+    task["control"]["action"] = spec["action"]["space"]
+    (directory / "task.yaml").write_text(yaml.safe_dump(task))
+    (directory / "obs_spec.yaml").write_text(yaml.safe_dump(spec))
+    return pack_package(directory), task, joint
+
+
+@pytest.mark.parametrize("managed", [False, True], ids=["legacy-samples", "declarative-samples"])
+def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_path, managed):
     settings = remote_settings()
     clock = [1000.0]
 
@@ -65,13 +95,21 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
     runtime = {
         "trainingEntries": {"mjlab": "mjlab:managed"},
         "trainerVersions": MJLAB_VERSIONS,
-        "compilerHash": COMPILER,
+        "compilerHash": compiler_hash() if managed else COMPILER,
     }
+    directory = tmp_path / "task"
+    if managed:
+        task_bytes, task_doc, joint = declarative_archive(directory)
+        observation = (directory / "obs_spec.yaml").read_bytes()
+        evaluation = {"evaluation": {"scene": task_doc["scene"], "episodes": 1, "threshold": 1}}
+    else:
+        task_bytes = task_archive(_build_mjlab_task_package(directory))
+        task_doc, joint, observation, evaluation = None, None, None, {}
     with TestClient(app()) as client:
         task = client.post(
             "/api/v1/tasks",
             headers=OPERATOR | {"Content-Type": "application/x-tar"},
-            content=task_archive(_build_mjlab_task_package(tmp_path / "task")),
+            content=task_bytes,
         ).json()
         plan = client.post(
             "/api/v1/plans",
@@ -80,6 +118,7 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
                 task["id"],
                 algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
                 budget={"gpuHours": 0.1},
+                **evaluation,
             ),
         ).json()
 
@@ -136,6 +175,10 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         a_lease = a | {"X-Lease-Id": job["leaseId"]}
         dispatch = client.get(f"{url}/inputs", headers=a_lease).json()
         assert dispatch["schemaVersion"] == 2
+        if managed:
+            profile = dispatch["nativeObservationProfile"]
+            assert profile["compilerHash"] == runtime["compilerHash"]
+            assert profile["taskContentHash"] == task["contentHash"]
         clock[0] = 1059
         report = {
             "leaseId": job["leaseId"],
@@ -190,7 +233,11 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         assert int(assignment["leaseId"]) > int(job["leaseId"])
         assert assignment["logAfter"] == 1
         b_lease = b | {"X-Lease-Id": assignment["leaseId"]}
-        restored = client.get(f"{url}/inputs", headers=b_lease).json()["resumeCheckpoint"]
+        resumed = client.get(f"{url}/inputs", headers=b_lease).json()
+        restored = resumed["resumeCheckpoint"]
+        if managed:
+            assert resumed["nativeObservationProfile"] == profile
+            assert resumed["checkpointIdentity"]["leaseId"] == b_lease["X-Lease-Id"]
         assert restored["sha256"] == checkpoint["sha256"]
         assert client.get(restored["url"], headers=b_lease).content == archive
         assert client.get(restored["url"], headers=a_lease).status_code == 403
@@ -244,13 +291,22 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         final = final.json()
         final_url = f"/api/v1/jobs/{final['jobId']}"
         final_lease = b | {"X-Lease-Id": final["leaseId"]}
-        assert (
-            client.get(f"{final_url}/inputs", headers=final_lease).json()["resumeCheckpoint"]["sha256"]
-            == (checkpoint["sha256"])
-        )
+        final_inputs = client.get(f"{final_url}/inputs", headers=final_lease).json()
+        assert final_inputs["resumeCheckpoint"]["sha256"] == checkpoint["sha256"]
+        if managed:
+            assert final_inputs["nativeObservationProfile"] == profile
+            assert final_inputs["checkpointIdentity"]["leaseId"] == final_lease["X-Lease-Id"]
         artifact = tmp_path / "final-artifacts"
-        witness_artifacts(final, archive, checkpoint, artifact)
-        from packages.training.inputs import pack_package
+        witness_artifacts(
+            final,
+            archive,
+            checkpoint,
+            artifact,
+            dispatch=final_inputs if managed else None,
+            task_doc=task_doc,
+            joint=joint,
+            observation=observation,
+        )
 
         receipt = artifact / "observations/native-capture.json"
         good = json.loads(receipt.read_bytes())
@@ -272,6 +328,29 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
             ).status_code
             == 422
         )
+        if managed:
+            sample_file = artifact / "observations/native-samples.json"
+            sample_bytes = sample_file.read_bytes()
+            downgraded = json.loads(sample_bytes)
+            downgraded["schema"] = "lw.policy-native-observation-samples/1"
+            sample_file.write_text(json.dumps(downgraded))
+            good_digest = hashlib.sha256(sample_file.read_bytes()).hexdigest()
+            receipt.write_text(json.dumps(good | {"samplesSha256": good_digest}))
+            rejected = client.post(
+                f"{final_url}/artifacts", headers=final_lease, content=pack_package(artifact)
+            )
+            assert rejected.status_code == 422 and "source authority" in rejected.text
+            sample_file.write_bytes(sample_bytes)
+            wrong_generation = good | {"source": good["source"] | {"attemptId": "attempt-" + "f" * 64}}
+            receipt.write_text(json.dumps(wrong_generation))
+            assert (
+                client.post(
+                    f"{final_url}/artifacts",
+                    headers=final_lease,
+                    content=pack_package(artifact),
+                ).status_code
+                == 422
+            )
         receipt.write_text(json.dumps(good))
         published = client.post(f"{final_url}/artifacts", headers=final_lease, content=pack_package(artifact))
         assert published.is_success, published.text
@@ -286,9 +365,30 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         final = client.get(final_url, headers=OPERATOR).json()
         assert final["status"] == "succeeded"
         assert [(row["startIteration"], row["endIteration"]) for row in final["attempts"]] == [(4, 4)]
+        if managed:
+            candidate = client.post(
+                "/api/v1/policies",
+                headers=OPERATOR,
+                json={
+                    "checkpoint": final["jobId"] + "/checkpoint.safetensors",
+                },
+            )
+            assert candidate.status_code == 201, candidate.text
+            path = "/api/v1/policies/checkpoint-motion/1/observation-checks"
+            checked = client.post(path, headers=OPERATOR, json={"artifact": good["samplesArtifact"]})
+            assert checked.status_code == 201, checked.text
+            verified = client.post(
+                f"{path}/{checked.json()['id']}/verify-source",
+                headers=OPERATOR,
+                json={"artifact": "observations/native-capture.json"},
+            )
+            assert verified.status_code == 200, verified.text
+            assert verified.json()["sourceVerification"]["qualified"] is True
 
 
-def witness_artifacts(job, archive, checkpoint, directory):
+def witness_artifacts(
+    job, archive, checkpoint, directory, *, dispatch=None, task_doc=None, joint=None, observation=None
+):
     """Independently assemble an authenticated fake node's finalizer response."""
     from tests.fixtures.policy import model_bytes
 
@@ -298,9 +398,12 @@ def witness_artifacts(job, archive, checkpoint, directory):
     with tarfile.open(fileobj=io.BytesIO(archive)) as original:
         for name in ("checkpoint.json", "checkpoint.safetensors"):
             (directory / name).write_bytes(original.extractfile(name).read())
-    onnx = directory / "policy.onnx"
-    onnx.write_bytes(model_bytes())
-    hash_onnx = hashlib.sha256(onnx.read_bytes()).hexdigest()
+    model_file = directory / "policy.onnx"
+    model = onnx.load_model_from_string(model_bytes())
+    if dispatch:
+        model.graph.input[0].name = model.graph.node[0].input[0] = "obs"
+    model_file.write_bytes(model.SerializeToString())
+    hash_onnx = hashlib.sha256(model_file.read_bytes()).hexdigest()
     export = {
         "schemaVersion": 2,
         "checkpointArchiveSha256": checkpoint["sha256"],
@@ -323,6 +426,8 @@ def witness_artifacts(job, archive, checkpoint, directory):
             "gpu": {"uuid": "GPU-b", "name": "GPU model b"},
         },
     )
+    if dispatch:
+        versions["runtimeIdentity"] = dispatch["runtimeIdentity"]
     (directory / "stdout.log").write_text("")
     (directory / "stderr.log").write_text("")
     (directory / "versions.json").write_text(json.dumps(versions))
@@ -336,7 +441,7 @@ def witness_artifacts(job, archive, checkpoint, directory):
     weights = {
         "checkpointSha256": checkpoint["tensorSha256"],
         "onnxSha256": hash_onnx,
-        "observationSha256": "a" * 64,
+        "observationSha256": hashlib.sha256(observation).hexdigest() if observation else "a" * 64,
     }
     identity = {"module": "fake", "qualname": "fixture", "sha256": "a" * 64}
     capture = {
@@ -357,17 +462,35 @@ def witness_artifacts(job, archive, checkpoint, directory):
         },
     }
 
-    def canonical(value):
-        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if dispatch:
+        profile = dispatch["nativeObservationProfile"]
+        capture = capture | {
+            "profile": profile["id"],
+            "profileSha256": canonical_hash(profile),
+            "runtime": NativeProfile.model_validate(profile).runtime(),
+            "compilerHash": profile["compilerHash"],
+        }
 
     samples, witnesses = [], []
     for number in range(1, 257):
         source_id = f"env-0/epoch-0/step-{number}"
+        state = {"step": number}
+        vector = [float(number)]
+        if dispatch:
+            q = number / 256
+            state = {
+                "joints": {joint: {"q": q, "qd": 0.0}},
+                "bodies": {
+                    task_doc["declarative"]["baseBody"]: {"p": [0.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0]}
+                },
+                "sites": {},
+            }
+            vector = [2 * q]
         samples.append(
             {
                 "sourceStateId": source_id,
-                "state": {"step": number},
-                "trainingObservation": [float(number)],
+                "state": state,
+                "trainingObservation": vector,
                 "previousAction": [0.0],
             }
         )
@@ -377,15 +500,14 @@ def witness_artifacts(job, archive, checkpoint, directory):
                 "environment": 0,
                 "epoch": 0,
                 "physicsStep": number,
-                "stateSha256": canonical(
-                    {"state": {"step": number}, "references": {}, "previousAction": [0.0]}
-                ),
-                "nativeInputSha256": canonical([float(number)]),
+                "stateSha256": canonical_hash({"state": state, "references": {}, "previousAction": [0.0]}),
+                "nativeInputSha256": canonical_hash(vector),
             }
         )
     common = {"source": source, "policy": weights, "capture": capture}
     raw_samples = json.dumps(
-        common | {"schema": "lw.policy-native-observation-samples/1", "samples": samples}
+        common
+        | {"schema": f"lw.policy-native-observation-samples/{2 if dispatch else 1}", "samples": samples}
     )
     (evidence / "native-samples.json").write_text(raw_samples)
     receipt = common | {
@@ -395,7 +517,7 @@ def witness_artifacts(job, archive, checkpoint, directory):
         "samplesSha256": hashlib.sha256(raw_samples.encode()).hexdigest(),
         "witnesses": witnesses,
         "normalizerState": {},
-        "normalizerStateSha256": "a" * 64,
+        "normalizerStateSha256": canonical_hash({}),
         "afterLearn": False,
         "iteration": 4,
         "finalizedCheckpointSha256": checkpoint["sha256"],

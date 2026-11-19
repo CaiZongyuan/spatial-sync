@@ -307,6 +307,7 @@ class TrainingJobs:
         if plan["hyperparameters"].get("device", "cuda") not in ("cuda", "cpu"):
             raise PlanError("invalid_job", "Training device must be explicitly cpu or cuda", status=422)
         task = self.manager.tasks.show(plan["task"])
+        self.manager.tasks.require_execution(task)
         scene = self.manager.library.resolve(task["task"]["scene"])
         backend = task["task"].get("mjlab") or task["task"].get("isaaclab") or {}
         is_mjlab = task["task"].get("mjlab") is not None

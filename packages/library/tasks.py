@@ -73,16 +73,44 @@ class TaskLibrary:
             raise LibraryError("unknown_task", "Unknown Task version", 404)
         return self._read(identifier, path)
 
+    def observation(self, identifier):
+        record = self.show(identifier)
+        path = self._versions()[identifier] / "package" / relative_path(record["task"]["observation"])
+        return ObservationSpec.model_validate(document(path))
+
     def export(self, identifier):
         self.show(identifier)
         package = self._versions()[identifier] / "package"
         return pack_package(package)
 
+    def require_execution(self, record):
+        if record["task"].get("declarative") is not None:
+            return
+        if self._audited(record["id"], record["contentHash"]):
+            return
+        raise LibraryError("task_audit_required", "Python Task needs an exact operator audit", 403)
+
+    def _audited(self, identifier, digest):
+        name, version = identifier.removeprefix("task/").split("@")
+        builtin = self.roots["builtin"] / "tasks" / name / version / "package"
+        if builtin.is_dir() and content_hash(builtin) == digest:
+            return True
+        path = os.getenv("LW_TASK_AUDIT_FILE")
+        if path:
+            try:
+                document = json.loads(Path(path).read_bytes())
+                for entry in document:
+                    if entry["contentHash"] == digest and entry["reviewer"].strip() and entry["note"].strip():
+                        return True
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                raise LibraryError("task_audit_invalid", "Invalid host Task audit registry", 409) from error
+        return False
+
     def _validate(self, package):
         try:
             files = package_files(package)
-            if not {"task.yaml", "pyproject.toml"}.issubset(files):
-                raise ValueError("Task requires task.yaml and pyproject.toml")
+            if "task.yaml" not in files:
+                raise ValueError("Task requires task.yaml")
             if (package / "task.yaml").stat().st_size > 1024 * 1024:
                 raise ValueError("task.yaml exceeds 1 MiB")
             task = TaskMetadata.model_validate(document(package / "task.yaml"))
@@ -91,7 +119,8 @@ class TaskLibrary:
                 raise ValueError("observation must name an existing package-local file")
             obs_doc = document(package / observation)
             if (
-                "schema" in obs_doc
+                task.declarative is not None
+                or "schema" in obs_doc
                 or "observations" in obs_doc
                 or task.episode.commandEnvelope is not None
             ):
@@ -116,18 +145,58 @@ class TaskLibrary:
                             )
                 elif task.episode.commandEnvelope is not None:
                     raise ValueError("commandEnvelope requires a command observation in obs_spec")
-            project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))
-            entry_group = "mjlab.tasks" if task.mjlab is not None else "isaaclab.tasks"
-            entries = project.get("project", {}).get("entry-points", {}).get(entry_group, {})
-            if not entries or not isinstance(entries, dict) or any(
-                not isinstance(key, str) or not isinstance(value, str) or not value.strip()
-                for key, value in entries.items()
-            ):
-                article = "a" if task.mjlab is not None else "an"
-                raise ValueError(f"pyproject.toml requires {article} {entry_group} entry point")
+            if task.declarative is not None:
+                if set(files) != {"task.yaml", observation}:
+                    raise ValueError("Declarative Task contains only task.yaml and its observation data")
+                if spec.schema_version != "lw.obs-spec/2":
+                    raise ValueError("Declarative Task requires lw.obs-spec/2")
+                motion = task.referenceMotion
+                for item in spec.observations:
+                    if item.source == "motion_phase" and (
+                        motion is None or item.shape != [2 if motion.loop else 1]
+                    ):
+                        raise ValueError("Motion phase layout differs from the reference motion")
+                    if item.source == "reference_motion_frame" and (
+                        motion is None or item.shape != [7 + len(motion.jointKeys)]
+                    ):
+                        raise ValueError("Reference frame layout differs from the reference motion")
+                if any(key.startswith("$") for item in spec.observations
+                       for key in (item.key, item.frame) if key):
+                    raise ValueError("Declarative observation sources require canonical paths")
+                command = task.declarative.command
+                if command_obs and (
+                    not command or not envelope or len(command) != len(envelope)
+                    or any(not lo <= a <= b <= hi for (a, b), (lo, hi) in zip(command, envelope, strict=True))
+                ):
+                    raise ValueError("Command sampling must be inside the admitted command envelope")
+                if bool(command_obs) != bool(command):
+                    raise ValueError("Command observation and sampling must be declared together")
+                if task.declarative.reset.jointPosition and len(task.declarative.reset.jointPosition) != (
+                    len(spec.action.jointKeys)
+                ):
+                    raise ValueError("Reset offsets must follow action joint order")
+            else:
+                if "pyproject.toml" not in files:
+                    raise ValueError("Python Task requires pyproject.toml")
+                project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))
+                entry_group = "mjlab.tasks" if task.mjlab is not None else "isaaclab.tasks"
+                entries = project.get("project", {}).get("entry-points", {}).get(entry_group, {})
+                if not entries or not isinstance(entries, dict) or any(
+                    not isinstance(key, str) or not isinstance(value, str) or not value.strip()
+                    for key, value in entries.items()
+                ):
+                    raise ValueError(f"pyproject.toml requires a {entry_group} entry point")
             scenes = self.scenes()
             scenes.refresh()
             scene = scenes.resolve(task.scene)
+            if task.declarative is not None:
+                if scene.metadata["stage"].startswith("python:") or scene.metadata["sources"] != ["newton"]:
+                    raise ValueError("Declarative Task requires a canonical Newton USD scene")
+            if task.referenceMotion is not None:
+                motion = task.referenceMotion
+                assets = scene.asset_dependencies() + scene.template_dependencies()
+                if {"id": motion.asset, "contentHash": motion.assetContentHash} not in assets:
+                    raise ValueError("Reference motion must pin an actual Scene Asset dependency")
             if task.robot not in {item.get("key") for item in scene.bindings["entities"]}:
                 raise ValueError("robot must identify an entity in the pinned scene")
             resolved = resolve(scene.bindings, scene.metadata["sources"][0], scene.template_assets)
@@ -173,7 +242,10 @@ class TaskLibrary:
                 if same:
                     return {**same, "idempotent": True}
                 revision = 1 + max((item["rev"] for item in versions), default=0)
-                record = {"id": f"task/{name}@{revision}", "name": name, "rev": revision,
+                identifier = f"task/{name}@{revision}"
+                if task.get("declarative") is None:
+                    self.require_execution({"task": task, "id": identifier, "contentHash": digest})
+                record = {"id": identifier, "name": name, "rev": revision,
                           "title": task["title"], "contentHash": digest, "task": task,
                           "sceneContentHash": scene.content_hash}
                 durable_json(stage / "metadata.json", record)

@@ -19,15 +19,17 @@ from urllib.parse import urlsplit
 import httpx
 import psutil
 
-from apps.node.mjlab_launcher import compiler_hash
+from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
-from packages.library.archive import extract_package, import_lock, relative_path
+from packages.library.archive import extract_package, import_lock, package_files, relative_path
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
 from packages.training import checkpoint_format
 from packages.training import runtime as training_runtime
+from packages.training.checkpoints import identity as checkpoint_identity
 from packages.training.inputs import pack_package
+from packages.training.schema import TaskMetadata
 
 GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
 
@@ -342,6 +344,11 @@ class OwnedRun:
                     or len(inputs["packages"]) != len(expected)
                 ):
                     raise ValueError("Node inputs do not describe this exact immutable dispatch")
+                if portable and inputs["checkpointIdentity"] != checkpoint_identity(
+                    job | {"plan": inputs["plan"]},
+                    {"leaseId": job["leaseId"], "runtimeIdentity": inputs["runtimeIdentity"]},
+                ):
+                    raise ValueError("Portable checkpoint identity differs from the leased dispatch")
                 if source := inputs.get("resumeCheckpoint"):
                     expected_url = f"/api/v1/jobs/{job['jobId']}/inputs/checkpoint/{source['sha256']}"
                     if (
@@ -377,6 +384,13 @@ class OwnedRun:
                 inputs["task"] = yaml.safe_load(
                     (Path(task_package["directory"]) / "task.yaml").read_text(encoding="utf-8")
                 )
+                declarative = inputs["task"].get("declarative") is not None
+                if declarative:
+                    declared = TaskMetadata.model_validate(inputs["task"])
+                    task_root = Path(task_package["directory"])
+                    if set(package_files(task_root)) != {"task.yaml", declared.observation}:
+                        raise ValueError("Declarative task input contains unapproved files")
+                    inputs["task"] = declared.model_dump(mode="json")
                 demonstration_inputs = []
                 for reference in job.get("demonstrationSets", []):
                     dataset = next(item for item in inputs["packages"]
@@ -416,10 +430,8 @@ class OwnedRun:
                                 bridge / "lw_native_observation_capture.py")
                 shutil.copyfile(Path(__file__).with_name("observation_capture.py"),
                                 bridge / "lw_observation_capture.py")
-                shutil.copyfile(Path(__file__).with_name("usd_mjcf.py"),
-                                bridge / "lw_usd_mjcf.py")
-                shutil.copyfile(Path(__file__).with_name("mjlab_launcher.py"),
-                                bridge / "lw_mjlab_launcher.py")
+                for name, source in compiler_sources().items():
+                    shutil.copyfile(source, bridge / ("lw_" + name))
                 shutil.copyfile(training_runtime.__file__, bridge / "lw_training_runtime.py")
                 if portable:
                     shutil.copyfile(checkpoint_format.__file__, bridge / "lw_checkpoint_format.py")
@@ -472,6 +484,10 @@ class OwnedRun:
                         )
                     if backend_name == "isaaclab" and not entry[0].startswith("-"):
                         entry[0] = str(Path(entry[0]).resolve())
+                if declarative and (
+                    not leased_compiler or training_runtime.entry_identity("mjlab", entry) != "mjlab:managed"
+                ):
+                    raise ValueError("Declarative Task requires the leased platform mjlab entry")
                 if is_mjlab and (validation or not entry):
                     entry = list(training_runtime.MJLAB_ENTRY)
                 stage = scene_package["stage"]
@@ -523,14 +539,15 @@ class OwnedRun:
                         "import site; " + "; ".join(f"site.addsitedir({path!r})" for path in sites) + "\n",
                         encoding="utf-8",
                     )
-                    build = self.root / "task-build"
-                    shutil.copytree(task_package["directory"], build)
-                    self._command(
-                        ["uv", "pip", "install", "--python", python, "--no-deps", str(build)],
-                        env,
-                        stdout,
-                        stderr,
-                    )
+                    if not declarative:
+                        build = self.root / "task-build"
+                        shutil.copytree(task_package["directory"], build)
+                        self._command(
+                            ["uv", "pip", "install", "--python", python, "--no-deps", str(build)],
+                            env,
+                            stdout,
+                            stderr,
+                        )
                     if is_mjlab:
                         if portable and job["kind"] == "training":
                             self.checkpoint_http = http

@@ -125,6 +125,9 @@ def test_microduck_builtin_tasks_list_show_validate_push_and_usd_parity(tmp_path
         assert idem["idempotent"] is True
         assert idem["contentHash"] == shown["contentHash"]
 
+        from tests.fixtures.training_task import audit_task
+
+        audit_task(tasks._versions()[task_id] / "package")
         fresh = iso_tasks.push(io.BytesIO(archive_bytes))
         assert fresh["id"] == task_id
         assert fresh["idempotent"] is False

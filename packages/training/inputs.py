@@ -84,7 +84,7 @@ def _bounded_checkpoint_json(file):
         return decode_json(source.read(MAX_METADATA + 1))
 
 
-def _validate_portable_export(job, descriptor, stage, export, checkpoint, policy, versions):
+def _validate_portable_export(job, descriptor, stage, export, checkpoint, policy, versions, task_doc):
     if (
         descriptor is None or checkpoint != "checkpoint.safetensors"
         or export.get("schemaVersion") != 2
@@ -102,7 +102,12 @@ def _validate_portable_export(job, descriptor, stage, export, checkpoint, policy
         if descriptor["iteration"] != job["plan"]["hyperparameters"]["max_iterations"]:
             raise ValueError("Training export requires the approved final iteration")
         return
-    from packages.policies.native_evidence import NATIVE_RECEIPTS, NativeSamples, validate_witnesses
+    from packages.policies.native_evidence import (
+        NATIVE_RECEIPTS,
+        NativeSamples,
+        validate_native_schema,
+        validate_witnesses,
+    )
     from packages.training.views import attempt_identity
 
     if export.get("operation") != "checkpoint_finalize":
@@ -110,12 +115,14 @@ def _validate_portable_export(job, descriptor, stage, export, checkpoint, policy
     receipt = NATIVE_RECEIPTS.validate_json((stage / "observations/native-capture.json").read_bytes())
     samples_file = stage / "observations/native-samples.json"
     samples = NativeSamples.model_validate_json(samples_file.read_bytes())
-    validate_witnesses(receipt, samples)
+    managed = task_doc.get("declarative") is not None
+    compiler = versions["runtimeIdentity"]["compilerHash"] if managed else None
+    validate_native_schema(receipt, samples, compiler=compiler, finalized=True)
+    validate_witnesses(receipt, samples, task=task_doc if managed else None)
     if (
         getattr(receipt, "finalizedCheckpointSha256", None) != descriptor["sha256"]
         or receipt.samplesArtifact != "observations/native-samples.json"
         or receipt.samplesSha256 != _file_hash(samples_file)
-        or receipt.capture != samples.capture
         or receipt.iteration != descriptor["iteration"]
         or receipt.source != samples.source or receipt.source.versions != versions
         or any(getattr(receipt.source, key) != job[key] for key in (
@@ -161,7 +168,7 @@ def publish_attempt_artifacts(manager, job):
 
 
 def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=None, *,
-                    portable=False, descriptor=None):
+                    portable=False, descriptor=None, runtime_identity=None):
     root = manager.library_assets.roots["user"]
     with manager.library_assets._lock, tempfile.TemporaryDirectory(prefix=".upload-", dir=root) as temporary:
         stage = Path(temporary)
@@ -180,7 +187,11 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
                 or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
-            task_doc = manager.tasks.show(job["task"])["task"] if job.get("backend") is None else None
+            task_doc = manager.tasks.show(job["task"])["task"]
+            if task_doc.get("declarative") is not None and (
+                not runtime_identity or versions.get("runtimeIdentity") != runtime_identity
+            ):
+                raise ValueError("Artifact runtime identity differs from the declarative lease")
             required_versions = trainer_distributions(job_backend(job, task_doc) == "mjlab")
             if any(
                 not isinstance(versions["versions"].get(name), str) or not versions["versions"][name]
@@ -233,7 +244,9 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
             ):
                 raise ValueError("ONNX export does not identify its exact trained checkpoint")
             if portable:
-                _validate_portable_export(job, descriptor, stage, export, checkpoint, policy, versions)
+                _validate_portable_export(
+                    job, descriptor, stage, export, checkpoint, policy, versions, task_doc
+                )
             external = export["externalData"]
             if not isinstance(external, list) or len({entry["path"] for entry in external}) != len(external):
                 raise ValueError("ONNX external data manifest must contain distinct files")

@@ -264,8 +264,13 @@ def resolve_policy_subject(manager, requested, suite, scene):
     if base is None or base["type"] != interface:
         raise _invalid("Policy target is absent or has a different interface")
     program_cls = policy_program_for(interface, base.get("program"))
+    base_config = base["config"]
+    completion = task.get("completion") or {}
+    if program_cls.id == "embodied.policy" and completion.get("mode") == "waypoint_nav":
+        # A posture Reference need not expose locations in its Program config.
+        base_config = base_config | {"locations": base_config.get("locations") or scene.locations}
     try:
-        config = program_cls.apply_policy_override(base["config"], action, policy["id"])
+        config = program_cls.apply_policy_override(base_config, action, policy["id"])
     except (ValidationError, ValueError) as exc:
         raise _invalid("Policy binding configuration is invalid for target Program") from exc
     spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))

@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import zipfile
 
 import httpx
 from cli_support import LW, ROOT, result
@@ -50,6 +51,13 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
         assert policy["qualified"] is False and not policy["idempotent"]
         assert invoke("policy", "create", checkpoint)["idempotent"]
         assert invoke("policy", "show", policy["id"])["checkpointSha256"] == policy["checkpointSha256"]
+        archive = tmp_path / "policy.zip"
+        assert invoke("policy", "export", policy["id"], str(archive)) == {
+            "id": policy["id"], "output": str(archive),
+        }
+        with zipfile.ZipFile(archive) as package:
+            assert json.loads(package.read("manifest.json"))["policyContentHash"] == policy["contentHash"]
+        assert invoke("policy", "export", policy["id"], str(archive), code=1)["error"]
         refused = invoke("policy", "promote", policy["id"], "--scene", policy["scene"], code=1)
         assert refused["error"]["statusCode"] == 409
         assert refused["error"]["detail"]["code"] == "candidate_not_accepted"

@@ -2162,6 +2162,8 @@ def _expected_joint_keys(
     if entity_key is not None:
         prefix = entity_key.rstrip("/")
         prim_paths = list(derived.joint_prim_paths)
+        if prim_paths and all(path.startswith(prefix + "/") for path in prim_paths):
+            return prim_paths
         if prim_paths:
             # Replace the authored root prim segment (e.g. "/Asset") with entity_key.
             first_parts = PurePosixPath(prim_paths[0]).parts
@@ -2189,8 +2191,8 @@ def verify_against_observation_spec(
     """Assert exact agreement between derived USD articulation joints/drives and an ObservationSpec."""
     doc = _load_obs_spec_mapping(obs_spec)
     schema = doc.get("schema")
-    if schema is not None and schema != "lw.obs-spec/1":
-        raise ValueError(f"Unsupported ObservationSpec schema {schema!r}; expected 'lw.obs-spec/1'")
+    if schema is not None and schema not in ("lw.obs-spec/1", "lw.obs-spec/2"):
+        raise ValueError(f"Unsupported ObservationSpec schema {schema!r}")
 
     action = doc.get("action") or {}
     action_keys = [str(k) for k in (action.get("jointKeys") or ())]

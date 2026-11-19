@@ -1305,6 +1305,15 @@ class GatewayClient:
     async def policy_show(self, id):
         return await self.request("GET", self._policy_path(id))
 
+    async def policy_export(self, id, output):
+        content = await self.request("GET", self._policy_path(id) + "/export", response_bytes=True)
+        try:
+            with Path(output).open("xb") as stream:
+                stream.write(content)
+        except OSError as exc:
+            raise ValueError("Policy output must be a new writable file") from exc
+        return {"id": id, "output": output}
+
     async def policy_promote(self, id, scene, evaluation=None, observation_check=None,
                              plan=None, revision=None, request_id=None, *, actor="cli:lw"):
         self._policy_path(id)

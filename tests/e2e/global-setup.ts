@@ -19,4 +19,5 @@ export default async function requireOwnedRoots(config: FullConfig) {
   });
   if (shared.length)
     throw new Error(`E2E API ${api} must write only under ${scratch}: ${shared.map(([name, root]) => `${name}=${root}`).join(', ')}`);
+  process.env.LW_TASK_AUDIT_FILE = resolve(roots.state, "task-audits.json");
 }

@@ -417,6 +417,11 @@ COMMANDS = (
             method="policy_show", mcp_name="policy_show", arguments=(
                 Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
             )),
+    Command(path=("policy", "export"), help="Download one immutable Policy as a standalone ZIP.",
+            method="policy_export", arguments=(
+                Argument("id", ("policy/name@revision",), str, "Exact immutable policy version"),
+                Argument("output", ("output.zip",), str, "New local archive path"),
+            )),
     Command(path=("policy", "promote"), help="Request private tests and human deployment review.",
             method="policy_promote", mcp_name="policy_promote", actor=True, arguments=(
                 Argument("id", ("policy/name@revision",), str, "Exact accepted immutable policy"),

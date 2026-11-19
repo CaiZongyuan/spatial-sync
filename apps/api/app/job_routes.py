@@ -131,7 +131,16 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):
         job = node(request, identity)
+        task = manager.tasks.show(job["task"])
+        manager.tasks.require_execution(task)
         lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
+        profile = None
+        if task["task"].get("declarative") is not None:
+            from packages.policies.qualification import declarative_profile
+
+            profile = declarative_profile(
+                task, manager.tasks.observation(task["id"]), job, lease.get("runtimeIdentity"),
+            )
         value = {
             "schemaVersion": 2 if lease.get("checkpointVersion") else 1,
             "job": jobs.document(job),
@@ -149,8 +158,12 @@ def install_job_routes(app, manager, role_for, views=None):
                     "url": f"/api/v1/jobs/{identity}/inputs/checkpoint/{source['sha256']}",
                 }
         if job["kind"] in ("training", "checkpoint_finalize"):
-            value["nativeObservationProfile"] = manager.policy_evidence.native_profiles.for_task(
-                job["taskContentHash"], job["plan"]["algorithm"]["version"]
+            value["nativeObservationProfile"] = (
+                profile.model_dump(mode="json")
+                if profile is not None
+                else manager.policy_evidence.native_profiles.for_task(
+                    job["taskContentHash"], job["plan"]["algorithm"]["version"],
+                )
             )
             if views is not None and job["kind"] == "training":
                 value["view"] = await views.inputs_hint(job)
@@ -160,6 +173,7 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.get("/api/v1/jobs/{identity}/inputs/packages/{index}")
     async def package(identity: str, index: int, request: Request):
         job = node(request, identity)
+        manager.tasks.require_execution(manager.tasks.show(job["task"]))
         data = await anyio.to_thread.run_sync(export_input, manager, job, index)
         node(request, identity)
         return Response(data, media_type="application/x-tar")
@@ -230,6 +244,7 @@ def install_job_routes(app, manager, role_for, views=None):
             records, versions = await anyio.to_thread.run_sync(partial(
                 store_artifacts, manager, dict(job), stream, lambda: node(request, identity),
                 lease.get("trainerVersions"), portable=portable, descriptor=descriptor,
+                runtime_identity=lease.get("runtimeIdentity"),
             ))
             node(request, identity)
             if portable:

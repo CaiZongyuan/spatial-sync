@@ -17,6 +17,9 @@ for variable, directory in (
 ):
     os.environ.setdefault(variable, str(OWNED_ROOT / directory))
 
+# Browser fixtures review only the exact archives their fixture builder produced.
+os.environ.setdefault("LW_TASK_AUDIT_FILE", str(Path(os.environ["SPATIAL_STATE_ROOT"]) / "task-audits.json"))
+
 from apps.api.app.main import app  # noqa: E402 - the gateway reads its roots on import.
 from apps.api.app.sources import synthetic_source  # noqa: E402
 from packages.info.catalog import load_catalog  # noqa: E402

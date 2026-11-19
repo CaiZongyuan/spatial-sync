@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from packages.programs.metadata import ProgramIntent
+from packages.training.declarative import Completion, LayerA, ReferenceMotion
 from packages.training.predictions import prediction
 
 
@@ -97,6 +98,9 @@ class TaskMetadata(Schema):
     observation: Text
     isaaclab: IsaacLab | None = Field(default=None, exclude_if=lambda value: value is None)
     mjlab: MjLab | None = Field(default=None, exclude_if=lambda value: value is None)
+    declarative: LayerA | None = Field(default=None, exclude_if=lambda value: value is None)
+    completion: Completion | None = Field(default=None, exclude_if=lambda value: value is None)
+    referenceMotion: ReferenceMotion | None = Field(default=None, exclude_if=lambda value: value is None)
     evaluation: Evaluation
     loopBudget: LoopBudget
     demonstrations: list[DemonstrationUse] = Field(default_factory=list, max_length=32)
@@ -136,6 +140,21 @@ class TaskMetadata(Schema):
             and abs(1.0 / (self.mjlab.physics_dt * self.mjlab.decimation) - self.control.hz) > 1e-4
         ):
             raise ValueError("mjlab physics_dt * decimation must match control.hz")
+        if self.declarative is not None:
+            if (self.mjlab is None or self.mjlab.sceneInput != "usd"
+                    or self.mjlab.physics_dt is None or self.mjlab.decimation is None
+                    or not self.declarative.baseBody.startswith(self.robot + "/")):
+                raise ValueError("Declarative Task requires managed USD mjlab, explicit clocks and base body")
+            kinds = {reward.kind for reward in self.declarative.rewards}
+            if ("joint_tracking" in kinds and self.referenceMotion is None
+                    or "velocity_tracking" in kinds and not self.declarative.command
+                    or self.demonstrations):
+                raise ValueError("Layer A tracking requires matching immutable motion or command inputs")
+        if self.completion is not None:
+            if self.completion.mode == "phase_clip" and self.referenceMotion is None:
+                raise ValueError("phase_clip requires a pinned reference motion")
+            if self.completion.mode in ("command_track", "waypoint_nav") and not self.episode.commandEnvelope:
+                raise ValueError("Tracking and navigation require a command envelope")
         if self.evaluation.scene != self.scene:
             raise ValueError("Task evaluation must pin the Task scene")
         has_episode_params = bool(self.episode.params) or bool(self.episode.paramBounds)
