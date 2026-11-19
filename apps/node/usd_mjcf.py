@@ -736,6 +736,19 @@ def mujoco_rotation_matrix(quat):
     return matrix.reshape(3, 3)
 
 
+def mujoco_link_inertia(model, index):
+    axes = mujoco_rotation_matrix(model.body_iquat[index])
+    return (axes * model.body_inertia[index]) @ axes.T
+
+
+def mujoco_joint_limits(model, index):
+    import mujoco
+
+    if model.jnt_limited[index] and not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_LIMIT:
+        return model.jnt_range[index].copy()
+    return None
+
+
 def mujoco_collision_axes(geom_type, rotation):
     import mujoco
     import numpy as np
@@ -861,7 +874,7 @@ def _same_collider_points(reference, candidate, tolerance):
     return contains_all(reference, candidate) and contains_all(candidate, reference)
 
 
-def _mjlab_kinematics(model, derived, coordinates, *, prefix=""):
+def _mjlab_articulation(model, derived, coordinates, *, prefix=""):
     import mujoco
 
     body_paths = {}
@@ -871,9 +884,24 @@ def _mjlab_kinematics(model, derived, coordinates, *, prefix=""):
             raise UnsupportedUsdPhysics(path, "Missing USD rigid link in simulation")
         body_paths[index] = path
 
+    # MuJoCo stores parents before children. Follow auxiliary frames back to
+    # their USD link so an added body cannot silently change robot dynamics.
+    owners = body_paths.copy()
+    for index in range(1, model.nbody):
+        if index in body_paths:
+            continue
+        owner = owners.get(model.body_parentid[index])
+        if owner is not None:
+            if model.body_mass[index] != 0. or model.body_jntnum[index]:
+                name = model.body(index).name or f"index {index}"
+                raise UnsupportedUsdPhysics(
+                    owner, f"Simulation added attached body {name} with mass or joints",
+                )
+            owners[index] = owner
+
     data = mujoco.MjData(model)
     joint_paths = {}
-    joint_frames = {}
+    joints_by_id = {}
     for joint in derived.joints:
         path = joint.prim_path
         index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, prefix + joint.name)
@@ -886,7 +914,13 @@ def _mjlab_kinematics(model, derived, coordinates, *, prefix=""):
         axis = model.jnt_axis[index].copy()
         # Translating a hinge anchor along its own axis preserves the joint line.
         anchor = model.jnt_pos[index]
-        joint_frames[path] = (axis, anchor - (anchor @ axis) * axis if joint.kind == "hinge" else None)
+        hinge_line = anchor - (anchor @ axis) * axis if joint.kind == "hinge" else None
+        joints_by_id[index] = (axis, hinge_line, mujoco_joint_limits(model, index),
+                              model.dof_armature[model.jnt_dofadr[index]])
+    # Compare the order of all USD scalar coordinates, including passive
+    # joints. Free-root coordinates occupy a separate representation.
+    joint_order = sorted(joint_paths, key=lambda index: model.jnt_qposadr[index])
+    joint_parameters = {joint_paths[index]: joints_by_id[index] for index in joint_order}
 
     mujoco.mj_kinematics(model, data)
     links = {}
@@ -912,17 +946,18 @@ def _mjlab_kinematics(model, derived, coordinates, *, prefix=""):
             parent_inverse = data.xmat[parent].reshape(3, 3).T
             relative = (parent_inverse @ (data.xpos[index] - data.xpos[parent]),
                         parent_inverse @ data.xmat[index].reshape(3, 3))
-        links[path] = ((parent_path, attached, free_root, mocap_root), relative)
-    return links, joint_frames
+        inertial = (model.body_mass[index], model.body_ipos[index].copy(), mujoco_link_inertia(model, index))
+        links[path] = ((parent_path, attached, free_root, mocap_root), relative, inertial)
+    return links, joint_parameters
 
 
-def _check_mjlab_kinematics(reference, candidate):
+def _check_mjlab_articulation(reference, candidate):
     import numpy as np
 
     expected_links, expected_joints = reference
     actual_links, actual_joints = candidate
-    for path, (structure, pose) in expected_links.items():
-        actual_structure, actual_pose = actual_links[path]
+    for path, (structure, pose, inertial) in expected_links.items():
+        actual_structure, actual_pose, actual_inertial = actual_links[path]
         if structure != actual_structure:
             raise UnsupportedUsdPhysics(path, "Simulation changed link parent, attached joints or root type")
         if pose is not None and any(
@@ -930,12 +965,32 @@ def _check_mjlab_kinematics(reference, candidate):
             for left, right in zip(pose, actual_pose, strict=True)
         ):
             raise UnsupportedUsdPhysics(path, "Simulation changed parent-relative link transform")
-    for path, (axis, anchor) in expected_joints.items():
-        actual_axis, actual_anchor = actual_joints[path]
+        mass, center, tensor = inertial
+        actual_mass, actual_center, actual_tensor = actual_inertial
+        if not np.isclose(mass, actual_mass, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link mass")
+        if (mass > 0. or actual_mass > 0.) and not np.allclose(center, actual_center, rtol=0., atol=1e-5):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link center of mass")
+        if not np.allclose(tensor, actual_tensor, rtol=0., atol=1e-8):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD link inertia tensor")
+
+    for path, actual_path in zip(expected_joints, actual_joints, strict=True):
+        if path != actual_path:
+            raise UnsupportedUsdPhysics(
+                path, f"Simulation changed USD scalar joint coordinate order (found {actual_path})",
+            )
+    for path, (axis, anchor, limits, armature) in expected_joints.items():
+        actual_axis, actual_anchor, actual_limits, actual_armature = actual_joints[path]
         if not np.allclose(axis, actual_axis, rtol=0., atol=1e-5):
             raise UnsupportedUsdPhysics(path, "Simulation changed USD joint axis")
         if anchor is not None and not np.allclose(anchor, actual_anchor, rtol=0., atol=1e-5):
             raise UnsupportedUsdPhysics(path, "Simulation changed USD hinge anchor")
+        # Unbounded joints can carry unused endpoints in the compiled model.
+        if ((limits is None) != (actual_limits is None)
+                or limits is not None and not np.allclose(limits, actual_limits, rtol=0., atol=1e-6)):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint limits")
+        if not np.isclose(armature, actual_armature, rtol=0., atol=1e-6):
+            raise UnsupportedUsdPhysics(path, "Simulation changed USD joint armature")
 
 
 def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
@@ -991,7 +1046,7 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
         joint.prim_path: float(source_model.qpos0[source_model.joint(joint.name).qposadr[0]])
         for joint in derived.joints
     }
-    expected_kinematics = _mjlab_kinematics(source_model, derived, coordinates)
+    expected_articulation = _mjlab_articulation(source_model, derived, coordinates)
     expected_geometry = {
         path: _link_local_collision_geometry(source_model, index, path)
         for index, path in source_paths.items() if path != plane_key
@@ -1013,8 +1068,6 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
 
     def verify(model):
         _check_mjlab_plane_pose(model, "terrain", plane_path)
-        actual_kinematics = _mjlab_kinematics(model, derived, coordinates, prefix=prefix)
-        _check_mjlab_kinematics(expected_kinematics, actual_kinematics)
         final_paths = _mjlab_collider_paths(model, final_names)
         for index, path in final_paths.items():
             if path == plane_key:
@@ -1031,6 +1084,8 @@ def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
             if points is not None and not _same_collider_points(points, actual_points, 1e-5):
                 raise UnsupportedUsdPhysics(path, "Simulation changed link-local collider vertices")
 
+        actual_articulation = _mjlab_articulation(model, derived, coordinates, prefix=prefix)
+        _check_mjlab_articulation(expected_articulation, actual_articulation)
         actual = _mjlab_contact_snapshot(model, final_paths, plane_key)
         root_index = model.body(prefix + derived.root_body).id
         # A non-world parent for this root has already been verified as the SDK wrapper.

@@ -19,7 +19,12 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     import newton
     import numpy as np
 
-    from apps.node.usd_mjcf import mujoco_collision_axes, mujoco_contact_pairs
+    from apps.node.usd_mjcf import (
+        mujoco_collision_axes,
+        mujoco_contact_pairs,
+        mujoco_joint_limits,
+        mujoco_link_inertia,
+    )
     from apps.node.usd_mjcf import mujoco_rotation_matrix as rotation
 
     model = mujoco.MjModel.from_xml_string(derived.mjcf_xml)
@@ -81,9 +86,8 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
             local_center = data.xmat[idx].reshape(3, 3).T @ (data.xipos[idx] - data.xpos[idx])
             close("Body center of mass in the link frame", centers[ref], local_center,
                   path, POSITION_ATOL, 0.)
-        principal_axes = rotation(model.body_iquat[idx])
-        tensor = (principal_axes * model.body_inertia[idx]) @ principal_axes.T
-        close("Body inertia in the link frame", inertia[ref], tensor, path, INERTIA_ATOL)
+        close("Body inertia in the link frame", inertia[ref],
+              mujoco_link_inertia(model, idx), path, INERTIA_ATOL)
 
     joint_types = {
         newton.JointType.PRISMATIC: mujoco.mjtJoint.mjJNT_SLIDE,
@@ -121,7 +125,9 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
         close("Joint axis", rotation(quat) @ axes[dof], model.jnt_axis[idx], path)
         ref_limits = [float(limits_lo[dof]) if limits_lo[dof] > -newton.MAXVAL else None,
                       float(limits_hi[dof]) if limits_hi[dof] < newton.MAXVAL else None]
-        limits = model.jnt_range[idx] if model.jnt_limited[idx] else (None, None)
+        limits = mujoco_joint_limits(model, idx)
+        if limits is None:
+            limits = (None, None)
         for expected, actual in zip(ref_limits, limits, strict=True):
             if expected is None or actual is None:
                 equal("Joint limit", expected, None if actual is None else float(actual), path)

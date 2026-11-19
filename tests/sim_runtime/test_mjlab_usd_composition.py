@@ -89,11 +89,23 @@ def test_mjlab_simulation_compares_compiled_meshes_in_the_link_frame(tmp_path):
     run_pinned_composition(tmp_path, "mesh")
 
 
-def run_pinned_composition(tmp_path, case):
-    import pytest
+def pytest_generate_tests(metafunc):
+    if "joint_or_body_case" in metafunc.fixturenames:
+        metafunc.parametrize("joint_or_body_case", [
+            "range", "unlimited", "limits-disabled", "order", "armature",
+            "mass", "inertia", "com", "attached-mass", "equivalent",
+        ])
 
+
+def test_mjlab_simulation_preserves_usd_joint_and_inertial_properties(tmp_path, joint_or_body_case):
+    run_pinned_composition(tmp_path, joint_or_body_case)
+
+
+def run_pinned_composition(tmp_path, case):
     trainer = os.environ.get("SPATIAL_MJLAB_TEST_PYTHON")
     if not trainer:
+        import pytest
+
         pytest.importorskip("mjlab")
         trainer = sys.executable
     path = tmp_path / "stage.usda"
@@ -525,6 +537,164 @@ def check_joint_frames(path):
                 raise AssertionError("Final Simulation accepted a changed fixed attachment")
 
 
+def check_joint_and_body_parameters(path, case):
+    import math
+    import xml.etree.ElementTree as ET
+
+    import mujoco
+    import numpy as np
+    from mjlab.entity import EntityCfg
+    from mjlab.scene import Scene, SceneCfg
+    from mjlab.sim import MujocoCfg, Simulation, SimulationCfg
+    from mjlab.terrains.terrain_entity import TerrainEntityCfg
+
+    from apps.node import usd_mjcf
+
+    path.write_text(STAGE.replace(
+        'def Xform "B" (prepend apiSchemas = ["PhysicsRigidBodyAPI"]) {',
+        'def Xform "B" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]) {\n'
+        '                float physics:mass = 2\n'
+        '                point3f physics:centerOfMass = (.02, -.03, .04)\n'
+        '                float3 physics:diagonalInertia = (.01, .02, .025)\n'
+        '                quatf physics:principalAxes = (.70710678, 0, 0, .70710678)',
+    ).replace(
+        'bool physics:collisionEnabled = true',
+        'bool physics:collisionEnabled = true\n'
+        '                float physics:lowerLimit = -20\n'
+        '                float physics:upperLimit = 20\n'
+        '                custom float newton:armature = .03',
+    ).replace(
+        'rel physics:body0 = </World/Lab/Robot/B>', 'rel physics:body0 = </World/Lab/Robot/A>',
+    ))
+    robot = "/World/Lab/Robot"
+    derived = usd_mjcf.derive_usd_mjcf(path, prim_path=robot, include_static_colliders=False)
+
+    def mutate(spec):
+        joint = spec.joint("robot/AB")
+        body = spec.body("robot/B")
+        if case == "range":
+            joint.range[:] = [-.9, .9]
+        elif case == "unlimited":
+            joint.limited = mujoco.mjtLimited.mjLIMITED_FALSE
+        elif case == "armature":
+            joint.armature += .1
+        elif case == "mass":
+            body.mass += .5
+        elif case == "inertia":
+            body.iquat[:] = [1., 0., 0., 0.]
+        elif case == "com":
+            body.ipos[0] += .1
+        elif case == "attached-mass":
+            # No joint or geom is needed to change the articulated mass matrix.
+            body.add_body(name="ballast", mass=.25, inertia=[.01] * 3, explicitinertial=True)
+        elif case == "equivalent":
+            body.iquat[:] = [-1., 0., 0., 0.]
+            body.inertia[:] = [.02, .01, .025]
+            body.add_body(name="marker_frame")
+            # An inactive range's stored endpoints have no physical effect.
+            spec.joint("robot/BC").range[:] = [-.8, .8]
+
+    def build(changed):
+        def robot_spec():
+            if not (changed and case == "order"):
+                return derived.to_mjspec()
+            xml = ET.fromstring(derived.mjcf_xml)
+            root = xml.find("worldbody/body")
+            link_b = root.find("body[@name='B']")
+            root.remove(link_b)
+            root.append(link_b)
+            return mujoco.MjSpec.from_string(ET.tostring(xml, encoding="unicode"))
+
+        initial = EntityCfg.InitialStateCfg(pos=(.25, .35, 1.1), rot=(math.sqrt(.5), 0., 0., math.sqrt(.5)),
+                                            joint_pos={".*": .1})
+        cfg = SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"),
+                       entities={"robot": EntityCfg(spec_fn=robot_spec, init_state=initial)},
+                       spec_fn=mutate if changed else None)
+        verify = usd_mjcf.configure_mjlab_usd_scene(cfg, path)
+        disabled = ("limit",) if changed and case == "limits-disabled" else ()
+        settings = MujocoCfg(timestep=.005, iterations=13, cone="elliptic", disableflags=disabled)
+        model = Scene(cfg, device="cpu").compile()
+        sim = Simulation(1, SimulationCfg(mujoco=settings), model, device="cpu")
+        return sim.mj_model, verify
+
+    def observe(model):
+        joint = model.joint("robot/AB")
+        body = model.body("robot/B")
+        data = mujoco.MjData(model)
+        mujoco.mj_resetDataKeyframe(model, data, model.key("init_state").id)
+        data.qpos[joint.qposadr[0]] = .55
+        mujoco.mj_forward(model, data)
+        has_limit = int(np.count_nonzero((data.efc_type == mujoco.mjtConstraint.mjCNSTR_LIMIT_JOINT)
+                                         & (data.efc_id == joint.id)))
+        axes = data.ximat[body.id].reshape(3, 3)
+        rotation = data.xmat[body.id].reshape(3, 3)
+        tensor = (axes * model.body_inertia[body.id]) @ axes.T
+        result = {
+            "limit": has_limit,
+            "order": sorted(("AB", "BC"), key=lambda name: model.joint("robot/" + name).qposadr[0]),
+            "mass": model.body_mass[body.id],
+            "inertia": rotation.T @ tensor @ rotation,
+            "armature": model.dof_armature[joint.dofadr[0]],
+            "world_com": data.xipos[body.id].copy(),
+            "com": rotation.T @ (data.xipos[body.id] - data.xpos[body.id]),
+            "total_mass": model.body_mass.sum(),
+        }
+        print(f"{case} range={joint.range.tolist()} {result}", flush=True)
+        return result
+
+    source, verify_source = build(False)
+    expected = observe(source)
+    verify_source(source)
+    assert expected["limit"] == 1 and expected["order"] == ["AB", "BC"]
+    assert expected["mass"] == 2. and np.isclose(expected["armature"], .03)
+    np.testing.assert_allclose(expected["com"], [.02, -.03, .04], atol=1e-7)
+    np.testing.assert_allclose(expected["inertia"], np.diag([.02, .01, .025]), atol=1e-7)
+    # The hinge first rotates the authored COM about X and the placed robot
+    # then turns it 90° about Z. The B anchor is .1 m along the robot's X.
+    c, s = math.cos(.55), math.sin(.55)
+    np.testing.assert_allclose(expected["world_com"], [.25 + .03 * c + .04 * s, .47, 1.1 - .03 * s + .04 * c],
+                               rtol=0., atol=1e-7)
+    model, verify = build(True)
+    actual = observe(model)
+    diagnostics = {
+        "range": ("AB", "joint limit"), "unlimited": ("AB", "joint limit"),
+        "limits-disabled": ("AB", "joint limit"), "order": ("AB", "joint coordinate order"),
+        "armature": ("AB", "joint armature"), "mass": ("B", "link mass"),
+        "inertia": ("B", "link inertia"), "com": ("B", "link center of mass"),
+        "attached-mass": ("B", "attached body"),
+    }
+    if case == "equivalent":
+        np.testing.assert_allclose(actual["world_com"], expected["world_com"], atol=1e-7)
+        np.testing.assert_allclose(actual["inertia"], expected["inertia"], atol=1e-7)
+        verify(model)
+        return
+    if case in ("range", "unlimited", "limits-disabled"):
+        assert actual["limit"] == 0
+    elif case == "order":
+        assert actual["order"] == ["BC", "AB"]
+    elif case == "armature":
+        assert np.isclose(actual["armature"], .13)
+    elif case == "mass":
+        assert actual["mass"] == 2.5
+    elif case == "inertia":
+        np.testing.assert_allclose(actual["inertia"], np.diag([.01, .02, .025]), atol=1e-7)
+    elif case == "com":
+        assert actual["mass"] == expected["mass"]
+        np.testing.assert_allclose(actual["inertia"], expected["inertia"], atol=1e-7)
+        assert np.isclose(np.linalg.norm(actual["world_com"] - expected["world_com"]), .1)
+    else:
+        assert np.isclose(actual["total_mass"] - expected["total_mass"], .25)
+
+    prim, diagnostic = diagnostics[case]
+    try:
+        verify(model)
+    except usd_mjcf.UnsupportedUsdPhysics as exc:
+        assert exc.prim_path == f"{robot}/{prim}"
+        assert diagnostic in str(exc)
+    else:
+        raise AssertionError(f"Final Simulation accepted {case}")
+
+
 if __name__ == "__main__":
     path, case = Path(sys.argv[1]), sys.argv[2]
     if case == "parent":
@@ -535,5 +705,7 @@ if __name__ == "__main__":
         check_mesh_geometry(path)
     elif case == "joint-frames":
         check_joint_frames(path)
-    else:
+    elif case in ("disable", "exclude", "geometry", "link"):
         check_final_simulation(path, case)
+    else:
+        check_joint_and_body_parameters(path, case)
