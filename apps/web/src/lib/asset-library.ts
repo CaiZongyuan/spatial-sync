@@ -1,5 +1,6 @@
 import { request } from './api';
 import type { ValidationReport } from './library';
+import type { Visual } from './protocol';
 
 export const assetKinds = { robot: '机器人', device: '设备', labware: '实验耗材', environment: '环境' } as const;
 export type AssetKind = keyof typeof assetKinds;
@@ -22,6 +23,7 @@ export interface AssetVersion {
   implementedTypes: string[]; gaps: string[]; gapCount: number;
   completeness: { status: string; gaps: string[]; items: CompletenessItem[] };
   validationStatus: string; thumbnailUrl: string | null; visualUrl: string | null;
+  fallbackVisuals?: Visual[]; hasFallbackVisuals?: boolean;
 }
 export interface AssetDetail extends AssetVersion {
   validation: ValidationReport | null;

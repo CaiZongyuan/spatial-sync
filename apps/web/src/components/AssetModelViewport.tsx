@@ -1,8 +1,10 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { Box3, Group, Matrix4, Mesh, Vector3 } from 'three';
+import { Box3, DoubleSide, Group, Matrix4, Mesh, MeshStandardMaterial, Vector3 } from 'three';
 import { loadVisualAsset, disposeObject } from '../lib/scene/visual-assets';
+import { createPrimitiveGeometry } from '../lib/geometry/primitives';
+import type { Visual } from '../lib/protocol';
 import { useViewerTheme, type ViewerTheme } from '../lib/scene/viewer-theme';
 import { CameraRig } from './viewer/CameraRig';
 import { ViewerLighting } from './viewer/ViewerLighting';
@@ -60,33 +62,76 @@ function Model({ object, theme, capture, fitRequest }: {
   </>;
 }
 
-export function AssetModelViewport({ url, capture, captureKey }: { url: string; capture?: (png?: string) => void; captureKey?: string }) {
+function buildFallbackGroup(visuals: Visual[], color: string): Group {
+  const group = new Group();
+  for (const visual of visuals) {
+    if (visual.kind !== 'primitive') continue;
+    const geometry = createPrimitiveGeometry(visual.geometry);
+    const material = new MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.12, side: DoubleSide });
+    const mesh = new Mesh(geometry, material);
+    mesh.position.set(...visual.localPose.p);
+    mesh.quaternion.set(...visual.localPose.q);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return group;
+}
+
+export function AssetModelViewport({ url, fallbackVisuals, capture, captureKey }: {
+  url?: string | null; fallbackVisuals?: Visual[]; capture?: (png?: string) => void; captureKey?: string;
+}) {
   const theme = useViewerTheme();
-  const [loaded, setLoaded] = useState<{ url: string; object: Group; meshCount: number }>();
-  const [failure, setFailure] = useState<{ url: string; message: string }>();
+  const sourceKey = useMemo(
+    () => (url ? `glb:${url}` : `fallback:${JSON.stringify(fallbackVisuals ?? [])}`),
+    [url, fallbackVisuals],
+  );
+  const [loaded, setLoaded] = useState<{ sourceKey: string; object: Group; meshCount: number }>();
+  const [failure, setFailure] = useState<{ sourceKey: string; message: string }>();
   const [attempt, setAttempt] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
   useEffect(() => {
     let alive = true;
     let owned: Group | undefined;
     setLoaded(undefined); setFailure(undefined);
-    void loadVisualAsset({ kind: 'glb', url, assetUpAxis: 'Z', scale: [1, 1, 1], localPose: { p: [0, 0, 0], q: [0, 0, 0, 1] } }).then(object => {
-      if (!object) return;
-      if (!alive) { disposeObject(object); return; }
-      owned = object;
-      let meshCount = 0;
-      object.traverse(child => { if (child instanceof Mesh) meshCount++; });
-      if (!meshCount) throw new Error('视觉文件没有可显示的网格');
-      setLoaded({ url, object, meshCount });
-    }).catch((error: Error) => { if (alive) setFailure({ url, message: error.message }); });
+    if (url) {
+      void loadVisualAsset({ kind: 'glb', url, assetUpAxis: 'Z', scale: [1, 1, 1], localPose: { p: [0, 0, 0], q: [0, 0, 0, 1] } }).then(object => {
+        if (!object) return;
+        if (!alive) { disposeObject(object); return; }
+        owned = object;
+        let meshCount = 0;
+        object.traverse(child => { if (child instanceof Mesh) meshCount++; });
+        if (!meshCount) throw new Error('视觉文件没有可显示的网格');
+        setLoaded({ sourceKey, object, meshCount });
+      }).catch((error: Error) => { if (alive) setFailure({ sourceKey, message: error.message }); });
+    } else if (fallbackVisuals?.length) {
+      try {
+        const object = buildFallbackGroup(fallbackVisuals, theme.body);
+        let meshCount = 0;
+        object.traverse(child => { if (child instanceof Mesh) meshCount++; });
+        if (!meshCount) throw new Error('回退几何没有可显示的网格');
+        owned = object;
+        setLoaded({ sourceKey, object, meshCount });
+      } catch (error) {
+        setFailure({ sourceKey, message: (error as Error).message });
+      }
+    } else {
+      setFailure({ sourceKey, message: '此素材没有视觉或回退几何' });
+    }
     return () => { alive = false; if (owned) disposeObject(owned); };
-  }, [url, attempt]);
-  const error = failure?.url === url ? failure.message : undefined;
-  const current = !error && loaded?.url === url ? loaded : undefined;
+  }, [url, fallbackVisuals, sourceKey, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (url || !loaded?.object) return;
+    loaded.object.traverse(child => {
+      if (child instanceof Mesh && child.material instanceof MeshStandardMaterial) child.material.color.set(theme.body);
+    });
+  }, [url, loaded, theme.body]);
+  const error = failure?.sourceKey === sourceKey ? failure.message : undefined;
+  const current = !error && loaded?.sourceKey === sourceKey ? loaded : undefined;
   useEffect(() => { if (error) capture?.(); }, [error, capture]);
   return <div className="asset-model-viewport" aria-label="素材静态模型预览" data-model-state={error ? 'error' : current ? 'ready' : 'loading'} data-mesh-count={current?.meshCount}>
-    {!error && <AssetRenderBoundary key={`${url}:${attempt}`} onError={error => setFailure({ url, message: error.message })}><Canvas shadows frameloop="demand" dpr={[1, 1.75]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: !!capture }}>
-      {current && <Model key={`${url}:${captureKey ?? ''}`} object={current.object} theme={theme} capture={capture} fitRequest={fitRequest} />}
+    {!error && <AssetRenderBoundary key={capture ? 'capture' : `${sourceKey}:${attempt}`} onError={error => setFailure({ sourceKey, message: error.message })}><Canvas shadows={!capture} frameloop="demand" dpr={capture ? 1 : [1, 1.75]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: !!capture }}>
+      {current && <Model key={`${sourceKey}:${captureKey ?? ''}`} object={current.object} theme={theme} capture={capture} fitRequest={fitRequest} />}
     </Canvas></AssetRenderBoundary>}
     {current && !capture && <button type="button" className="viewport-fit" aria-label="Fit model"
       onClick={() => setFitRequest(value => value + 1)}>重新取景</button>}

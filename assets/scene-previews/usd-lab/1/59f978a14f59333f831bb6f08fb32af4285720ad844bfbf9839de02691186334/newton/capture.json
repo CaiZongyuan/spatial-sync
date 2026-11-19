@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-14T20:07:14.505189+00:00",
+  "capturedAt": "2026-11-19T03:58:11.983856+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -105,7 +105,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "45bad42c4c77647efb7abd878a77b05c68aa806f9c42b20ee741459f710c5a52"
+      "sha256": "eb24d219c105b2509ee2b3734499f233074e92b17ab7bce86dab8d85476eca75"
     },
     {
       "path": "packages/library/python_stages.py",
@@ -349,7 +349,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "cf20b1ae86ee87f9fd798b67c83f3ce8fc406e4e5c57d557bb4b9308e433d049"
+      "sha256": "ac1de1057bced1359beebd86597a2256c8a02419b56105cd51c674bec56fa70a"
     },
     {
       "path": "uv.lock",
@@ -363,10 +363,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "7de5d8ea629ea09cf148a81b8a800841ae016c9d2a70c345fa2ea7f4b02ae8fc",
-    "catalog.json": "b9e9bc8eccc9ca73599d3fa32108191a7b89f98cc75fd75055186c7e1f4d32f2",
-    "state.json": "41310e82e4338351e45b0fa2e93711bfc6de68b37ca7a4efedd307864ae4062f",
-    "snapshot.bin": "c2901a4b8db65fe43d3805d285cc6079f22eb7aae6d6b15843813fa38b542db7",
+    "manifest.json": "5bffa8c9176c5175c5557d2600192452df0b5090cf2c7cea60d9f5cb21767e34",
+    "catalog.json": "552b72d465af243639970bf4d9ad0c374e9514427d39aaa91f9c34a14528250c",
+    "state.json": "7c988a045192c357b248f81d696172d9458bef2b321ce5a38755c429e6430bc9",
+    "snapshot.bin": "1574f66415876e24366159619050460b2ca0fefb88134769fbb40eea66a98ff3",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"

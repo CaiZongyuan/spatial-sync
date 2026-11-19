@@ -72,7 +72,7 @@ from packages.library.authoring import AuthoringReports
 from packages.library.common import REPO_ROOT
 from packages.library.deletions import LibraryDeletions
 from packages.library.description_views import description_view
-from packages.library.previews import PreviewRepository
+from packages.library.previews import PreviewRepository, ScenePreviewCapturer
 from packages.library.removals import LibraryRemovals
 from packages.library.scenes import LibraryError
 from packages.library.thumbnails import ThumbnailStore
@@ -226,6 +226,9 @@ def create_app(
     manager.library_removals = LibraryRemovals(manager.library_deletions)
     manager.library_thumbnails = ThumbnailStore(settings.state_root)
     manager.library_previews = previews
+    manager.preview_capturer = ScenePreviewCapturer(
+        previews, settings.state_root, manager.library.roots["user"]
+    )
     monitor = PlatformMonitor(manager, sampler=platform_sampler)
     acquisitions = AcquisitionService(
         settings.state_root,
@@ -367,7 +370,10 @@ def create_app(
             yield
         finally:
             try:
-                await manager.library_removals.close()
+                try:
+                    await manager.preview_capturer.close()
+                finally:
+                    await manager.library_removals.close()
             finally:
                 try:
                     try:

@@ -98,8 +98,10 @@ async def test_missing_wrong_source_or_stale_preview_does_not_change_launchabili
         value["dependencies"][0]["sha256"] = "0" * 64
         index.write_text(json.dumps(value), encoding="utf-8")
         stale = client.get("/api/v1/library/scenes/lab-demo/1").json()
-        assert stale["launchable"] is True and stale["preview"]["status"] == "unavailable"
+        assert stale["launchable"] is True and stale["preview"]["status"] == "stale"
         assert "输入已变化" in stale["preview"]["reason"]
+        assert stale["entityCount"] == 30 and stale["deviceCount"] == 22
+        assert client.get(stale["preview"]["documents"]["manifest"]).status_code == 200
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
         assert not (tmp_path / "recordings").exists()
 
@@ -136,7 +138,9 @@ async def test_preview_input_digest_is_portable_but_rejects_real_changes(tmp_pat
             materialized.write_bytes(content)
             assert client.get(route).json()["preview"]["status"] == "available"
         materialized.write_bytes(source.replace(b"class SyntheticSource", b"class ChangedSource", 1))
-        assert client.get(route).json()["preview"]["status"] == "unavailable"
+        stale_edit = client.get(route).json()["preview"]
+        assert stale_edit["status"] == "stale"
+        assert "输入已变化" in stale_edit["reason"]
         materialized.write_bytes(source)
         index = next((tmp_path / "previews").rglob("capture.json"))
         snapshot = index.parent / captured["documents"]["spatial"]
@@ -234,3 +238,60 @@ async def test_malformed_operator_metadata_can_use_a_valid_bundled_capture(tmp_p
         snapshot = client.get(detail.json()["preview"]["documents"]["spatial"])
         assert snapshot.status_code == 200 and snapshot.content.startswith(b"NSYN")
         assert client.get("/api/v1/health").json()["sessionCount"] == 0
+
+
+async def test_scene_import_auto_captures_preview_and_supports_operator_recapture(
+    tmp_path, monkeypatch
+):
+    import io
+    import tarfile
+    import time
+
+    user_root = tmp_path / "library"
+    monkeypatch.setenv("LW_LIBRARY", str(user_root))
+    package_dir = ROOT / "library/scenes/lab-demo/1"
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        for file in package_dir.rglob("*"):
+            if file.is_file() and file.name != "validation.json":
+                tar.add(file, arcname=file.relative_to(package_dir).as_posix())
+    settings = Settings(
+        state_root=tmp_path / "state",
+        recordings_root=tmp_path / "recordings",
+        scene_previews_root=tmp_path / "previews",
+    )
+    with TestClient(create_app(settings)) as client:
+        imported = client.post(
+            "/api/v1/library/imports",
+            content=archive.getvalue(),
+            headers={"Content-Type": "application/x-tar"},
+        )
+        assert imported.status_code == 200, imported.text
+        scene_id = imported.json()["sceneVersion"]
+        name, rev = scene_id.split("@")
+        deadline = time.monotonic() + 20.0
+        status = None
+        while time.monotonic() < deadline:
+            detail = client.get(f"/api/v1/library/scenes/{name}/{rev}").json()
+            status = detail["preview"]["status"]
+            if status == "available":
+                break
+            time.sleep(0.2)
+        assert status == "available", detail["preview"]
+        recaptured = client.post(f"/api/v1/library/scenes/{name}/{rev}/preview")
+        assert recaptured.status_code == 200, recaptured.text
+        assert recaptured.json()["status"] == "available"
+    remote_settings = Settings(
+        state_root=tmp_path / "state",
+        recordings_root=tmp_path / "recordings",
+        scene_previews_root=tmp_path / "previews",
+        remote=True,
+        operator_token="secret",
+        allowed_origins=["http://127.0.0.1"],
+    )
+    with TestClient(create_app(remote_settings)) as remote_client:
+        assert remote_client.post(f"/api/v1/library/scenes/{name}/{rev}/preview").status_code == 401
+        assert remote_client.post(
+            f"/api/v1/library/scenes/{name}/{rev}/preview",
+            headers={"Authorization": "Bearer secret", "Origin": "http://127.0.0.1"},
+        ).status_code == 200

@@ -23,7 +23,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-14T20:06:11.664273+00:00",
+  "capturedAt": "2026-11-19T03:56:48.733757+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -114,16 +114,16 @@
       "sha256": "d9fb8bd6b74bdd609d7946d90491f48261c018317e46aa17df1a068db0136506"
     },
     {
-      "path": "library/assets/robot/microduck/1/LICENSE",
-      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
-    },
-    {
       "path": "library/assets/robot/microduck/1/asset.usdc",
       "sha256": "85f69669b4a43d8eaf5afaef9ba5afb6aa2a549acc0069b336806fe5310c696e"
     },
     {
       "path": "library/assets/robot/microduck/1/asset.yaml",
       "sha256": "d650a3ad4721666efa2efc1dc09bc3a48c8cbfad9f08fded6fdce96d3d3beb19"
+    },
+    {
+      "path": "library/assets/robot/microduck/1/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
     },
     {
       "path": "library/assets/robot/microduck/1/provenance.json",
@@ -223,7 +223,7 @@
     },
     {
       "path": "packages/library/previews.py",
-      "sha256": "45bad42c4c77647efb7abd878a77b05c68aa806f9c42b20ee741459f710c5a52"
+      "sha256": "eb24d219c105b2509ee2b3734499f233074e92b17ab7bce86dab8d85476eca75"
     },
     {
       "path": "packages/library/python_stages.py",
@@ -471,7 +471,7 @@
     },
     {
       "path": "tools/capture_scene_preview.py",
-      "sha256": "cf20b1ae86ee87f9fd798b67c83f3ce8fc406e4e5c57d557bb4b9308e433d049"
+      "sha256": "ac1de1057bced1359beebd86597a2256c8a02419b56105cd51c674bec56fa70a"
     },
     {
       "path": "uv.lock",
@@ -485,10 +485,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "5f588a600d80ba390960c7bb39afe87f3284b0a82f252abd36f0f9375c07b5bc",
-    "catalog.json": "18b21b4105c1aff459b46f7c01a6262204b946bbc64425364821ad5144958807",
-    "state.json": "7f932af3d45fb3e953ce064141454558c00035a6f466101b353c691d8acdede6",
-    "snapshot.bin": "db6719ff7e0885012660ec1817572c744bb91e742d88dd0cf241581c929a6ca9",
+    "manifest.json": "2d6f118d81873ed85a77afa5930bf3a801c3580b06f69440ee3a12b77090993b",
+    "catalog.json": "061b6d32407eae59e8ecb0e6e602b38940453fbcf34035f1e543cc1cff285f30",
+    "state.json": "e4cd7be55276747acd7b10b9f3b9faf15fb14cbfee5c2fa72ea6732b7c0855aa",
+    "snapshot.bin": "c9459cb533a94b8b315b6a89ecbdca157a64498029e6a503a780dcee4496d6d9",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",

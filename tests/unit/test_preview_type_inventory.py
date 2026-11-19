@@ -77,9 +77,9 @@ def test_added_unused_catalog_type_invalidates_an_already_cached_preview(capture
     after = load_catalog(manifest, version.name, REGISTRY, root=inputs / "devices",
                          scene_file=version.path / "devices.yaml")
     assert "unused-inventory-probe/v1" in after.types
-    assert repository.describe(version, "synthetic")["status"] == "unavailable"
+    assert repository.describe(version, "synthetic")["status"] == "stale"
     with pytest.raises(ValueError):
-        repository.read(version, "synthetic", metadata["documents"]["catalog"])
+        repository.read(version, "synthetic", metadata["documents"]["catalog"], allow_stale=False)
 
 
 def test_added_type_cannot_be_read_from_cached_preview_metadata(captured_catalog):
@@ -87,7 +87,7 @@ def test_added_type_cannot_be_read_from_cached_preview_metadata(captured_catalog
     assert repository.describe(version, "synthetic")["status"] == "available"
     add_unused_type(inputs)
     with pytest.raises(ValueError):
-        repository.read(version, "synthetic", metadata["documents"]["catalog"])
+        repository.read(version, "synthetic", metadata["documents"]["catalog"], allow_stale=False)
 
 
 def test_complete_updated_catalog_inputs_are_readable(captured_catalog, tmp_path):
@@ -110,7 +110,7 @@ def test_complete_updated_catalog_inputs_are_readable(captured_catalog, tmp_path
         fresh / metadata["documents"]["catalog"])
     (fresh / "capture.json").write_text(json.dumps(metadata), encoding="utf-8")
     current = previews.PreviewRepository(fresh_root, bundled_root=tmp_path / "no-fallback")
-    assert previous.describe(version, "synthetic")["status"] == "unavailable"
+    assert previous.describe(version, "synthetic")["status"] == "stale"
     assert current.describe(version, "synthetic")["status"] == "available"
     document = json.loads(current.read(version, "synthetic", metadata["documents"]["catalog"]))
     assert "unused-inventory-probe/v1" in document["types"]
@@ -121,7 +121,7 @@ def test_partial_type_input_list_is_rejected(captured_catalog):
     metadata["dependencies"] = [item for item in metadata["dependencies"]
                                 if item["path"] != "devices/types/tube.v1.yaml"]
     (directory / "capture.json").write_text(json.dumps(metadata), encoding="utf-8")
-    assert repository.describe(version, "synthetic")["status"] == "unavailable"
+    assert repository.describe(version, "synthetic")["status"] == "stale"
 
 
 @pytest.mark.parametrize("change", ["removed", "renamed", "modified"])
@@ -137,9 +137,9 @@ def test_changed_type_inputs_invalidate_a_cached_preview(captured_catalog, chang
         definition = yaml.safe_load(path.read_text(encoding="utf-8"))
         definition["title"] = "Changed actual type input"
         path.write_text(yaml.safe_dump(definition), encoding="utf-8")
-    assert repository.describe(version, "synthetic")["status"] == "unavailable"
+    assert repository.describe(version, "synthetic")["status"] == "stale"
     with pytest.raises(ValueError):
-        repository.read(version, "synthetic", metadata["documents"]["catalog"])
+        repository.read(version, "synthetic", metadata["documents"]["catalog"], allow_stale=False)
 
 
 def test_unchanged_type_glob_remains_available(captured_catalog):

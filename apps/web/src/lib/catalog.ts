@@ -102,6 +102,7 @@ export interface CatalogLocalAsset {
   validationStatus: string | null;
   thumbnailUrl: string | null;
   visualUrl: string | null;
+  hasFallbackVisuals?: boolean;
 }
 
 export interface CatalogLocalResult {

@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { getSceneDetail, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
+import { lazy, Suspense, useContext, useEffect, useState } from 'react';
+import { ApprovalInboxContext } from '../lib/approvals';
+import { captureScenePreview, getSceneDetail, rootLabel, sourceLabel, type SceneDetail, type SceneSource } from '../lib/library';
 import { useScenePreview } from '../lib/scene/use-preview';
 import { LaunchStatus } from '../components/SceneStatus';
 import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
@@ -34,15 +35,26 @@ function SceneDetails() {
       .catch((error: Error) => { if (!controller.signal.aborted) setError(error.message); });
     return () => controller.abort();
   }, [name, rev, source, attempt, navigate]);
-  return <main className="scene-detail-page">{error ? <div className="platform-error" role="alert">{error} <button onClick={() => setAttempt(attempt + 1)}>重试</button></div> : !detail ? <div className="scene-empty" role="status">正在读取场景版本…</div> : <Detail key={`${detail.id}:${detail.preview.source}`} scene={detail} />}</main>;
+  return <main className="scene-detail-page">{error ? <div className="platform-error" role="alert">{error} <button onClick={() => setAttempt(attempt + 1)}>重试</button></div> : !detail ? <div className="scene-empty" role="status">正在读取场景版本…</div> : <Detail key={`${detail.id}:${detail.preview.source}:${detail.preview.status}`} scene={detail} onRefresh={() => setAttempt(value => value + 1)} />}</main>;
 }
 
-function Detail({ scene }: { scene: SceneDetail }) {
+function Detail({ scene, onRefresh }: { scene: SceneDetail; onRefresh: () => void }) {
   const { client, state, catalog, error } = useScenePreview(scene.preview);
+  const permissions = useContext(ApprovalInboxContext);
   const [readouts, setReadouts] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState<string>();
   const navigate = useNavigate();
   const manifest = state.manifest;
   const source = scene.preview.source;
+  const canRecapture = permissions.inbox?.role === 'operator' && !permissions.error && scene.launchable;
+  const recapture = () => {
+    setCapturing(true); setCaptureError(undefined);
+    void captureScenePreview(scene.sceneId, String(scene.rev), source)
+      .then(() => onRefresh())
+      .catch((failure: Error) => setCaptureError(failure.message))
+      .finally(() => setCapturing(false));
+  };
   const physical = manifest?.nodes.filter(node => node.kind !== 'group').filter(node => !node.entityKey.startsWith('/World/Dressing/'));
   const dressing = manifest?.nodes.filter(node => node.entityKey.startsWith('/World/Dressing/'));
   const groups = manifest?.nodes.filter(node => node.kind === 'group');
@@ -51,10 +63,11 @@ function Detail({ scene }: { scene: SceneDetail }) {
     <header className="scene-page-heading"><div><Link className="reference-link" to="/scenes">← 场景库</Link><h1><code>{scene.id}</code></h1><p><LaunchStatus scene={scene} />{scene.title} · {scene.description}</p></div></header>
     <div className="scene-detail-grid"><div className="scene-detail-stack">
       <section className="reference-panel scene-preview-panel"><header><h2>视口 · {scene.id}</h2><button className="readout-switch" aria-label="初始读数" aria-pressed={readouts} onClick={() => setReadouts(!readouts)}><i />读数</button></header>
-        <figure><div className="scene-detail-stage">{manifest ? <Suspense fallback={null}><FrozenViewport {...{ client, manifest, readouts }} /></Suspense> : <div className="scene-empty" role="status"><span aria-hidden="true">◇</span><p>{error ?? scene.preview.reason ?? '正在读取真实初始快照…'}</p></div>}</div>
-          <figcaption><strong>图 1</strong><span>等距预览 · {sourceLabel(source)}</span><span className="reference-tag">静态初始状态 · 只读</span></figcaption></figure>
-        {scene.preview.status === 'available' && <p className="scene-capture-note">采集时间 {new Date(scene.preview.capturedAt!).toLocaleString()} · 仿真时间 {(scene.preview.simTime ?? 0).toFixed(3)} s。读数来自此快照，动作需启动会话。</p>}
-        {error && <p role="alert" className="scene-failure">{error}</p>}
+        <figure><div className="scene-detail-stage">{manifest ? <Suspense fallback={null}><FrozenViewport {...{ client, manifest, readouts }} /></Suspense> : <div className="scene-empty" role="status"><span aria-hidden="true">◇</span><p>{error ?? scene.preview.reason ?? '正在读取真实初始快照…'}</p>{scene.preview.status === 'unavailable' && canRecapture && <button type="button" disabled={capturing} onClick={recapture}>{capturing ? '正在采集静态预览…' : '采集静态预览'}</button>}</div>}</div>
+          <figcaption><strong>图 1</strong><span>等距预览 · {sourceLabel(source)}</span><span className="reference-tag">{scene.preview.status === 'stale' ? '旧版静态预览 · 输入已变更' : '静态初始状态 · 只读'}</span></figcaption></figure>
+        {scene.preview.status === 'stale' && <div role="status" className="scene-stale-note"><span>{scene.preview.reason ?? '构建输入已变化，当前为旧版静态预览。'}</span>{canRecapture && <> <button type="button" disabled={capturing} onClick={recapture}>{capturing ? '正在重新采集…' : '重新采集静态预览'}</button></>}</div>}
+        {(scene.preview.status === 'available' || scene.preview.status === 'stale') && <p className="scene-capture-note">采集时间 {new Date(scene.preview.capturedAt!).toLocaleString()} · 仿真时间 {(scene.preview.simTime ?? 0).toFixed(3)} s。读数来自此快照，动作需启动会话。</p>}
+        {(error || captureError) && <p role="alert" className="scene-failure">{error ?? captureError}</p>}
       </section>
       <SceneAuthoringReports sceneId={scene.id} />
       <section className="reference-panel"><header><h2>实体</h2><span className="scene-note">{scene.entityCount ?? '—'} 实体 · {scene.deviceCount ?? '—'} 绑定</span></header>

@@ -22,6 +22,42 @@ function reserve(signal: AbortSignal) {
 export class ThumbnailError extends Error {
   constructor(readonly code: 'missing' | 'failed' | 'timeout' | 'too_large') { super(code); }
 }
+
+const MAX_OBJECT_URLS = 256;
+const memoryCache = new Map<string, string>();
+
+export function getCachedThumbnailUrl(url: string): string | undefined {
+  const existing = memoryCache.get(url);
+  if (!existing) return undefined;
+  memoryCache.delete(url);
+  memoryCache.set(url, existing);
+  return existing;
+}
+
+export function cacheThumbnailBlob(url: string, blob: Blob): string {
+  const existing = memoryCache.get(url);
+  if (existing) {
+    URL.revokeObjectURL(existing);
+    memoryCache.delete(url);
+  }
+  const objectUrl = URL.createObjectURL(blob);
+  memoryCache.set(url, objectUrl);
+  while (memoryCache.size > MAX_OBJECT_URLS) {
+    const oldest = memoryCache.keys().next().value;
+    if (!oldest) break;
+    const oldUrl = memoryCache.get(oldest);
+    memoryCache.delete(oldest);
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
+  }
+  return objectUrl;
+}
+
+export function invalidateCachedThumbnail(url: string) {
+  const existing = memoryCache.get(url);
+  if (!existing) return;
+  memoryCache.delete(url);
+  URL.revokeObjectURL(existing);
+}
 export async function loadThumbnail(url: string, signal: AbortSignal): Promise<Blob> {
   await reserve(signal);
   const controller = new AbortController();

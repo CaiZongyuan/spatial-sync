@@ -14,7 +14,7 @@ export class ScenePreviewSource extends SessionClient {
   override async start() {
     const generation = ++this.captureGeneration;
     this.abort = new AbortController();
-    if (this.preview.status !== 'available' || !this.preview.documents) throw new Error(this.preview.reason ?? '预览不可用');
+    if ((this.preview.status !== 'available' && this.preview.status !== 'stale') || !this.preview.documents) throw new Error(this.preview.reason ?? '预览不可用');
     const documents = this.preview.documents;
     const read = async (url: string) => {
       const response = await fetch(url, { signal: this.abort.signal });

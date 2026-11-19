@@ -13,7 +13,8 @@ export function thumbnailQuery(resource: 'asset' | 'scene', id: string, contentH
 }
 export async function saveThumbnail(path: string, png: string, capturedAt?: string, signal?: AbortSignal) {
   const payload = await (await fetch(png)).blob();
-  return request<{ thumbnailUrl: string }>(`${path}${capturedAt ? `&capturedAt=${encodeURIComponent(capturedAt)}` : ''}`, {
+  const saved = await request<{ thumbnailUrl: string }>(`${path}${capturedAt ? `&capturedAt=${encodeURIComponent(capturedAt)}` : ''}`, {
     method: 'POST', headers: { 'Content-Type': 'image/png' }, body: payload, signal,
   });
+  return { ...saved, blob: payload };
 }

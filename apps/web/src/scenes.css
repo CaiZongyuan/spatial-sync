@@ -66,6 +66,7 @@
 .scene-preview-panel figcaption strong{font-family:var(--serif);font-weight:500;color:var(--ink)}
 .scene-preview-panel figcaption .reference-tag{margin-left:auto}
 .scene-capture-note{font-size:11px;color:var(--faint);line-height:1.7;padding:0 16px 12px;margin:0}
+.scene-stale-note{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--warn,var(--muted));line-height:1.6;padding:8px 16px;border-top:1px solid var(--line)}
 .scene-panel-body{padding:16px}
 .scene-panel-body p:first-child{margin-top:0}
 .scene-panel-body p:last-child{margin-bottom:0}

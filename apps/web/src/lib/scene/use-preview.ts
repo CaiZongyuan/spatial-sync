@@ -10,7 +10,7 @@ export function useScenePreview(preview: ScenePreview) {
   useEffect(() => {
     let alive = true;
     setFailure(undefined);
-    if (preview.status === 'available') void client.start().catch((error: Error) => {
+    if (preview.status === 'available' || preview.status === 'stale') void client.start().catch((error: Error) => {
       if (alive) setFailure({ client, message: error.message });
     });
     return () => { alive = false; client.stop(); };
