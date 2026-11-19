@@ -650,6 +650,14 @@ def validate(payload):
         and not any(path.startswith(root + "/") for root in entity_paths if root != path)
     )
     ordered = [checks[f"S{i}"] for i in range(1, 9)]
+    scope = training_scope(payload)
+    if stage and scope and not graph.errors:
+        from apps.node.usd_mjcf import UnsupportedUsdPhysics, check_training_structure
+
+        try:
+            check_training_structure(stage, Sdf.Path(scope), prims)
+        except UnsupportedUsdPhysics as exc:
+            ordered.append(check("S9", "fail", str(exc), entityKey=exc.prim_path))
     ordered.append(
         {
             "id": "P1-P6",
@@ -688,6 +696,18 @@ def validate(payload):
     if stage and kind == "scene":
         result |= {"entityCount": len(entity_paths), "bindingCount": len(bound)}
     return parse_report(result)
+
+
+def training_scope(payload):
+    """Select USD robot assets and Newton scene versions for training checks."""
+    metadata = payload["metadata"]
+    if metadata["stage"].startswith("python:"):
+        return None
+    if payload["kind"] == "asset" and metadata.get("kind") == "robot" and not metadata.get("dressing"):
+        return "/Asset"
+    if payload["kind"] == "scene" and "newton" in metadata["sources"]:
+        return "/World/Lab"
+    return None
 
 
 if __name__ == "__main__":

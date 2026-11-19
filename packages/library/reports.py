@@ -110,7 +110,7 @@ class ValidationReport(BaseModel):
         return self
 
 
-PHYSICS_CHECKS = frozenset(f"P{i}" for i in range(1, 7))
+PHYSICS_CHECKS = frozenset(f"P{i}" for i in range(1, 8))
 
 
 def parse_report(value, subject=None):
