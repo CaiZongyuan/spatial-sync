@@ -153,21 +153,27 @@ def test_task_library_and_job_admission_support_mjlab_backend_and_versions(tmp_p
         assert job["leaseId"] is not None
         lease_headers = node_headers | {"X-Lease-Id": job["leaseId"]}
 
-        def build_artifacts(versions_dict: dict[str, str]) -> bytes:
+        def build_artifacts(versions_dict: dict[str, str], *, receipt_lease=job["leaseId"]) -> bytes:
             import hashlib
 
-            ckpt = b"fake-pt-weights"
+            receipt = json.dumps({
+                "schema": "lw.node-local-checkpoint/1",
+                "jobId": job["jobId"],
+                "leaseId": receipt_lease,
+                "checkpointSha256": hashlib.sha256(b"fixture-local-checkpoint").hexdigest(),
+                "iteration": 2,
+            }).encode()
             onnx_bytes = b"fake-onnx-graph"
             files = {
                 "stdout.log": b"ok\n",
                 "stderr.log": b"",
-                "checkpoints/model_2.pt": ckpt,
+                "checkpoint-origin.json": receipt,
                 "policy.onnx": onnx_bytes,
                 "tensorboard/events.out.tfevents.1": b"tfevent",
                 "export.json": json.dumps(
                     {
-                        "checkpoint": "checkpoints/model_2.pt",
-                        "checkpointSha256": hashlib.sha256(ckpt).hexdigest(),
+                        "checkpoint": "checkpoint-origin.json",
+                        "checkpointSha256": hashlib.sha256(receipt).hexdigest(),
                         "policy": "policy.onnx",
                         "policySha256": hashlib.sha256(onnx_bytes).hexdigest(),
                         "iteration": 2,
@@ -206,19 +212,23 @@ def test_task_library_and_job_admission_support_mjlab_backend_and_versions(tmp_p
         )
         assert missing_mjwarp.status_code == 422
 
+        versions = {
+            "mjlab": "1.3.0",
+            "mujoco": "3.5.0",
+            "mujoco_warp": "3.5.0",
+            "warp": "1.12.0",
+            "torch": "2.9.1",
+            "rsl_rl": "5.0.1",
+        }
+        artifacts_url = f"/api/v1/jobs/{job['jobId']}/artifacts"
+        wrong_lease = client.post(
+            artifacts_url, headers=lease_headers | {"Content-Type": "application/x-tar"},
+            content=build_artifacts(versions, receipt_lease="999"),
+        )
+        assert wrong_lease.status_code == 422 and "local checkpoint" in wrong_lease.text
         accepted = client.post(
-            f"/api/v1/jobs/{job['jobId']}/artifacts",
-            headers=lease_headers | {"Content-Type": "application/x-tar"},
-            content=build_artifacts(
-                {
-                    "mjlab": "1.3.0",
-                    "mujoco": "3.5.0",
-                    "mujoco_warp": "3.5.0",
-                    "warp": "1.12.0",
-                    "torch": "2.9.1",
-                    "rsl_rl": "5.0.1",
-                }
-            ),
+            artifacts_url, headers=lease_headers | {"Content-Type": "application/x-tar"},
+            content=build_artifacts(versions),
         )
         assert accepted.status_code == 200, accepted.text
 

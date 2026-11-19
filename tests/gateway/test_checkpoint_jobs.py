@@ -82,7 +82,7 @@ def declarative_archive(directory):
     return pack_package(directory), task, joint
 
 
-@pytest.mark.parametrize("managed", [False, True], ids=["legacy-samples", "declarative-samples"])
+@pytest.mark.parametrize("managed", [False, True], ids=["audited-python", "declarative-samples"])
 def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_path, managed):
     settings = remote_settings()
     clock = [1000.0]
@@ -228,11 +228,37 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         selected = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "b"})
         assert selected.status_code == 202
         assert selected.json()["approvalId"] == waiting["approvalId"]
-        approve(client, waiting["approvalId"])
-        (assignment,) = beat(client, b, **second).json()["assignments"]
+        if managed:
+            approve(client, waiting["approvalId"])
+            destination, capabilities, node_name = b, second, "b"
+        else:
+            approval_url = f"/api/v1/approvals/{waiting['approvalId']}"
+            assert client.post(
+                f"{approval_url}/decision",
+                headers=OPERATOR,
+                json={"decision": "deny"},
+            ).is_success
+            for _ in range(2):
+                retry = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "b"}).json()
+                assert retry["reason"] == "approval_denied" and retry["leaseId"] is None
+                assert retry["approvalId"] == waiting["approvalId"]
+            assert beat(client, b, **second).json()["assignments"] == []
+            same_scope = caps("b", 20)
+            same_scope["profiles"][0]["measuredAt"] = 1000
+            assert beat(client, b, **same_scope).json()["assignments"] == []
+            denied = client.get(url, headers=OPERATOR).json()
+            assert denied["estimatedWallSeconds"] == 120 and denied["reason"] == "approval_denied"
+            destination, capabilities, node_name = register(client, "c"), caps("c", 20), "c"
+            assert beat(client, destination, **capabilities).json()["assignments"] == []
+            alternate = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "c"})
+            assert alternate.status_code == 202 and alternate.json()["estimatedWallSeconds"] == 120
+            assert alternate.json()["approvalId"] is None and alternate.json()["leaseId"]
+            assert client.get(approval_url, headers=OPERATOR).json()["status"] == "denied"
+            assert client.get(url, headers=OPERATOR).json()["leaseId"] == alternate.json()["leaseId"]
+        (assignment,) = beat(client, destination, **capabilities).json()["assignments"]
         assert int(assignment["leaseId"]) > int(job["leaseId"])
         assert assignment["logAfter"] == 1
-        b_lease = b | {"X-Lease-Id": assignment["leaseId"]}
+        b_lease = destination | {"X-Lease-Id": assignment["leaseId"]}
         resumed = client.get(f"{url}/inputs", headers=b_lease).json()
         restored = resumed["resumeCheckpoint"]
         if managed:
@@ -251,7 +277,7 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
             "logAfter": 0,
             "logs": ["first"],
         }
-        assert beat(client, b, **second, reports=[obsolete_cursor]).status_code == 422
+        assert beat(client, destination, **capabilities, reports=[obsolete_cursor]).status_code == 422
         for now, seconds, status, lines in ((1170, 50, "running", ["second"]), (1200, 80, "failed", [])):
             clock[0] = now
             report_b = report | {
@@ -263,7 +289,7 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
                 "logs": lines,
             }
             for _ in range(2):
-                response = beat(client, b, **second, reports=[report_b])
+                response = beat(client, destination, **capabilities, reports=[report_b])
                 assert response.is_success, response.text
         ended = client.get(url, headers=OPERATOR).json()
         assert ended["chargedGpuHours"] == pytest.approx(200 / 3600)
@@ -271,7 +297,7 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
         assert ended["attempts"][1]["startIteration"] == 4
         assert client.get(f"{url}/logs", headers=OPERATOR).json()["lines"] == ["first", "second"]
         costs = client.get("/api/v1/cost/breakdown?range=all&by=node", headers=OPERATOR).json()
-        assert {row["key"]: row["gpuSeconds"] for row in costs["rows"]} == {"a": 120, "b": 80}
+        assert {row["key"]: row["gpuSeconds"] for row in costs["rows"]} == {"a": 120, node_name: 80}
 
         totals = client.get("/api/v1/cost/summary?range=all", headers=OPERATOR).json()["totals"]
         assert totals["reportedGpuSeconds"] == 139
@@ -284,9 +310,16 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
                 "kind": "checkpoint_finalize",
                 "planId": plan["id"],
                 "checkpoint": job["jobId"] + "/" + checkpoint["sha256"],
-                "targetNodeId": "b",
+                "targetNodeId": node_name,
+                "requestId": "finalize-reviewed-checkpoint",
             },
         )
+        if not managed:
+            assert final.status_code == 409, final.text
+            assert final.json()["detail"]["code"] == "observation_source_unverified"
+            assert client.get("/api/v1/jobs?kind=checkpoint_finalize", headers=OPERATOR).json()["jobs"] == []
+            assert beat(client, destination, **capabilities).json()["assignments"] == []
+            return
         assert final.status_code == 202, final.text
         final = final.json()
         final_url = f"/api/v1/jobs/{final['jobId']}"
@@ -384,6 +417,95 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
             )
             assert verified.status_code == 200, verified.text
             assert verified.json()["sourceVerification"]["qualified"] is True
+
+
+@pytest.mark.parametrize("num_envs", [2, 4], ids=["wrong-layout", "reviewed-layout"])
+def test_retained_native_profile_must_fit_the_finalization_dispatch(num_envs):
+    settings = remote_settings()
+    with TestClient(create_app(settings)) as client:
+        native = client.get("/api/v1/tasks/microduck-stand-up/1", headers=OPERATOR).json()
+        plan_row = client.post(
+            "/api/v1/plans",
+            headers=OPERATOR,
+            json=training_plan(
+                native["id"],
+                algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
+                hyperparameters={"num_envs": num_envs, "max_iterations": 10},
+                evaluation={"scene": native["task"]["scene"], "episodes": 1, "threshold": 1},
+            ),
+        )
+        assert plan_row.status_code == 201, plan_row.text
+        plan = plan_row.json()
+        assert client.post(
+            f"/api/v1/approvals/{plan['approvalId']}/decision",
+            headers=OPERATOR,
+            json={"decision": "approve"},
+        ).is_success
+        node = register(client, "reviewed")
+        gpu = {"id": "GPU-reviewed", "name": "Fixture GPU"}
+        runtime = {
+            "trainingEntries": {"mjlab": "mjlab:managed"},
+            "trainerVersions": MJLAB_VERSIONS,
+            "compilerHash": compiler_hash(),
+        }
+        key = node_profile_key(
+            plan,
+            native["contentHash"],
+            runtime | {"id": "reviewed", "hardware": "fixture"},
+            gpu,
+            backend="mjlab",
+        )
+        caps = runtime | {
+            "checkpointVersion": 1,
+            "gpus": [gpu],
+            "profiles": [
+                {
+                    "key": key,
+                    "iterationSeconds": 1,
+                    "samples": 2,
+                    "measuredAt": 999,
+                    "evidence": "fixture",
+                }
+            ],
+        }
+        assert beat(client, node, **caps).is_success
+        started = client.post(
+            "/api/v1/jobs",
+            headers=OPERATOR,
+            json={"planId": plan["id"], "seed": 42},
+        )
+        assert started.status_code == 202, started.text
+        job = started.json()
+        url = f"/api/v1/jobs/{job['jobId']}"
+        lease = node | {"X-Lease-Id": job["leaseId"]}
+        inputs = client.get(url + "/inputs", headers=lease).json()
+        accepted = client.post(url + "/checkpoints", headers=lease, content=checkpoint_archive(inputs))
+        assert accepted.status_code == 201, accepted.text
+        failed = {"jobId": job["jobId"], "leaseId": job["leaseId"], "status": "failed", "iteration": 4}
+        assert beat(client, node, **caps, reports=[failed]).is_success
+        payload = {
+            "kind": "checkpoint_finalize",
+            "planId": plan["id"],
+            "checkpoint": job["jobId"] + "/" + accepted.json()["sha256"],
+            "requestId": "reviewed-retained-finalization",
+        }
+        final = client.post("/api/v1/jobs", headers=OPERATOR, json=payload)
+        if num_envs == 2:
+            assert final.status_code == 409, final.text
+            assert final.json()["detail"]["code"] == "observation_source_unverified"
+            assert beat(client, node, **caps).json()["assignments"] == []
+        else:
+            assert final.status_code == 202, final.text
+            row = final.json()
+            retry = client.post("/api/v1/jobs", headers=OPERATOR, json=payload)
+            assert retry.status_code == 202 and retry.json()["jobId"] == row["jobId"]
+            final_inputs = client.get(
+                f"/api/v1/jobs/{row['jobId']}/inputs",
+                headers=node | {"X-Lease-Id": row["leaseId"]},
+            ).json()
+            assert final_inputs["nativeObservationProfile"] == inputs["nativeObservationProfile"]
+            assert final_inputs["nativeObservationProfile"]["evidenceMode"] == "native"
+            assert final_inputs["nativeObservationProfile"]["environments"] == [0, 1, 2, 3]
 
 
 def witness_artifacts(

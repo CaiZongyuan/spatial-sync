@@ -13,8 +13,10 @@ from copy import deepcopy
 from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
+from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
 from packages.training import checkpoints
+from packages.training.finalization import finalization_profile
 from packages.training.inputs import publish_attempt_artifacts
 from packages.training.job_contract import VALIDATION_ITERATIONS, VALIDATION_TIMEOUT
 from packages.training.node_telemetry import NodeTelemetryHistory
@@ -243,7 +245,7 @@ class TrainingJobs:
 
     def document(self, job):
         internal = ("plan", "lastNodeReport", "costLedger", "logTail", "checkpointSource",
-                    "resumeTarget", "artifactLeaseId")
+                    "resumeTarget", "artifactLeaseId", "deniedProfileKey")
         value = deepcopy(
             {key: value for key, value in job.items() if key not in internal}
         ) | {
@@ -388,6 +390,7 @@ class TrainingJobs:
             source_lease = {"leaseId": source["leaseId"], "runtimeIdentity": source["runtime"]}
             if checkpoints.identity(job, source_lease)["inputsSha256"] != source["inputsSha256"]:
                 raise PlanError("checkpoint_inputs_mismatch", "Checkpoint differs from approved inputs")
+            finalization_profile(self.manager, job, source["runtime"], task=task)
             job.update(checkpointRef=checkpoint, checkpointSource=source)
         if validation:
             job["validationLimits"] = {
@@ -452,12 +455,20 @@ class TrainingJobs:
         self._save()
         return self.document(job)
 
-    def _budget(self, job, remaining, same_profile):
+    def _budget(self, job, remaining, previous_profile):
         estimate = job["estimatedGpuHours"]
         extra = max(0, estimate - remaining)
         over_budget = extra > GPU_HOUR_TOLERANCE
         approval = self.manager.approvals.records.get(job["approvalId"])
+        if approval and approval.status == "denied" and job["status"] == "suspended":
+            denied_profile = job.setdefault("deniedProfileKey", previous_profile)
+            if not over_budget and denied_profile != job["profileKey"]:
+                # Detach the gate from this dispatch. Its original denial remains in the Approval inbox.
+                job["approvalId"] = None
+                job.pop("deniedProfileKey", None)
+                approval = None
         if approval:
+            same_profile = job["profileKey"] == previous_profile
             superseded = (
                 approval.status == "unavailable"
                 or approval.status in ("pending", "approved") and not same_profile
@@ -530,6 +541,13 @@ class TrainingJobs:
                 job.update(status="cancelled", reason="node_revoked", finishedAt=now)
                 self._queue_event(job)
                 continue
+            if job["kind"] == "checkpoint_finalize":
+                try:
+                    finalization_profile(self.manager, job, job["checkpointSource"]["runtime"])
+                except (PlanError, LibraryError) as error:
+                    job.update(status="failed", reason=error.detail["code"], finishedAt=now)
+                    self._queue_event(job)
+                    continue
             self._schedule(job, now, validation)
 
     def _schedule(self, job, now, validation):
@@ -593,9 +611,9 @@ class TrainingJobs:
             if source and blocker:
                 job["reason"] = blocker
                 return
-            same_profile = job["profileKey"] == key
+            previous_profile = job["profileKey"]
             job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
-            if not self._budget(job, remaining, same_profile):
+            if not self._budget(job, remaining, previous_profile):
                 return
         if blocker:
             job["reason"] = blocker
@@ -1277,6 +1295,8 @@ class TrainingJobs:
         if current.status != "pending" and decision != "revoke":
             raise ApprovalConflict("Job approval already processed")
         self.manager.approvals.decide(approval.approvalId, decision, actor, note)
+        if decision == "revoke":
+            job.pop("deniedProfileKey", None)
         self.reconcile()
         self._queue_event(job)
         self._save()

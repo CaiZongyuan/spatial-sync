@@ -12,6 +12,7 @@ from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
 from packages.training import checkpoints
 from packages.training.checkpoint_format import MAX_BYTES
+from packages.training.finalization import finalization_profile
 from packages.training.inputs import export_input, input_packages, store_artifacts
 from packages.training.job_contract import (
     CleanupReceipt,
@@ -135,12 +136,14 @@ def install_job_routes(app, manager, role_for, views=None):
         manager.tasks.require_execution(task)
         lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
         profile = None
-        if task["task"].get("declarative") is not None:
+        if job["kind"] == "checkpoint_finalize":
+            profile = finalization_profile(manager, job, lease.get("runtimeIdentity", {}), task=task)
+        elif task["task"].get("declarative") is not None:
             from packages.policies.qualification import declarative_profile
 
             profile = declarative_profile(
                 task, manager.tasks.observation(task["id"]), job, lease.get("runtimeIdentity"),
-            )
+            ).model_dump(mode="json")
         value = {
             "schemaVersion": 2 if lease.get("checkpointVersion") else 1,
             "job": jobs.document(job),
@@ -159,8 +162,7 @@ def install_job_routes(app, manager, role_for, views=None):
                 }
         if job["kind"] in ("training", "checkpoint_finalize"):
             value["nativeObservationProfile"] = (
-                profile.model_dump(mode="json")
-                if profile is not None
+                profile if profile is not None
                 else manager.policy_evidence.native_profiles.for_task(
                     job["taskContentHash"], job["plan"]["algorithm"]["version"],
                 )
