@@ -34,6 +34,7 @@ DEPENDENCY_DIGEST = "sha256-text-lf-v1"
 CODE_ROOTS = (
     "packages/", "apps/api/app/sources/", "apps/api/app/recordings.py", "tools/capture_scene_preview.py",
 )
+PHYSICS_CODE = "apps/node/usd_mjcf.py"
 DATA_ROOTS = ("assets/", "devices/types/", "examples/usd-lab/", "library/")
 
 _NonemptyString = Annotated[str, Field(min_length=1)]
@@ -126,10 +127,14 @@ def relative_file(root, name):
     return path
 
 
+def is_code_input(name):
+    return name == PHYSICS_CODE or name.startswith(CODE_ROOTS)
+
+
 def dependency_path(dependency):
     name = dependency["path"]
     if not isinstance(name, str) or not (
-        name == "uv.lock" or name.startswith(CODE_ROOTS) or name.startswith(DATA_ROOTS)
+        name == "uv.lock" or is_code_input(name) or name.startswith(DATA_ROOTS)
     ) or name.startswith("assets/scene-previews/"):
         raise ValueError("Capture dependency is outside supported source inputs")
     return relative_file(REPO_ROOT, name)

@@ -359,7 +359,8 @@ def validate(payload):
             rows.extend(check(f"P{i}", "warn", "Not measured because initial model state is invalid")
                         for i in range(2, 7))
             return result
-        rows.extend(consistency_checks(payload, sim.model, tools))
+        rows.extend(consistency_checks(payload, sim.model, tools,
+                                       mujoco_solver=sim.solver if sim.solver_kind == "mujoco" else None))
         if payload["kind"] == "scene":
             rows.extend(initial_joint_checks(sim))
             rows.extend(taught_checks(sim, payload))

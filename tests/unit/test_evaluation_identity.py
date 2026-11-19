@@ -260,3 +260,48 @@ def test_fixed_runtime_slot_keeps_framework_code_in_environment_for_program_and_
     assert changed["unknownReason"] is None
     assert changed["environmentInputs"] != one["environmentInputs"]
     assert changed["candidateIdentity"] == one["candidateIdentity"]
+
+
+def test_newton_helper_changes_fixed_implementation_while_unrelated_type_publication_does_not(tmp_path):
+    from packages.library.entity_types import EntityTypes, RobotEntityType
+
+    root = tmp_path / "project"
+    helper = root / "apps/node/usd_mjcf.py"
+    for name in set(ENVIRONMENT) | set(JUDGE):
+        path = root / name
+        if not path.suffix:
+            path /= "fixture.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# fixture\n")
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.write_text("SLIDING_FRICTION = 0.37\n")
+    task_path, scene_path = tmp_path / "suite", tmp_path / "scene"
+    task_path.mkdir()
+    scene_path.mkdir()
+    (task_path / "suite.yaml").write_text("suite: fixture\n")
+    (scene_path / "stage.usda").write_text("#usda 1.0\n")
+    suite = SimpleNamespace(id="suite/fixture@1", content_hash="a" * 64, path=task_path,
+                            metadata={"source": "newton"}, grading={})
+    scene = SimpleNamespace(id="fixture@1", content_hash="b" * 64, path=scene_path,
+                            asset_dependencies=lambda: [], template_dependencies=lambda: [])
+    output = tmp_path / "evidence"
+
+    def freeze(name):
+        return freeze_identity(name, suite, scene, "fixture", output, root=root,
+                               candidate={"kind": "agent-harness", "contentHash": "c" * 64})
+
+    original = freeze("original")
+    library = tmp_path / "user-library"
+    EntityTypes(library).publish(RobotEntityType.model_validate({
+        "type": "u-other-bot/v1", "title": "Other Robot", "actions": {"wave": {"longRunning": True}},
+    }))
+    verify_identity(original, root=root, directory=output, user_root=library)
+    assert freeze("after-type")["environmentInputs"] == original["environmentInputs"]
+
+    helper.write_text("SLIDING_FRICTION = 0.61\n")
+    with pytest.raises(ValueError, match="Fixed evaluation implementation changed"):
+        verify_identity(original, root=root, directory=output, user_root=library)
+    updated = freeze("after-helper")
+    assert updated["environmentInputs"]["code"] != original["environmentInputs"]["code"]
+    with ZipFile(output / original["recovery"]["file"]) as archive:
+        assert archive.read("code/apps/node/usd_mjcf.py") == b"SLIDING_FRICTION = 0.37\n"

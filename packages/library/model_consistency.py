@@ -1,7 +1,5 @@
 """Compare the imported Newton model with the trainer's compiled MuJoCo model."""
 
-from collections import Counter
-
 from packages.library.physics_checks import check
 
 REL_TOL = 1e-4
@@ -10,7 +8,39 @@ INERTIA_ATOL = 1e-8  # kg m²
 PARAMETER_ATOL = 1e-6  # Coordinates and drive/contact parameters in solver units
 
 
-def compare_models(newton_model, derived):
+def _mujoco_contact_pairs(model):
+    """Compiled contact eligibility before pose-dependent broad/narrow phase."""
+    import mujoco
+    import numpy as np
+
+    if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CONTACT:
+        return set()
+    enabled_geoms = np.flatnonzero(model.geom_contype | model.geom_conaffinity)
+    first, second = (enabled_geoms[ids] for ids in np.triu_indices(len(enabled_geoms), k=1))
+    a, b = model.geom_bodyid[first], model.geom_bodyid[second]
+    weld_a, weld_b = model.body_weldid[a], model.body_weldid[b]
+    allowed = (weld_a != weld_b) & (
+        ((model.geom_contype[first] & model.geom_conaffinity[second]) != 0)
+        | ((model.geom_contype[second] & model.geom_conaffinity[first]) != 0)
+    )
+    if not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_FILTERPARENT:
+        parent = model.body_weldid[model.body_parentid]
+        allowed &= (weld_a == 0) | (weld_b == 0) | (
+            (parent[weld_a] != weld_b) & (parent[weld_b] != weld_a)
+        )
+    signatures = (np.minimum(a, b).astype(np.int64) << 16) | np.maximum(a, b)
+    allowed &= ~np.isin(signatures, model.exclude_signature.astype(np.uint32))
+    pairs = set(zip(first[allowed], second[allowed], strict=True))
+    # Explicit contact pairs bypass masks and body-level filtering in MuJoCo Warp.
+    pairs.update(tuple(sorted(pair)) for pair in zip(model.pair_geom1, model.pair_geom2, strict=True))
+    return pairs
+
+
+def _named_pairs(pairs, names):
+    return {tuple(sorted((names.get(a, f"geom {a}"), names.get(b, f"geom {b}")))) for a, b in pairs}
+
+
+def compare_models(newton_model, derived, *, mujoco_solver=None):
     import mujoco
     import newton
     import numpy as np
@@ -105,13 +135,11 @@ def compare_models(newton_model, derived):
     geom_ids = ids(derived.collider_names_by_path, mujoco.mjtObj.mjOBJ_GEOM)
     flags = reference.shape_flags.numpy()
     shape_to_body = reference.shape_body.numpy()
-    model_collides = (model.geom_contype != 0) | (model.geom_conaffinity != 0)
     newton_colliders = {path: index for index, path in enumerate(reference.shape_label)
                         if flags[index] & int(newton.ShapeFlags.COLLIDE_SHAPES)
                         and path != "Validation/Ground"}
     equal("Collider Prim Paths", sorted(newton_colliders),
-          sorted(path for path, idx in geom_ids.items() if idx >= 0 and model_collides[idx]))
-    equal("Collider count", len(newton_colliders), int(model_collides.sum()))
+          sorted(path for path, idx in geom_ids.items() if idx >= 0))
     friction = np.column_stack((reference.shape_material_mu.numpy(),
                                 reference.shape_material_mu_torsional.numpy(),
                                 reference.shape_material_mu_rolling.numpy()))
@@ -124,37 +152,52 @@ def compare_models(newton_model, derived):
                   body_paths.get(model.geom_bodyid[idx]), path)
             close("Collider friction", friction[ref], model.geom_friction[idx], path)
 
-    # Compare actual Newton shape filters with the compiled MJCF body exclusions.
-    # Same-body pairs never collide, and the validation-only ground is outside the authored stage.
-    selected = set(newton_colliders.values())
-    per_body = Counter(int(shape_to_body[index]) for index in selected)
-    filtered = Counter()
-    for first, second in reference.shape_collision_filter_pairs_array():
-        a, b = sorted((int(shape_to_body[first]), int(shape_to_body[second])))
-        if a != b and first in selected and second in selected:
-            filtered[a, b] += 1
-    expected_pairs = []
-    for (a, b), count in filtered.items():
-        pair = sorted((newton_body_paths[a], newton_body_paths[b]))
-        if count != per_body[a] * per_body[b]:
-            failures.append(check("P7", "fail", f"Newton filters only some colliders of {pair}"))
-        else:
-            expected_pairs.append(pair)
-    # MuJoCo stores the two body IDs packed into a 32-bit signature.
-    actual_pairs = [sorted((body_paths.get(int(sig) >> 16, "?"), body_paths.get(int(sig) & 0xffff, "?")))
-                    for sig in model.exclude_signature]
-    equal("Collision exclusions", sorted(expected_pairs), sorted(actual_pairs))
+    newton_paths = {index: path for path, index in newton_colliders.items()}
+    geom_paths = {index: path for path, index in geom_ids.items() if index >= 0}
+    if mujoco_solver is None:
+        # Newton's finalized candidates already account for group, world and explicit shape filtering.
+        eligible = reference.shape_contact_pairs.numpy()
+        source_paths = newton_paths
+    else:
+        # The live solver applies additional filtering, such as fixed bodies welded to the world.
+        eligible = _mujoco_contact_pairs(mujoco_solver.mj_model)
+        source_paths = {
+            geom: newton_paths[shape]
+            for geom, shape in enumerate(mujoco_solver.mjc_geom_to_newton_shape.numpy()[0])
+            if shape in newton_paths
+        }
+    expected_pairs = _named_pairs(((a, b) for a, b in eligible if a in source_paths and b in source_paths),
+                                 source_paths)
+    actual_pairs = _named_pairs(_mujoco_contact_pairs(model), geom_paths)
+    if expected_pairs != actual_pairs:
+        missing, unexpected = expected_pairs - actual_pairs, actual_pairs - expected_pairs
+        failures.append(check("P7", "fail", "Effective collision pairs differ between Newton and MuJoCo",
+                              measurements={
+                                  "missingGeometryPairCount": len(missing),
+                                  "unexpectedGeometryPairCount": len(unexpected),
+                                  "missingGeometryPairs": [list(pair) for pair in sorted(missing)[:20]],
+                                  "unexpectedGeometryPairs": [list(pair) for pair in sorted(unexpected)[:20]],
+                              }))
 
     if failures:
         return failures
+    allowed_body_pairs = {
+        tuple(sorted((shape_to_body[newton_colliders[a]], shape_to_body[newton_colliders[b]])))
+        for a, b in expected_pairs
+    }
+    collider_bodies = {shape_to_body[index] for index in newton_paths}
+    body_count = len(collider_bodies)
     return [check("P7", "pass", "Newton and compiled MuJoCo parameters agree", measurements={
         "rigidBodyCount": reference.body_count, "massKg": float(mass.sum()),
-        "controlledJointCount": len(expected_order), "excludedBodyPairCount": len(expected_pairs),
+        "controlledJointCount": len(expected_order),
+        "excludedBodyPairCount": body_count * (body_count - 1) // 2 - len(allowed_body_pairs),
+        "collidableGeometryPairCount": len(expected_pairs),
+        "collidableBodyPairCount": len(allowed_body_pairs),
         "colliderCount": len(newton_colliders),
     })]
 
 
-def consistency_checks(payload, model, tools):
+def consistency_checks(payload, model, tools, *, mujoco_solver=None):
     from importlib.metadata import PackageNotFoundError, version
 
     from pxr import UsdPhysics
@@ -182,7 +225,7 @@ def consistency_checks(payload, model, tools):
         return [check("P7", "warn", "Model consistency was not measured because MuJoCo is not installed")]
     try:
         derived = derive_usd_mjcf(stage, prim_path=scope, allow_multiple_roots=payload["kind"] == "scene")
-        return compare_models(model, derived)
+        return compare_models(model, derived, mujoco_solver=mujoco_solver)
     except UnsupportedUsdPhysics as exc:
         return [check("P7", "fail", str(exc), entity=exc.prim_path)]
     except (ValueError, RuntimeError) as exc:

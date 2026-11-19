@@ -10,7 +10,7 @@ import json
 import math
 import os
 import xml.etree.ElementTree as ET
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import product
@@ -638,6 +638,52 @@ def _contact_attributes(prim):
     return attrs
 
 
+def configure_mjlab_usd_scene(scene_cfg, source, *, asset_packages=None):
+    """Carry canonical USD contact settings through mjlab's final SceneCfg attachment."""
+    import mujoco
+
+    if len(scene_cfg.entities) != 1 or getattr(scene_cfg.terrain, "terrain_type", None) != "plane":
+        raise ValueError("USD scene composition requires one mjlab entity and plane terrain")
+    stage, _pinned_layers = _open_usd_stage(source, asset_packages)
+    root = stage.GetPrimAtPath("/World/Lab")
+    if not root:
+        raise ValueError("USD scene composition requires /World/Lab")
+    prims = list(Usd.PrimRange(root, Usd.TraverseInstanceProxies()))
+    colliders = {
+        prim.GetPath(): _enclosing_rigid_body(stage, prim.GetPath(), root.GetPath())
+        for prim in prims if _enabled_collider(prim)
+    }
+    static = [path for path, body in colliders.items() if body is None]
+    if len(static) != 1 or not (plane := UsdGeom.Plane.Get(stage, static[0])):
+        raise ValueError("USD scene composition requires exactly one static plane collider")
+    matrix = UsdGeom.XformCache().GetLocalToWorldTransform(plane.GetPrim())
+    axis = _AXIS_VECTORS[str(plane.GetAxisAttr().Get())]
+    normal = matrix.TransformDir(Gf.Vec3d(*axis)).GetNormalized()
+    if (normal - Gf.Vec3d(0, 0, 1)).GetLength() > 1e-6 or abs(matrix.ExtractTranslation()[2]) > 1e-6:
+        raise UnsupportedUsdPhysics(plane.GetPath(), "mjlab terrain requires a Z-up plane at height zero")
+    owners = {path: body.GetPath() if body is not None else Sdf.Path.absoluteRootPath
+              for path, body in colliders.items()}
+    if (any(plane.GetPath() in pair for pair in filtered_collider_pairs(stage.Traverse(), owners))
+            or any(prim.IsA(UsdPhysics.CollisionGroup) for prim in prims)):
+        raise UnsupportedUsdPhysics(plane.GetPath(), "mjlab plane composition requires unfiltered terrain")
+
+    contact = _contact_attributes(plane.GetPrim())
+    previous = scene_cfg.spec_fn
+
+    def apply(spec):
+        if previous is not None:
+            previous(spec)
+        geom = spec.geom("terrain")
+        if geom is None or geom.type != mujoco.mjtGeom.mjGEOM_PLANE:
+            raise ValueError("Final mjlab SceneCfg must attach a plane geom named terrain")
+        # MjSpec.attach preserves entity exclusions, but only the root owns solver flags.
+        spec.option.disableflags |= mujoco.mjtDisableBit.mjDSBL_FILTERPARENT
+        geom.friction = [float(value) for value in contact["friction"].split()]
+        geom.solref = [float(value) for value in contact.get("solref", ".02 1").split()]
+
+    scene_cfg.spec_fn = apply
+
+
 def filtered_collider_pairs(prims, collider_owners):
     """Resolve symmetric filtered pairs on colliders, rigid bodies or containing scopes."""
     relationships = [(prim.GetPath(), rel) for prim in prims
@@ -766,21 +812,60 @@ def _check_collision_mesh(prim, cache):
     valid = (all(math.isfinite(x) for point in vertices for x in point)
              and all(count >= 3 for count in counts) and sum(counts) == len(indices)
              and all(0 <= i < len(vertices) for i in indices))
-    if valid and _mesh_is_volumetric(vertices):
+    if valid and counts:
         approximation = UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get()
         # An explicit convex hull defines a solid independently of the source face seams.
-        if approximation == "convexHull":
+        if approximation == "convexHull" and _mesh_is_volumetric(vertices):
             return
-        edges = Counter()
-        cursor = 0
-        for count in counts:
-            face = [vertices[i] for i in indices[cursor:cursor + count]]
-            for a, b in zip(face, face[1:] + face[:1], strict=True):
-                edges[a, b] += 1
-            cursor += count
-        if edges and all(a != b and n == 1 and edges[b, a] == 1 for (a, b), n in edges.items()):
+        if approximation != "convexHull" and _has_solid_components(vertices, counts, indices):
             return
     raise UnsupportedUsdPhysics(prim.GetPath(), "Collision mesh must be watertight and volumetric")
+
+
+def _has_solid_components(vertices, counts, indices):
+    edges = {}
+    faces = []
+    cursor = 0
+    for count in counts:
+        face = [vertices[i] for i in indices[cursor:cursor + count]]
+        for edge in zip(face, face[1:] + face[:1], strict=True):
+            if edge[0] == edge[1] or edge in edges:
+                return False
+            edges[edge] = len(faces)
+        faces.append(face)
+        cursor += count
+    adjacent = [[] for face in faces]
+    for (a, b), index in edges.items():
+        opposite = edges.get((b, a))
+        if opposite is None:
+            return False
+        adjacent[index].append(opposite)
+
+    remaining = set(range(len(faces)))
+    while remaining:
+        pending = [remaining.pop()]
+        component = []
+        while pending:
+            index = pending.pop()
+            component.append(faces[index])
+            for other in adjacent[index]:
+                if other in remaining:
+                    remaining.remove(other)
+                    pending.append(other)
+        origin = Gf.Vec3d(*component[0][0])
+        extent = max((Gf.Vec3d(*p) - origin).GetLength() for face in component for p in face)
+        if extent == 0:
+            return False
+
+        def signed_tetrahedra():
+            for face in component:
+                points = [(Gf.Vec3d(*p) - origin) / extent for p in face]
+                for b, c in zip(points[1:-1], points[2:], strict=True):
+                    yield Gf.Dot(points[0], Gf.Cross(b, c))
+
+        if abs(math.fsum(signed_tetrahedra())) <= 1e-12:
+            return False
+    return True
 
 
 def check_training_structure(stage, scope_path, prims):
@@ -1388,11 +1473,12 @@ def derive_usd_mjcf(
         b_prim = body_by_path[body_path]
         b_name = _unique_name(b_prim.GetName(), used_body_names)
         body_names[str(body_path)] = b_name
-        body_elem = ET.SubElement(
-            parent_elem,
-            "body",
-            {"name": b_name, "pos": _fmt(rel_pos), "quat": _fmt(rel_quat)},
-        )
+        attributes = {"name": b_name, "pos": _fmt(rel_pos), "quat": _fmt(rel_quat)}
+        if is_fixed and children_by_parent[body_path]:
+            # Newton exports fixed articulation roots as mocap bodies. A distinct weld
+            # island preserves contacts with static geometry and keeps the root fixed.
+            attributes["mocap"] = "true"
+        body_elem = ET.SubElement(parent_elem, "body", attributes)
 
         _, _, child_scale = _decompose_matrix(
             xform_cache.GetLocalToWorldTransform(b_prim), meters_per_unit

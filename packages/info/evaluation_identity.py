@@ -17,6 +17,7 @@ ENVIRONMENT = (
     "packages/programs",
     "packages/policies",
     "packages/sim_runtime",
+    "apps/node/usd_mjcf.py",
     "packages/protocol",
     "packages/library",
     "packages/agent_rsi",

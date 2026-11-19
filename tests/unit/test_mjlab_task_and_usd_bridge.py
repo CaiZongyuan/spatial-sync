@@ -2029,5 +2029,90 @@ def test_model_consistency_measures_newton_and_detects_derived_drift(tmp_path):
     assert all(row["status"] == "fail" for row in failures)
     for message in ("Total mass", "Body mass", "Body inertia", "Controlled joint order", "Joint axis",
                     "Joint limit", "Joint armature", "Joint stiffness", "Joint damping",
-                    "Collider friction", "Collision exclusions"):
+                    "Collider friction", "Effective collision pairs"):
         assert any(message in row["message"] for row in failures), failures
+
+
+@pytest.mark.newton
+def test_p7_compares_effective_masks_and_accepts_equivalent_encodings(tmp_path):
+    from dataclasses import replace
+    from xml.etree import ElementTree as ET
+
+    newton = pytest.importorskip("newton")
+    pytest.importorskip("mujoco")
+    from pxr import Usd, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.model_consistency import compare_models
+    from packages.sim_runtime.loaders import import_usd
+
+    stage = Usd.Stage.Open(str(_write_test_articulation_usd(tmp_path / "asset.usda", fixed_base=True)))
+    shoulder = UsdPhysics.Joint.Get(stage, "/Asset/shoulder_pitch")
+    shoulder.CreateCollisionEnabledAttr(True)
+    base = stage.GetPrimAtPath("/Asset/base_link")
+    UsdPhysics.FilteredPairsAPI.Apply(base).CreateFilteredPairsRel().SetTargets(["/Asset/carriage_link"])
+    builder = newton.ModelBuilder()
+    import_usd(builder, stage, root_path="/Asset")
+    model = builder.finalize(device="cpu")
+    derived = derive_usd_mjcf(stage)
+
+    assert [row["status"] for row in compare_models(model, derived)] == ["pass"]
+    xml = ET.fromstring(derived.mjcf_xml)
+    base_geom = xml.find(".//geom[@name='base_link_base_collision']")
+    base_geom.attrib.update(contype="2", conaffinity="2")
+
+    def compare():
+        return compare_models(model, replace(derived, mjcf_xml=ET.tostring(xml, encoding="unicode")))
+
+    failure = next(row for row in compare() if row["status"] == "fail")
+    assert failure["measurements"]["missingGeometryPairs"] == [
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/link_capsule"],
+    ]
+    for geom in xml.findall(".//geom[@contype='1']"):
+        geom.attrib.update(contype="2", conaffinity="2")
+    assert [row["status"] for row in compare()] == ["pass"]
+    xml.find("./option/flag").set("filterparent", "enable")
+    failure = next(row for row in compare() if row["status"] == "fail")
+    assert failure["measurements"]["missingGeometryPairs"] == [
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/base_link/base_collision", "/Asset/upper_link/link_capsule"],
+        ["/Asset/carriage_link/tip_sphere", "/Asset/upper_link/fin_mesh"],
+        ["/Asset/carriage_link/tip_sphere", "/Asset/upper_link/link_capsule"],
+    ]
+
+
+@pytest.mark.parametrize("approximation", ["none", "convexHull"])
+def test_validation_distinguishes_zero_volume_components_from_solid_hull(tmp_path, approximation):
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+    from packages.library.assets import AssetLibrary
+    from packages.library.validation import StructuralValidator
+
+    asset = _write_test_articulation_usd(tmp_path / "asset" / "asset.usda", fixed_base=True)
+    stage = Usd.Stage.Open(str(asset))
+    path = "/Asset/upper_link/fin_mesh"
+    mesh = UsdGeom.Mesh.Get(stage, path)
+    mesh.CreatePointsAttr([(0, 0, 0), (.1, 0, 0), (0, .1, 0),
+                           (0, 0, .1), (.1, 0, .1), (0, .1, .1)])
+    mesh.CreateFaceVertexCountsAttr([3, 3, 3, 3])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 2, 1, 0, 3, 4, 5, 5, 4, 3])
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr(approximation)
+    stage.GetRootLayer().Save()
+
+    assets = AssetLibrary(tmp_path / "state", user_root=tmp_path / "library")
+    report = StructuralValidator(tmp_path / "state").run_structure(
+        asset.parent, "asset", "asset:robot/example@1",
+        {"kind": "robot", "stage": asset.name}, assets,
+    )
+    findings = [row for row in report["checks"] if row["id"] == "S9"]
+    if approximation == "convexHull":
+        assert not findings
+        assert path in derive_usd_mjcf(stage).collider_names_by_path
+    else:
+        assert [(row["status"], row["entityKey"]) for row in findings] == [("fail", path)]
+        assert "volumetric" in findings[0]["message"]
+        assert report["launchable"] is False
+        with pytest.raises(ValueError, match=path):
+            derive_usd_mjcf(stage)
