@@ -830,7 +830,7 @@ class TrainingJobs:
                     "artifacts_incomplete", "Upload verified artifacts before success", status=422
                 )
             self._log_suffix(job, report.logAfter, report.logs)
-            fresh.append((job, report, data, lease.get("cleanupOnly")))
+            fresh.append((job, report, data))
         if node is None:
             node = {"id": identity, "instanceId": body.instanceId, "leases": {}, "profiles": {}}
             with self.manager._resource_lock:
@@ -864,25 +864,26 @@ class TrainingJobs:
             retained = node["profiles"].get(profile.key)
             if retained is None or profile.measuredAt > retained["measuredAt"]:
                 node["profiles"][profile.key] = profile.model_dump()
-        for job, report, data, recovering in fresh:
+        for job, report, data in fresh:
             if report.tailEnd is not None:
                 self._append_log_tail(job, report, body.instanceId)
             else:
                 self._append_logs(job, report.logAfter, report.logs)
-            if report.status in TERMINAL or report.status == "cleaned" or recovering:
-                metrics = job["metrics"]
-                metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), report.elapsedSeconds)
-                if report.status != "cleaned" and report.iteration >= metrics.get("iteration", 0):
+            sample = {key: data[key] for key in (
+                "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
+            )}
+            metrics = job["metrics"]
+            metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), report.elapsedSeconds)
+            if report.status != "cleaned":
+                measurements = {"memoryUsedMb": report.memoryUsedMb}
+                if report.iteration >= metrics.get("iteration", 0):
                     metrics["iteration"] = report.iteration
-                    for key in ("meanReward", "trainSuccess", "memoryUsedMb"):
-                        if data[key] is not None:
-                            metrics[key] = data[key]
-            else:
-                job["metrics"] = {key: data[key] for key in (
-                    "iteration", "elapsedSeconds", "meanReward", "trainSuccess", "memoryUsedMb",
-                )}
+                    measurements.update(meanReward=report.meanReward, trainSuccess=report.trainSuccess)
+                for key, value in measurements.items():
+                    if value is not None or key not in metrics:
+                        metrics[key] = value
             if report.validation is not None:
-                job["metrics"]["validation"] = data["validation"]
+                sample["validation"] = metrics["validation"] = data["validation"]
                 self._record_validation(job, node, report.validation, report.elapsedSeconds, now)
             job["chargedGpuHours"] = max(
                 job["chargedGpuHours"],
@@ -903,7 +904,7 @@ class TrainingJobs:
             history = job.setdefault("metricsHistory", [])
             history.append({
                 "receivedAt": now, "reportedStatus": report.status, "reason": report.reason,
-                **job["metrics"],
+                **sample,
             })
             del history[:-900]
             self._event(job)

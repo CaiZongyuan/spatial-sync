@@ -66,12 +66,13 @@ def start_server(settings, app=None):
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="POSIX process ownership")
 @pytest.mark.parametrize(
     "recovery",
-    ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish", "modern-expired",
-     "modern-no-proof"],
+    ["missing-work", "retained-proof", "expires-after-upgrade", "normal-finish", "retained-normal-finish",
+     "modern-expired", "modern-no-proof"],
 )
 def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     monkeypatch, recovery,
 ):
+    normal_finish = recovery.endswith("normal-finish")
     settings = Settings(node_token=TOKEN)
     old = create_app(settings)
     old.state.jobs.clock = lambda: 100
@@ -79,7 +80,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
         plan, task = setup_plan(client)
         approve(client, plan["approvalId"])
         body = heartbeat(plan, task)
-        modern = recovery.startswith("modern-")
+        modern = recovery == "normal-finish" or recovery.startswith("modern-")
         body["hardware"] = "node-hardware/2:fixture" if modern else "a" * 64
         gpu = body["gpus"][0]
         if modern:
@@ -98,6 +99,8 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
             "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
         }
         assert client.post(HEARTBEAT, headers=NODE, json=body | {"reports": [progress]}).is_success
+        if normal_finish:
+            assert client.post(f"/api/v1/jobs/{job['jobId']}/cancel").is_success
 
     root = settings.state_root / "local-node"
     root.mkdir()
@@ -108,6 +111,14 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     missing_proof = recovery in ("missing-work", "modern-no-proof")
     if not missing_proof:
         work.mkdir(parents=True)
+        if normal_finish:
+            result = {"status": "cancelled", "reason": "owned cancellation"}
+            (work / "result.json").write_text(json.dumps(result), encoding="utf-8")
+            output = work / "output"
+            output.mkdir()
+            (output / "metrics.jsonl").write_text(json.dumps({
+                "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75,
+            }) + "\n")
         program = (
             "import sys; sys.stdout.write(''.join(f'owned line {i}\\n' for i in range(500)) + 'owned tail');"
         )
@@ -118,7 +129,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 [sys.executable, "-c", program], cwd=work,
                 env={"PATH": ""}, stdout=log, stderr=log,
             )
-            if recovery in ("retained-proof", "normal-finish", "modern-expired"):
+            if normal_finish or recovery in ("retained-proof", "modern-expired"):
                 try:
                     assert owner.process.wait(timeout=5) == 0
                 finally:
@@ -134,6 +145,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     now = [200]
     gateway.state.jobs.clock = lambda: now[0]
     reconciling = threading.Event()
+    permit_terminal = threading.Event()
     committed_tail = {}
     allow_tail = False
     attempts = []
@@ -141,6 +153,9 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     async def observe_reconciliation(request, call_next):
         if request.url.path == HEARTBEAT:
             payload = await request.json()
+            reports = payload.get("reports", [])
+            if normal_finish and any(report["status"] == "cancelled" for report in reports):
+                await asyncio.to_thread(permit_terminal.wait, 5)
             if any(
                 report["jobId"] == job["jobId"] and report.get("reason") == "owner_reconciliation_required"
                 for report in payload.get("reports", [])
@@ -168,7 +183,7 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
     )
     thread = threading.Thread(target=runner.run_node, args=(args,))
     try:
-        if recovery != "expires-after-upgrade" and recovery != "normal-finish":
+        if recovery != "expires-after-upgrade" and not normal_finish:
             now[0] += 61
         thread.start()
         with httpx.Client(base_url=settings.node_gateway_url, trust_env=False) as client:
@@ -183,7 +198,17 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
                 owner.close()
                 wait_for(read, lambda node: not node["leases"])
-            elif recovery in ("retained-proof", "normal-finish", "modern-expired"):
+            elif normal_finish:
+                job_url = f"/api/v1/jobs/{job['jobId']}"
+                draining = wait_for(
+                    lambda: client.get(job_url).json(), lambda value: value["reason"] == "draining_logs",
+                )
+                assert draining["metrics"]["memoryUsedMb"] == 128
+                first = client.get(job_url + "/logs").json()
+                assert first["cursor"] == 500 and not first["complete"]
+                permit_terminal.set()
+                wait_for(read, lambda node: not node["leases"], timeout=7)
+            elif recovery in ("retained-proof", "modern-expired"):
                 wait_for(read, lambda node: not node["leases"], timeout=7)
             else:
                 actual = wait_for(read, lambda node: node["leases"][gpu["id"]]["quarantined"])
@@ -254,13 +279,14 @@ def test_upgraded_local_runner_reconciles_retained_lease_without_relaunch(
                 assert first["cursor"] == 500 and not first["complete"]
                 if recovery in ("retained-proof", "modern-expired"):
                     assert attempts[:2] == [0, 500]
-                if recovery != "normal-finish":
-                    settled = client.get(f"/api/v1/jobs/{job['jobId']}").json()
-                    assert settled["reason"] == "node_lost"
-                    assert settled["metrics"] | {
-                        "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
-                    } == settled["metrics"]
+                settled = client.get(f"/api/v1/jobs/{job['jobId']}").json()
+                assert settled["status"] == ("cancelled" if normal_finish else "failed")
+                assert settled["reason"] == ("owned cancellation" if normal_finish else "node_lost")
+                assert settled["metrics"] | {
+                    "iteration": 4, "meanReward": 2.5, "trainSuccess": 0.75, "memoryUsedMb": 128,
+                } == settled["metrics"]
     finally:
+        permit_terminal.set()
         if owner is not None and owner.process.poll() is None:
             owner.close()
         (root / "stop").touch()
