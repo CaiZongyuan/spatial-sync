@@ -1,0 +1,26 @@
+evidenceMode: native
+inputName: obs
+collectorSha256: c2fbec00a9b7daf8b619197bd4e16e8b65abc25f0147f4dcaded388173fbd2d5
+observerSha256: 4ec59e4650d5a637c480a4119239845bbb7b398ce92ae085d3572c017c1c4eef
+runner:
+  module: mjlab.rl.runner
+  qualname: MjlabOnPolicyRunner
+  sha256: 61e9200bf304e3df71096cd69f28f4d5973157e61cdc549fc21b6f156326f77e
+actor:
+  module: rsl_rl.models.mlp_model
+  qualname: MLPModel
+  sha256: 6219ebb3ed4df036dae7ff1c30d0fbb169eaaa659e44a659dd757a292124476b
+act:
+  module: rsl_rl.algorithms.ppo
+  qualname: PPO.act
+  sha256: a2d35e7ad7b884c80b7434e7d2ce785a6da1e18d93c96f1179fbd3a208669f8c
+exporter:
+  module: mjlab.rl.runner
+  qualname: MjlabOnPolicyRunner.export_policy_to_onnx
+  sha256: 61e9200bf304e3df71096cd69f28f4d5973157e61cdc549fc21b6f156326f77e
+observationGroups:
+- actor
+boundary: rsl-mlp-pre-normalizer
+normalization: inside-exported-graph
+previousAction: raw-native-algorithm-output
+previousActionReset: zero-on-environment-epoch

@@ -1,0 +1,103 @@
+{
+  "asset": "robot/fr3@1",
+  "assetContentHash": "ba789cc9c8748251495b2a788f6e5365adc9bac23abaea9567fd90e07fc0c0f9",
+  "source": "source/fr3_franka_hand.urdf",
+  "sourceSha256": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497",
+  "legacyBuilder": {
+    "id": "robot-and-tubes",
+    "entity": "/World/Lab/RobotA",
+    "jointNamespace": "fr3/",
+    "files": {
+      "packages/sim_runtime/scenes.py": "1fec6500f9378fd59e435409bcb4088768142854bd09737d63535c93d34ac585",
+      "packages/sim_runtime/robot_scene.py": "92fdf0269111b13e36b4857e5b28fa903fbcdcb4920473e49282aed7683bbefb",
+      "packages/sim_runtime/robot_definition.py": "22e8f5de19c5f86a297ef0971ed161bb4ef7121aaee2beeeb7a2715c8ea3119a",
+      "assets/robots/franka_emika_panda/urdf/fr3_franka_hand.urdf": "2a270e19a9b9c7ca5eb62ec9d503d779281605b6bba881f5ac6e8090aa382497"
+    }
+  },
+  "mapping": {
+    "schema": "lw.joint-calibration/1",
+    "baseTransform": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "joints": [
+      {
+        "jointKey": "/Asset/fr3_joint1",
+        "sourceName": "fr3_joint1",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint2",
+        "sourceName": "fr3_joint2",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint3",
+        "sourceName": "fr3_joint3",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint4",
+        "sourceName": "fr3_joint4",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint5",
+        "sourceName": "fr3_joint5",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint6",
+        "sourceName": "fr3_joint6",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_joint7",
+        "sourceName": "fr3_joint7",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/fr3_finger_joint1",
+        "sourceName": "fr3_finger_joint1",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "m"
+      },
+      {
+        "jointKey": "/Asset/fr3_finger_joint2",
+        "sourceName": "fr3_finger_joint2",
+        "sign": 1,
+        "zeroOffset": 0,
+        "unit": "m"
+      }
+    ]
+  }
+}

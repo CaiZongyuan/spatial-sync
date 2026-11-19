@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from packages.policies.action_contract import command_endpoints
+
 
 class Data(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False, serialize_by_alias=True)
@@ -76,6 +78,8 @@ class LayerA(Data):
             len(self.command) != 3 or any(len(pair) != 2 or pair[0] > pair[1] for pair in self.command)
         ):
             raise ValueError("Command sampling requires three [lower, upper] body-velocity bounds")
+        if self.command:
+            command_endpoints(self.command)
         if any((item.kind == "height") != (item.target is not None) for item in self.rewards):
             raise ValueError("Only the height reward takes a target")
         return self

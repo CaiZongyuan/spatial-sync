@@ -58,7 +58,7 @@ test('cost ranges, filters, actual fake-node counters and anomaly acknowledgemen
     const roots = await (await http.get(`${api}/e2e/storage-roots`)).json();
     for (const path of Object.values(roots) as string[]) expect(resolve(path).startsWith(resolve(info.outputDir))).toBe(true);
     const now = Date.now() / 1000;
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `cost-${randomUUID()}`], { encoding: 'buffer', env });
+    const { stdout } = await execute(python, ['-m', 'tests.fixtures.training_task', `cost-${randomUUID()}`], { cwd: resolve('../..'), encoding: 'buffer', env });
     const uploaded = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(uploaded.ok(), await uploaded.text()).toBe(true); const task = await uploaded.json();
     const admit = async (goal: string, agent: string, at: number) => {

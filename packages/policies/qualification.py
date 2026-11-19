@@ -43,6 +43,7 @@ def compatible_legacy_verifier(current):
         name: sha for name, sha in current["files"].items()
         if name not in (
             "packages/policies/motion.py",
+            "packages/policies/action_contract.py",
             "apps/node/declarative_mjlab.py",
             "apps/node/declarative_capture.py",
         )
@@ -99,7 +100,7 @@ def declarative_profile(task, spec, job, runtime):
     if any(versions.get(key, "").split("+", 1)[0] != value for key, value in expected.items()):
         raise LibraryError("observation_source_unverified", "Unreviewed declarative trainer versions", 409)
     # The existing native boundary is the same reviewed mjlab/RSL implementation.
-    driver = document(BUILTIN_ROOT / "observation-profiles/microduck-stand-up-mjlab.yaml")
+    driver = document(BUILTIN_ROOT / "compiler-native-runtime.yaml")
     driver.update(
         id="platform-declarative-mjlab",
         compilerHash=runtime["compilerHash"],

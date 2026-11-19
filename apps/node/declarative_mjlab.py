@@ -20,9 +20,11 @@ from mjlab.terrains import TerrainEntityCfg
 
 if __package__:
     from apps.node import usd_mjcf as usd
+    from packages.policies.action_contract import action_delta_limit, command_endpoints
     from packages.policies.motion import motion_observations
 else:
     import lw_usd_mjcf as usd
+    from lw_action_contract import action_delta_limit, command_endpoints
     from lw_motion import motion_observations
 
 
@@ -46,8 +48,11 @@ class PositionAction(JointPositionAction):
         super().__init__(cfg, env)
         self.spec = cfg.action_spec
         self.scale_vector = torch.tensor(self.spec["scale"], device=self.device)
-        self.default = torch.tensor(self.spec.get("defaultPosition", []), device=self.device)
-        self.limit = torch.tensor(self.spec.get("maxDelta", [math.inf] * self.action_dim), device=self.device)
+        self.default = torch.tensor(self.spec.get("defaultPosition") or [], device=self.device)
+        limit = action_delta_limit(self.spec)
+        self.limit = torch.tensor(
+            limit if limit is not None else [math.inf] * self.action_dim, device=self.device
+        )
         self.lower = torch.tensor(self.spec["lower"], device=self.device)
         self.upper = torch.tensor(self.spec["upper"], device=self.device)
         self.physical = torch.tensor(cfg.physical_limits, device=self.device)
@@ -72,7 +77,10 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
         self._indices = {}
         self._motion_tables = {}
         self._random = torch.Generator(device=device).manual_seed(cfg.seed or 0)
-        self.command = torch.zeros((cfg.scene.num_envs, 3), device=device)
+        self.command = torch.zeros((cfg.scene.num_envs, 3), device=device, dtype=torch.float32)
+        command = cfg.contract["declarative"]["command"]
+        if command:
+            self.command_bounds = self.command.new_tensor(command_endpoints(command))
         super().__init__(cfg, device, **kwargs)
 
     def indices(self, kind, keys):
@@ -221,10 +229,9 @@ def reset(env, env_ids):
     mdp.reset_scene_to_default(env, env_ids)
     declaration = env.contract["declarative"]
     if declaration["command"]:
-        low, high = env.command.new_tensor(declaration["command"]).T
-        env.command[env_ids] = low + (high - low) * torch.rand(
-            (len(env_ids), 3), device=env.device, generator=env._random
-        )
+        low, high = env.command_bounds.T
+        weight = torch.rand((len(env_ids), 3), device=env.device, generator=env._random)
+        env.command[env_ids] = torch.lerp(low.double(), high.double(), weight.double()).to(env.command.dtype)
     offsets = declaration["reset"]["jointPosition"]
     velocity = declaration["reset"]["jointVelocity"]
     if offsets or velocity:

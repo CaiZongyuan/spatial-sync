@@ -76,7 +76,7 @@ test('public fake node renders four isolated Job views, reconnects, resets and r
       try { return (await http.get(`${api}/api/v1/health`, { timeout: 500 })).ok() && (await http.get(web, { timeout: 500 })).ok(); }
       catch { return false; }
     }, { timeout: 20_000 }).toBe(true);
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `view-${randomUUID()}`], { encoding: 'buffer', env });
+    const { stdout } = await execute(python, ['-m', 'tests.fixtures.training_task', `view-${randomUUID()}`], { cwd: resolve('../..'), encoding: 'buffer', env });
     const uploaded = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(uploaded.ok(), await uploaded.text()).toBe(true);
     const task = await uploaded.json();

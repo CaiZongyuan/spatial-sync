@@ -26,7 +26,10 @@ def compiler_sources():
     return {
         name: node / name
         for name in ("mjlab_launcher.py", "usd_mjcf.py", "declarative_mjlab.py", "declarative_capture.py")
-    } | {"motion.py": node.parents[1] / "packages/policies/motion.py"}
+    } | {
+        name: node.parents[1] / "packages/policies" / name
+        for name in ("motion.py", "action_contract.py")
+    }
 
 
 def compiler_hash(directory=None, *, prefix=""):

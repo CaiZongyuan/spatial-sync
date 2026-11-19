@@ -20,7 +20,6 @@ def gateway_directory(tmp_path_factory):
 @pytest.fixture(scope="module")
 def gateway_url(gateway_directory):
     directory = gateway_directory
-    (directory / "task-audits.json").write_text("[]")
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", int(os.environ.get("SPATIAL_CLI_TEST_PORT", "0"))))
         port = reservation.getsockname()[1]

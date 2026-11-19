@@ -64,7 +64,7 @@ test('training overview and compute resources use real HTTP jobs, approvals and 
     }, { timeout: 20_000 }).toBe(true);
     const roots = await (await http.get(`${api}/e2e/storage-roots`)).json();
     for (const path of Object.values(roots) as string[]) expect(resolve(path).startsWith(resolve(info.outputDir))).toBe(true);
-    const { stdout } = await execute(python, [resolve('../../tests/fixtures/training_task.py'), `resources-${randomUUID()}`], { encoding: 'buffer', env });
+    const { stdout } = await execute(python, ['-m', 'tests.fixtures.training_task', `resources-${randomUUID()}`], { cwd: resolve('../..'), encoding: 'buffer', env });
     const upload = await http.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
     expect(upload.ok(), await upload.text()).toBe(true);
     const task = await upload.json();

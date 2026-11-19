@@ -102,6 +102,8 @@ class TaskLibrary:
                 for entry in document:
                     if entry["contentHash"] == digest and entry["reviewer"].strip() and entry["note"].strip():
                         return True
+            except FileNotFoundError:
+                return False
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
                 raise LibraryError("task_audit_invalid", "Invalid host Task audit registry", 409) from error
         return False

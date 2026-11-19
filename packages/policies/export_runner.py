@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
+from action_contract import action_delta_limit, command_in_bounds
 from motion import motion_observations
 
 
@@ -35,9 +36,7 @@ def observations(spec, sample, previous, motion):
             raw = previous
         elif source == "command":
             raw = sample["command"]
-            if len(raw) != len(term["lower"]) or any(
-                not lo <= value <= hi for lo, value, hi in zip(term["lower"], raw, term["upper"], strict=True)
-            ):
+            if not command_in_bounds(raw, list(zip(term["lower"], term["upper"], strict=True))):
                 raise ValueError("Command outside the declared envelope")
         elif source in ("joint_position", "joint_velocity"):
             field = "q" if source == "joint_position" else "qd"
@@ -100,8 +99,9 @@ def inference(directory, samples):
             if action["space"] == "joint_position_delta"
             else action["defaultPosition"] + scaled - current
         )
-        if "maxDelta" in action:
-            limit = np.asarray(action["maxDelta"])
+        cap = action_delta_limit(action)
+        if cap is not None:
+            limit = np.asarray(cap)
             delta = np.clip(delta, -limit, limit)
         targets = np.clip(current + delta, action["lower"], action["upper"])
         for index, channel in enumerate(physical):

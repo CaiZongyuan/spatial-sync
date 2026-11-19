@@ -403,3 +403,23 @@ def test_continuous_param_bounds_and_command_envelope_coverage():
     assert command_envelope_failure(parsed, [0.3, 0.0, 0.0])["code"] == "precondition_failed"
     assert command_envelope_failure(parsed, [0.1, 0.0])["code"] == "precondition_failed"
 
+
+
+def test_fixed_command_accepts_only_the_decimal_and_its_float32_boundary():
+    raw = observation_spec()
+    raw["observations"] = [{
+        "name": "fixed-command", "source": "command", "frame": "body", "unit": "1",
+        "shape": [1], "offset": [0.], "scale": [1.], "lower": [.1], "upper": [.1],
+    }]
+    spec = ObservationSpec.model_validate(raw)
+    accepted = float(np.float32(.1))
+    above = float(np.nextafter(np.float32(.1), np.float32(1.)))
+    below = float(np.nextafter(np.float32(.1), np.float32(0.)))
+    for value in (.1, accepted):
+        assert spec.assemble({}, previous_action=[0.], command=[value])[0] == np.float32(.1)
+    for value in (above, below, .11):
+        with pytest.raises(ValueError, match="outside declared"):
+            spec.assemble({}, previous_action=[0.], command=[value])
+    raw["observations"][0].update(lower=[1e40], upper=[1e40])
+    with pytest.raises(ValidationError, match="float32 command bounds"):
+        ObservationSpec.model_validate(raw)

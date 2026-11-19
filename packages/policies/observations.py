@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.info.schema_subset import json_equal
+from packages.policies.action_contract import command_endpoints, command_in_bounds
 from packages.policies.motion import motion_observations
 from packages.protocol.math import rotate_vector
 
@@ -100,6 +101,7 @@ class Observation(Schema):
                 or any(lo > hi for lo, hi in zip(self.lower, self.upper, strict=True))
             ):
                 raise ValueError("command observation requires ordered finite lower and upper bounds")
+            command_endpoints(list(zip(self.lower, self.upper, strict=True)))
         elif self.lower is not None or self.upper is not None:
             raise ValueError("Only command observations declare lower and upper bounds")
         if self.source == "projected_gravity":
@@ -239,10 +241,7 @@ def assemble(spec, state, *, previous_action, command=None, references=None, mot
             if command is None:
                 raise ValueError(f"{item.name} requires a command vector")
             raw = vector(command, item.shape[0])
-            if any(
-                not (lo <= float(val) <= hi)
-                for val, lo, hi in zip(raw, item.lower, item.upper, strict=True)
-            ):
+            if not command_in_bounds(raw, list(zip(item.lower, item.upper, strict=True))):
                 raise ValueError(f"{item.name} command is outside declared [lower, upper] bounds")
         elif source.startswith("joint_"):
             field = "q" if source == "joint_position" else "qd"
@@ -326,17 +325,10 @@ def command_envelope_failure(task, command):
     if envelope is None:
         return None
     try:
-        values = vector(command, len(envelope))
+        accepted = command_in_bounds(command, envelope)
     except (ValueError, TypeError):
-        return {
-            "code": "precondition_failed",
-            "message": "Action command exceeds training command envelope",
-            "details": {"commandEnvelope": envelope},
-        }
-    if any(
-        not (float(lower) <= float(val) <= float(upper))
-        for val, (lower, upper) in zip(values, envelope, strict=True)
-    ):
+        accepted = False
+    if not accepted:
         return {
             "code": "precondition_failed",
             "message": "Action command exceeds training command envelope",

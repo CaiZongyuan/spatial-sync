@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import math
@@ -7,6 +8,7 @@ import sysconfig
 import zipfile
 
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
@@ -20,11 +22,15 @@ from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
 
 
-def test_export_runs_outside_platform_with_external_tensor_and_raw_action_history(tmp_path):
+@pytest.mark.parametrize("offset", [False, True], ids=["delta", "offset-null"])
+def test_export_runs_outside_platform_with_external_tensor_and_raw_action_history(tmp_path, offset):
     app = create_app(Settings(node_token=TOKEN))
     spec_doc = observation_spec()
     hinge = spec_doc["action"]["jointKeys"][0]
     body = "/World/Lab/RobotA"
+    if offset:
+        hinge = body + "/fr3/fr3_joint1"
+        spec_doc["action"]["jointKeys"] = [hinge]
     spec_doc["observations"] = [
         {
             "name": "gravity",
@@ -68,7 +74,13 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
             },
         ]
     )
+    spec_doc["observations"].append({
+        "name": "command", "source": "command", "frame": "body", "unit": "1",
+        "shape": [1], "offset": [0.], "scale": [1.], "lower": [.1], "upper": [.1],
+    })
     spec_doc["action"].update(scale=[0.5], maxDelta=[0.1])
+    if offset:
+        spec_doc["action"].update(space="joint_position_offset", defaultPosition=[.2], maxDelta=None)
     spec = ObservationSpec.model_validate(spec_doc)
     motion = {
         "asset": "robot/fr3@1",
@@ -87,12 +99,14 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
         ],
     }
     task = task_document() | {"referenceMotion": motion}
+    task["episode"]["commandEnvelope"] = [[.1, .1]]
+    task["control"]["action"] = spec_doc["action"]["space"]
     with TestClient(app) as client:
         job = uploaded_job(
             client,
             tmp_path,
-            model=model_bytes(14, external_path="weights.bin"),
-            external={"weights.bin": np.array([1.0] * 4 + [0.0] * 10, dtype=np.float32).tobytes()},
+            model=model_bytes(15, external_path="weights.bin"),
+            external={"weights.bin": np.array([1.0] * 4 + [0.0] * 11, dtype=np.float32).tobytes()},
             spec=spec_doc,
             task_document=task,
         )
@@ -111,7 +125,29 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
         archive.extractall(root)
     manifest = json.loads((root / "manifest.json").read_bytes())
     assert manifest["schema"] == "lw.policy-export/1"
-    assert manifest["sourceCalibration"]["status"] == "unavailable"
+    calibration = manifest["sourceCalibration"]
+    if offset:
+        assert calibration["status"] == "verified"
+        assert calibration["baseTransform"] == np.eye(4).ravel().tolist()
+        assert calibration["joints"] == [
+            {"jointKey": "/Asset/fr3_joint1", "sourceName": "fr3_joint1",
+             "sign": 1, "zeroOffset": 0, "unit": "rad"},
+        ]
+        mapping_bytes = (root / calibration["mappingPath"]).read_bytes()
+        assert hashlib.sha256(mapping_bytes).hexdigest() == calibration["mappingSha256"]
+        mapping = json.loads(mapping_bytes)
+        assert [row["sourceName"] for row in mapping["mapping"]["joints"]] == [
+            *(f"fr3_joint{i}" for i in range(1, 8)), "fr3_finger_joint1", "fr3_finger_joint2",
+        ]
+        asset = next(row for row in manifest["provenance"] if row["id"] == calibration["asset"])
+        assert asset["contentHash"] == calibration["assetContentHash"]
+        assert {path.rsplit("/", 1)[-1] for path in asset["documents"]} == {"LICENSE", "provenance.json"}
+        # A reference client can also consume explicit null from an older manifest.
+        assert "maxDelta" not in manifest["observation"]["action"]
+        manifest["observation"]["action"]["maxDelta"] = None
+        (root / "manifest.json").write_text(json.dumps(manifest))
+    else:
+        assert calibration["status"] == "unavailable"
     assert manifest["qualification"]["status"] == "unverified"
     assert (root / "model/weights.bin").is_file()
     assert (root / "infer.py").is_file()
@@ -120,7 +156,9 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
         "joints": {hinge: {"q": -0.92, "qd": 0.0}},
         "bodies": {body: {"q": [math.sqrt(0.5), 0.0, 0.0, math.sqrt(0.5)], "p": [0.0, 0.0, 0.0]}},
     }
-    requests = [{"state": state}, {"state": state}, {"state": state, "reset": True}]
+    command = [float(np.float32(.1))]
+    sample = {"state": state, "command": command}
+    requests = [sample, sample, sample | {"reset": True}]
     (root / "samples.json").write_text(json.dumps(requests))
     isolated = """
 import importlib.util, runpy, sys
@@ -129,8 +167,9 @@ assert importlib.util.find_spec("packages") is None
 sys.argv[:] = ["infer.py", "samples.json"]
 runpy.run_path("infer.py", run_name="__main__")
 """
+    standalone = [sys.executable, "-I", "-S", "-c", isolated, sysconfig.get_path("purelib"), str(root)]
     result = subprocess.run(
-        [sys.executable, "-I", "-S", "-c", isolated, sysconfig.get_path("purelib"), str(root)],
+        standalone,
         cwd=root,
         capture_output=True,
         text=True,
@@ -142,10 +181,10 @@ runpy.run_path("infer.py", run_name="__main__")
     for index, (row, sample) in enumerate(zip(rows, requests, strict=True)):
         if sample.get("reset"):
             previous.fill(0)
-        vector = spec.assemble(state, previous_action=previous, motion=motion)
+        vector = spec.assemble(state, command=command, previous_action=previous, motion=motion)
         np.testing.assert_allclose(
             row["observation"][4:],
-            [1, 0, 0.25, 0, 0, 0, 0, 0.2588190451, 0.9659258263, 0],
+            [1, 0, 0.25, 0, 0, 0, 0, 0.2588190451, 0.9659258263, 0, 0.1],
             rtol=0.0,
             atol=1e-5,
         )
@@ -155,5 +194,13 @@ runpy.run_path("infer.py", run_name="__main__")
         np.testing.assert_allclose(row["raw"], raw, rtol=0.0, atol=1e-5)
         np.testing.assert_allclose(row["targets"], targets, rtol=0.0, atol=1e-5)
         np.testing.assert_allclose(raw, [-2 if index == 1 else -1], rtol=0.0, atol=1e-5)
-        np.testing.assert_allclose(targets, [-1], rtol=0.0, atol=1e-5)
+        expected = (-.8 if index == 1 else -.3) if offset else -1.
+        np.testing.assert_allclose(targets, [expected], rtol=0.0, atol=1e-5)
+        if offset:
+            assert row["sourceTargets"] == {"fr3_joint1": pytest.approx(expected)}
         previous = raw.copy()
+    out_of_bounds = [float(np.nextafter(np.float32(.1), np.float32(1.)))]
+    (root / "samples.json").write_text(json.dumps([sample | {"command": out_of_bounds}]))
+    rejected = subprocess.run(standalone, cwd=root, capture_output=True, text=True, timeout=15)
+    assert rejected.returncode != 0
+    assert "Command outside the declared envelope" in rejected.stderr

@@ -6,11 +6,13 @@ from mcp import Client, StdioServerParameters
 from test_training_commands import environment, invoke
 
 from tests.fixtures.demonstration_task import demonstration_task, successful_recording
+from tests.fixtures.training_task import audit_task
 
 
 async def test_installed_demo_commands_and_mcp_preserve_episode_and_version(gateway_url, tmp_path):
     env = environment(gateway_url)
     package = demonstration_task(tmp_path / "task", "demo-cli-probe")
+    audit_task(package)
     task = invoke(env, "task", "push", str(package))
     with httpx.Client(base_url=gateway_url, trust_env=False, timeout=30) as http:
         identifier = successful_recording(http)

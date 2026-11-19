@@ -75,6 +75,7 @@ def implementation_identity():
             for name in (
                 "packages/policies/observations.py",
                 "packages/policies/motion.py",
+                "packages/policies/action_contract.py",
                 "apps/node/declarative_mjlab.py",
                 "apps/node/declarative_capture.py",
                 "packages/policies/consistency.py",

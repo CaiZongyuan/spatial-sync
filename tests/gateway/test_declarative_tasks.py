@@ -45,7 +45,15 @@ def test_declarative_task_publishes_data_and_host_audit_gates_python(tmp_path, m
         assert http.get("/api/v1/tasks/layer-a-stand/1").json()["contentHash"] == first.json()["contentHash"]
         refused = publish(python)
         assert refused.status_code == 403 and refused.json()["detail"]["code"] == "task_audit_required"
-        monkeypatch.setenv("LW_TASK_AUDIT_FILE", str(tmp_path / "audits.json"))
+        audit = tmp_path / "audits.json"
+        monkeypatch.setenv("LW_TASK_AUDIT_FILE", str(audit))
+        missing = publish(python)
+        assert missing.status_code == 403 and missing.json()["detail"]["code"] == "task_audit_required"
+        assert not audit.exists()
+        audit.write_text("{")
+        malformed = publish(python)
+        assert malformed.status_code == 409 and malformed.json()["detail"]["code"] == "task_audit_invalid"
+        audit.unlink()
         audit_task(python)
         admitted = publish(python)
         assert admitted.status_code == 201, admitted.text

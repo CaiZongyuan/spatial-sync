@@ -1,5 +1,6 @@
 """Freeze a portable single-Policy inference archive from verified library bytes."""
 
+import hashlib
 import io
 import json
 import math
@@ -9,7 +10,7 @@ from pathlib import Path
 import onnx
 
 from packages.info.plans import PlanError
-from packages.library.common import LibraryError, content_hash, document
+from packages.library.common import BUILTIN_ROOT, REPO_ROOT, LibraryError, content_hash, document
 from packages.library.structural import USDGraph
 from packages.policies.calibration import JointCalibration
 from packages.policies.library import digest, read_json
@@ -86,38 +87,88 @@ def _robot_asset(scene, entity, stage, graph):
     return referenced[0] if len(referenced) == 1 else None
 
 
-def _source_calibration(asset, task, action):
+def _retained_calibration(manager, scene, asset, task):
+    root = BUILTIN_ROOT / "retained-calibrations"
+    for path in sorted(root.glob("*.json")):
+        record = read_json(path)
+        builder = record["legacyBuilder"]
+        namespace = ""
+        if scene.metadata["stage"] == "python:" + builder["id"] and task["robot"] == builder["entity"]:
+            if any(
+                not (REPO_ROOT / file).is_file() or digest(REPO_ROOT / file) != sha
+                for file, sha in builder["files"].items()
+            ):
+                continue
+            version = manager.library_assets.versions.get(record["asset"])
+            if version is None:
+                continue
+            asset = {
+                "id": version.id, "path": str(version.path), "contentHash": version.content_hash,
+                "metadata": version.metadata,
+            }
+            namespace = builder["jointNamespace"]
+        if not asset or (asset["id"], asset["contentHash"]) != (record["asset"], record["assetContentHash"]):
+            continue
+        directory = Path(asset["path"])
+        if content_hash(directory) != record["assetContentHash"]:
+            continue
+        source = directory / record["source"]
+        if not source.is_file() or digest(source) != record["sourceSha256"]:
+            continue
+        return asset, JointCalibration.model_validate(record["mapping"]), path, namespace
+    return None
+
+
+def _source_calibration(manager, scene, asset, task, action, files):
     unavailable = {"status": "unavailable", "joints": [], "baseTransform": None}
-    if not asset or "joint-calibration.json" not in asset["files"]:
-        return unavailable | {"reason": "No frozen source-joint calibration was recorded"}
-    path = Path(asset["files"]["joint-calibration.json"])
-    calibration = JointCalibration.model_validate_json(path.read_bytes())
+    explicit = asset and "joint-calibration.json" in asset["files"]
+    if explicit:
+        path = Path(asset["files"]["joint-calibration.json"])
+        calibration = JointCalibration.model_validate_json(path.read_bytes())
+        namespace = ""
+    else:
+        retained = _retained_calibration(manager, scene, asset, task)
+        if retained is None:
+            return unavailable | {"reason": "No frozen source-joint calibration was recorded"}, None
+        asset, calibration, path, namespace = retained
     joints = {row.jointKey: row for row in calibration.joints}
-    keys = ["/Asset" + key.removeprefix(task["robot"]) for key in action.jointKeys]
-    if not set(keys) <= set(joints) or [joints[key].unit for key in keys] != action.units:
-        raise ValueError("Source joint calibration differs from the Policy action order or units")
+    prefix = task["robot"] + "/" + namespace
+    keys = ["/Asset/" + key.removeprefix(prefix) for key in action.jointKeys]
+    if (any(not key.startswith(prefix) for key in action.jointKeys)
+            or not set(keys) <= set(joints)
+            or [joints[key].unit for key in keys] != action.units):
+        if explicit:
+            raise ValueError("Source joint calibration differs from the Policy action order or units")
+        return unavailable | {"reason": "Policy channels do not match the retained calibration"}, None
+    mapping_path = "source-calibration.json"
+    mapping_bytes = path.read_bytes()
+    files[mapping_path] = mapping_bytes
     return {
         "status": "verified",
         "asset": asset["id"],
         "assetContentHash": asset["contentHash"],
-        "mappingSha256": digest(path),
+        "mappingPath": mapping_path,
+        "mappingSha256": hashlib.sha256(mapping_bytes).hexdigest(),
         "baseTransform": calibration.baseTransform,
         "joints": [joints[key].model_dump(mode="json") for key in keys],
         "equation": "canonical = sign * source + zeroOffset",
-    }
+    }, asset
 
 
-def _provenance(manager, policy, scene, motion, files):
+def _provenance(manager, policy, scene, motion, files, calibration_asset):
     task_record = manager.tasks.show(policy["task"])
     if task_record["contentHash"] != policy["taskContentHash"]:
         raise ValueError("Export Task bytes differ from the frozen Policy")
     task_path = manager.tasks._versions()[policy["task"]] / "package"
+    assets = scene.runtime_assets | scene.template_assets
+    if calibration_asset:
+        assets.setdefault(calibration_asset["id"], calibration_asset)
     sources = [
         (policy["task"], task_record["contentHash"], task_path, None),
         (scene.id, scene.content_hash, scene.path, None),
         *(
             (item["id"], item["contentHash"], Path(item["path"]), item["metadata"])
-            for item in (scene.runtime_assets | scene.template_assets).values()
+            for item in assets.values()
         ),
     ]
     licenses = []
@@ -172,7 +223,10 @@ def policy_export(manager, identifier):
         if digest(model_path) != policy["onnxSha256"]:
             raise ValueError("Frozen model changed")
         channels, authored_dt, asset = _physical(manager, scene, task, spec.action)
-        provenance = _provenance(manager, policy, scene, task.get("referenceMotion"), files)
+        calibration, calibration_asset = _source_calibration(manager, scene, asset, task, spec.action, files)
+        provenance = _provenance(
+            manager, policy, scene, task.get("referenceMotion"), files, calibration_asset
+        )
         try:
             qualification = manager.policy_evidence.qualification(identifier)
             evidence = {"status": "verified", "scope": qualification["scope"]}
@@ -204,7 +258,7 @@ def policy_export(manager, identifier):
                 "opsets": {item.domain: item.version for item in model.opset_import},
                 "externalData": job_export["externalData"],
             },
-            "observation": obs,
+            "observation": spec.model_dump(mode="json", by_alias=True, exclude_none=True),
             "normalization": (
                 "inside-exported-graph" if evidence["status"] == "verified" else "as-frozen-in-model"
             ),
@@ -224,7 +278,7 @@ def policy_export(manager, identifier):
                 "decimation": decimation,
             },
             "actuators": channels,
-            "sourceCalibration": _source_calibration(asset, task, spec.action),
+            "sourceCalibration": calibration,
             "versions": policy["versions"],
             "qualification": evidence,
             "evaluations": evaluations,
@@ -239,7 +293,10 @@ def policy_export(manager, identifier):
         if task.get("referenceMotion"):
             manifest["referenceMotion"] = "reference-motion.json"
             files["reference-motion.json"] = json.dumps(task["referenceMotion"], allow_nan=False).encode()
-        for name, source in {"infer.py": "export_runner.py", "motion.py": "motion.py"}.items():
+        for name, source in {
+            "infer.py": "export_runner.py", "motion.py": "motion.py",
+            "action_contract.py": "action_contract.py",
+        }.items():
             files[name] = Path(__file__).with_name(source).read_bytes()
         files["manifest.json"] = json.dumps(manifest, sort_keys=True, allow_nan=False).encode()
         output = io.BytesIO()
