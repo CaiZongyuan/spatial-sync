@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T16:46:13.910465+00:00",
+  "capturedAt": "2026-11-19T18:06:58.591185+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -29,7 +29,7 @@
     },
     {
       "path": "apps/node/usd_mjcf.py",
-      "sha256": "bbb778c1466b8684c8543d02f1e72da6ee85086ed17ea1c50e81c9873620521a"
+      "sha256": "877aaa0401eb07bb22dbd82bf1117f36dea9618fb8cb84cd32ff14dac753b0e6"
     },
     {
       "path": "assets/bindings/usd-lab.yaml",
@@ -133,7 +133,7 @@
     },
     {
       "path": "packages/library/structural.py",
-      "sha256": "fb2bd0bda5463369b40e4bfe4e0e5fc587889cd7948b9376d52b3c45c1169203"
+      "sha256": "dcdf21399b48b759b5f604827036825fcadb263efee17c862c0f2a81c30b45bd"
     },
     {
       "path": "packages/library/templates.py",
@@ -375,10 +375,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "4e3545f63e6bac33784d1b924e75583ed3de2547de7869101bfc18204608185e",
-    "catalog.json": "d455b23439486b1ddabfd2afb07eb47c124c186f1993b8b62f90499e971e87b2",
-    "state.json": "6df1c1bdf6c86bb3c30bb1760e93ee1fa6b264d47fecd206f17ab27bac30d34e",
-    "snapshot.bin": "ec444f8b9371c64e47befebb77a9983f57feae6cbcb421de4f1de90caf605fad",
+    "manifest.json": "06d1fc8ce7eedfa807fd7bb459f634799f7326185357693fe16281af6b0aee9c",
+    "catalog.json": "abde46e867066009508f47ce50589d7b126dad2617348bddb5f7d045118b6cb4",
+    "state.json": "f7115a85e59fe468f77664a7c09ede5b091bd0c16c7997d8cbdab77c3f6e86d0",
+    "snapshot.bin": "739e734055a6603c3efaa2ebf3483714921aa957917dd4433645fb2bd0f4b73b",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
