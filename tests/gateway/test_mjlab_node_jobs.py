@@ -167,6 +167,8 @@ def main():
 
     assert args.device == "cpu" and os.environ["CUDA_VISIBLE_DEVICES"] == "-1"
     assert "SPATIAL_NODE_TOKEN" not in os.environ
+    assert "SPATIAL_OPERATOR_TOKEN" not in os.environ
+    assert "SPATIAL_VIEWER_TOKEN" not in os.environ
     import lw_mjlab_launcher  # noqa: F401
     import lw_usd_mjcf  # noqa: F401
 
@@ -303,7 +305,9 @@ def _import_cpu_profile(
     assert imported.returncode == 0, imported.stdout + imported.stderr
 
 
-def test_mjlab_node_job_runs_end_to_end_registers_policy_and_runs_cpu_inference(tmp_path: Path):
+def test_mjlab_node_job_runs_end_to_end_registers_policy_and_runs_cpu_inference(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SPATIAL_OPERATOR_TOKEN", "operator-isolation-test")
+    monkeypatch.setenv("SPATIAL_VIEWER_TOKEN", "viewer-isolation-test")
     package = _build_mjlab_task_package(tmp_path / "task")
     trainer = _write_fake_mjlab_trainer(tmp_path / "fake_mjlab_trainer.py")
     capabilities = tmp_path / "capabilities.json"

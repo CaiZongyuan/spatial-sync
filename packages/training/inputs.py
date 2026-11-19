@@ -76,7 +76,7 @@ def _file_hash(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
-def store_artifacts(manager, job, stream, verify_lease, trainer_versions):
+def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=None):
     root = manager.library_assets.roots["user"]
     with manager.library_assets._lock, tempfile.TemporaryDirectory(prefix=".upload-", dir=root) as temporary:
         stage = Path(temporary)
@@ -173,10 +173,9 @@ def store_artifacts(manager, job, stream, verify_lease, trainer_versions):
             ]
             if existing != records:
                 raise PlanError("artifact_conflict", "This dispatch already has different artifacts")
-            with manager._resource_lock:
-                verify_lease()
-            return existing, versions
         with manager._resource_lock:
-            verify_lease()
-            os.rename(stage, destination)
+            if verify_lease is not None:
+                verify_lease()
+            if not destination.exists():
+                os.rename(stage, destination)
         return records, versions

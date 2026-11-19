@@ -26,6 +26,12 @@ from packages.library.common import content_hash
 from packages.library.transactions import durable_json
 from packages.training.inputs import pack_package
 
+GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
+
+
+def trainer_environment():
+    return {key: value for key, value in os.environ.items() if key not in GATEWAY_CREDENTIALS}
+
 
 def retained_rows(path):
     if not path.exists():
@@ -232,9 +238,7 @@ class OwnedRun:
                     self._log_offsets[row["stream"]] = max(self._log_offsets[row["stream"]], row["line"] + 1)
                 return
             self.root.mkdir(parents=True, exist_ok=False)
-            env = dict(os.environ)
-            for name in ("SPATIAL_NODE_TOKEN", "LW_TOKEN"):
-                env.pop(name, None)
+            env = trainer_environment()
             env.update(
                 PXR_WORK_THREAD_LIMIT="1",
                 PYTHONIOENCODING="utf-8",
@@ -782,8 +786,7 @@ print(json.dumps(versions))
     try:
         result = subprocess.run(
             [prefix[0], "-c", script], capture_output=True, text=True, timeout=10, check=True,
-            env={key: value for key, value in os.environ.items()
-                 if key not in ("SPATIAL_NODE_TOKEN", "LW_TOKEN")},
+            env=trainer_environment(),
         )
         return json.loads(result.stdout)
     except (OSError, subprocess.SubprocessError, ValueError):
