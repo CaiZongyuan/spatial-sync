@@ -50,6 +50,7 @@ class TrainingJobs:
         self.cleanup_key = secrets.token_hex(32)
         self.lease_sequence = 0
         self.validation_profiles = {}
+        self._pending_job_events = {}
         self._worker = None
         self.node_token = manager.settings.node_token
         self._failure = False
@@ -97,7 +98,7 @@ class TrainingJobs:
                 retained = self.validation_profiles.get(key)
                 if retained is None or profile["measuredAt"] >= retained["measuredAt"]:
                     self.validation_profiles[key] = profile
-            self._event(job)
+            self.manager.inbox.job(job)
 
     def _require_available(self):
         if self._failure or not self._started:
@@ -119,6 +120,9 @@ class TrainingJobs:
                 raise PlanError(
                     "jobs_persistence_unavailable", "Job ownership save failed", status=503
                 ) from exc
+        for identity in self._pending_job_events:
+            self.manager.inbox.job(self.records[identity])
+        self._pending_job_events.clear()
 
     async def run(self):
         while True:
@@ -138,8 +142,8 @@ class TrainingJobs:
             self._worker = None
         await self.node.close()
 
-    def _event(self, job):
-        self.manager.inbox.job(job)
+    def _queue_event(self, job):
+        self._pending_job_events[job["jobId"]] = None
 
     def plan_in_use(self, plan_id, revision):
         return any(
@@ -216,6 +220,12 @@ class TrainingJobs:
         if identity not in self.records:
             raise PlanError("unknown_job", "Unknown training job", status=404)
         return self.records[identity]
+
+    def get_committed(self, identity):
+        self._require_available()
+        if identity in self._pending_job_events:
+            raise PlanError("jobs_persistence_unavailable", "Job state has not been saved", status=503)
+        return self.get(identity)
 
     def document(self, job):
         internal = ("plan", "lastNodeReport", "costLedger", "logTail")
@@ -349,8 +359,8 @@ class TrainingJobs:
             }
         self.records[job["jobId"]] = job
         self.reconcile()
+        self._queue_event(job)
         self._save()
-        self._event(job)
         return self.document(job)
 
     def _validation_plan(self, plan_id, revision):
@@ -448,12 +458,12 @@ class TrainingJobs:
                     raise PlanError("plan_not_approved", "Plan approval changed")
             except PlanError:
                 job.update(status="cancelled", reason="plan_not_approved", finishedAt=now)
-                self._event(job)
+                self._queue_event(job)
                 continue
             target = job.get("targetNodeId")
             if target and target != "local" and target not in self.node_credentials:
                 job.update(status="cancelled", reason="node_revoked", finishedAt=now)
-                self._event(job)
+                self._queue_event(job)
                 continue
             self._schedule(job, now, validation)
 
@@ -651,7 +661,7 @@ class TrainingJobs:
             job.update(status="failed", reason=reason, finishedAt=now)
             if job["executionDevice"] == "cuda":
                 job["chargedGpuHours"] = max(job["chargedGpuHours"], (now - lease["assignedAt"]) / 3600)
-            self._event(job)
+            self._queue_event(job)
 
     def _estimate(self, job, profile):
         iterations = job["plan"]["hyperparameters"]["max_iterations"]
@@ -920,7 +930,7 @@ class TrainingJobs:
                 **sample,
             })
             del history[:-900]
-            self._event(job)
+            self._queue_event(job)
         for job, report in tails:
             self._append_log_tail(job, report, body.instanceId)
         self.reconcile()
@@ -1083,8 +1093,8 @@ class TrainingJobs:
             job.update(cancelRequested=True, reason="cancelling")
         else:
             job.update(status="cancelled", reason="cancelled", finishedAt=self.clock())
+        self._queue_event(job)
         self._save()
-        self._event(job)
         return self.document(job)
 
     def decide(self, approval, decision, actor, note):
@@ -1100,8 +1110,8 @@ class TrainingJobs:
             raise ApprovalConflict("Job approval already processed")
         self.manager.approvals.decide(approval.approvalId, decision, actor, note)
         self.reconcile()
+        self._queue_event(job)
         self._save()
-        self._event(job)
 
     def can_revoke(self, approval):
         job = self.records.get(approval.subjectId)
