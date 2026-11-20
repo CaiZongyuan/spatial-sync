@@ -41,11 +41,61 @@ jobs:
           node-version: 22
       - uses: pnpm/action-setup@v4
         if: matrix.lane == 'core'
-      - name: Install FFmpeg for media gateway tests
+      - name: Prepare the gateway media package cache
         if: matrix.lane == 'gateway'
+        id: media-packages
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ffmpeg
+          if command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null; then
+            exit 0
+          fi
+
+          . /etc/os-release
+          mkdir -p "$RUNNER_TEMP/ffmpeg-debs"
+          echo "archives=$RUNNER_TEMP/ffmpeg-debs" >> "$GITHUB_OUTPUT"
+          echo "cache-key=ffmpeg-debs-v1-$VERSION_CODENAME-$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        if: matrix.lane == 'gateway' && steps.media-packages.outputs.archives != ''
+        with:
+          path: ${{ steps.media-packages.outputs.archives }}/*.deb
+          key: ${{ steps.media-packages.outputs.cache-key }}-${{ runner.arch }}
+      - name: Ensure FFmpeg and FFprobe for gateway media tests
+        if: matrix.lane == 'gateway'
+        timeout-minutes: 2
+        env:
+          MEDIA_ARCHIVES: ${{ steps.media-packages.outputs.archives }}
+        run: |
+          if [ -n "$MEDIA_ARCHIVES" ]; then
+            . /etc/os-release
+            sources="$RUNNER_TEMP/ffmpeg.sources"
+            cat > "$sources" <<EOF
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu/
+          Suites: $VERSION_CODENAME ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-security
+          Components: main universe
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+            apt_options=(
+              -o "Dir::Etc::sourcelist=$sources" -o Dir::Etc::sourceparts=-
+              -o "Dir::Cache::archives=$MEDIA_ARCHIVES"
+              -o Acquire::Languages=none -o Acquire::Retries=1 -o Acquire::https::Timeout=10
+            )
+            sudo apt-get "${apt_options[@]}" --error-on=any update
+            if compgen -G "$MEDIA_ARCHIVES/*.deb" >/dev/null; then
+              # Resolve checksums from the signed indexes without consulting restored archives.
+              empty_archives="$RUNNER_TEMP/ffmpeg-empty-debs"
+              mkdir -p "$empty_archives"
+              sudo apt-get "${apt_options[@]}" -o "Dir::Cache::archives=$empty_archives" \
+                -o Acquire::ForceHash=SHA256 --print-uris install --no-install-recommends -y ffmpeg > "$empty_archives/uris"
+              for archive in "$MEDIA_ARCHIVES"/*.deb; do
+                expected=$(awk -v file="${archive##*/}" '$2 == file && $4 ~ /^SHA256:/ {print substr($4, 8); exit}' "$empty_archives/uris")
+                actual=$(sha256sum -- "$archive")
+                if [ -z "$expected" ] || [ "${actual%% *}" != "$expected" ]; then
+                  rm -- "$archive"
+                fi
+              done
+            fi
+            sudo apt-get "${apt_options[@]}" install --no-install-recommends -y ffmpeg
+          fi
           ffmpeg -version
           ffprobe -version
       - name: Install frozen Python dependencies from PyPI
