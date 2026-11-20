@@ -25,11 +25,12 @@ def compiler_sources():
     node = Path(__file__).parent
     return {
         name: node / name
-        for name in ("mjlab_launcher.py", "usd_mjcf.py", "declarative_mjlab.py", "declarative_capture.py")
+        for name in ("mjlab_launcher.py", "usd_mjcf.py", "declarative_mjlab.py", "declarative_capture.py",
+                     "declarative_scene.py")
     } | {
         name: node.parents[1] / "packages/policies" / name
         for name in ("motion.py", "action_contract.py")
-    }
+    } | {"reward_state.py": node.parents[1] / "packages/training/reward_state.py"}
 
 
 def compiler_hash(directory=None, *, prefix=""):
@@ -328,7 +329,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     verify_usd_model = None
     stage = os.environ.get("LW_SCENE_STAGE")
-    if stage is not None:
+    if stage is not None and not (declarative and env_cfg.contract["bakedLayout"]):
         from lw_usd_mjcf import configure_mjlab_usd_scene
 
         verify_usd_model = configure_mjlab_usd_scene(env_cfg.scene, stage)
@@ -350,6 +351,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
         agent_dict = asdict(agent_cfg)
         if validation:
+            if declarative:
+                env.validate_reward_state = True
+
             def synchronize():
                 if device != "cpu":
                     import torch
@@ -378,4 +382,13 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    try:
+        main()
+    except ValueError as error:
+        if "--validation-iterations" in sys.argv and (output := os.environ.get("LW_NODE_OUTPUT")):
+            (Path(output) / "validation-error.json").write_text(
+                json.dumps({"message": str(error)[:3500]}), encoding="utf-8",
+            )
+        raise

@@ -550,6 +550,16 @@ class GatewayClient:
             path += "/" + quote(rev, safe="")
         return path
 
+    async def scene_draft_submit(self, document, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/library/scene-drafts", json=document, actor=actor)
+
+    async def scene_draft_show(self, id):
+        return await self.request("GET", "/api/v1/library/scene-drafts/" + quote(id, safe=""))
+
+    async def scene_draft_publish(self, id, *, actor="cli:lw"):
+        path = "/api/v1/library/scene-drafts/" + quote(id, safe="") + "/publish"
+        return await self.request("POST", path, actor=actor, timeout=240)
+
     async def library_validate(self, id, *, actor="cli:lw"):
         if "@" not in id:
             raise ValueError("Validation requires an exact asset or scene version with @rev")

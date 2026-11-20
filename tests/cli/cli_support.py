@@ -59,7 +59,7 @@ TOOLS = {
     "library_import",
     "library_validate",
     "library_remove",
-    "scene_launch",
+    "scene_launch", "scene_draft_submit", "scene_draft_show", "scene_draft_publish",
     "alerts_list",
     "alert_ack",
     "list_entities",
