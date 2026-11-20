@@ -82,8 +82,15 @@ def declarative_archive(directory):
     return pack_package(directory), task, joint
 
 
-@pytest.mark.parametrize("managed", [False, True], ids=["audited-python", "declarative-samples"])
-def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_path, managed):
+@pytest.mark.parametrize(
+    "managed, automatic",
+    [
+        pytest.param(False, False, id="audited-python-explicit"),
+        pytest.param(False, True, id="audited-python-automatic"),
+        pytest.param(True, False, id="declarative-samples"),
+    ],
+)
+def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_path, managed, automatic):
     settings = remote_settings()
     clock = [1000.0]
 
@@ -248,11 +255,24 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
             assert beat(client, b, **same_scope).json()["assignments"] == []
             denied = client.get(url, headers=OPERATOR).json()
             assert denied["estimatedWallSeconds"] == 120 and denied["reason"] == "approval_denied"
-            destination, capabilities, node_name = register(client, "c"), caps("c", 20), "c"
+            destination, node_name = register(client, "c"), "c"
+            assert beat(client, destination, **caps("c", 45)).json()["assignments"] == []
+            overage = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "c"}).json()
+            assert overage["estimatedWallSeconds"] == 270 and overage["approvalId"] == waiting["approvalId"]
+            assert overage["reason"] == "approval_denied" and overage["leaseId"] is None
+            explicit_b = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "b"}).json()
+            assert explicit_b["reason"] == "approval_denied" and explicit_b["leaseId"] is None
+            capabilities = caps("c", 25)
+            capabilities["profiles"][0]["measuredAt"] = 1000
             assert beat(client, destination, **capabilities).json()["assignments"] == []
-            alternate = client.post(f"{url}/resume", headers=OPERATOR, json={"targetNodeId": "c"})
-            assert alternate.status_code == 202 and alternate.json()["estimatedWallSeconds"] == 120
-            assert alternate.json()["approvalId"] is None and alternate.json()["leaseId"]
+            alternate = client.post(
+                f"{url}/resume", headers=OPERATOR, json={} if automatic else {"targetNodeId": "c"},
+            )
+            assert alternate.status_code == 202, alternate.text
+            selected = alternate.json()
+            assert (selected["nodeId"], selected["estimatedWallSeconds"]) == ("c", 150)
+            assert selected["approvalId"] is None and selected["leaseId"]
+            assert beat(client, b, **same_scope).json()["assignments"] == []
             assert client.get(approval_url, headers=OPERATOR).json()["status"] == "denied"
             assert client.get(url, headers=OPERATOR).json()["leaseId"] == alternate.json()["leaseId"]
         (assignment,) = beat(client, destination, **capabilities).json()["assignments"]

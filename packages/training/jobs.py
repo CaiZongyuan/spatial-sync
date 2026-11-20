@@ -455,14 +455,18 @@ class TrainingJobs:
         self._save()
         return self.document(job)
 
+    @staticmethod
+    def _resume_denial_applies(job, key, previous_profile, over_budget):
+        return over_budget or key == job.get("deniedProfileKey", previous_profile)
+
     def _budget(self, job, remaining, previous_profile):
         estimate = job["estimatedGpuHours"]
         extra = max(0, estimate - remaining)
         over_budget = extra > GPU_HOUR_TOLERANCE
         approval = self.manager.approvals.records.get(job["approvalId"])
         if approval and approval.status == "denied" and job["status"] == "suspended":
-            denied_profile = job.setdefault("deniedProfileKey", previous_profile)
-            if not over_budget and denied_profile != job["profileKey"]:
+            job.setdefault("deniedProfileKey", previous_profile)
+            if not self._resume_denial_applies(job, job["profileKey"], previous_profile, over_budget):
                 # Detach the gate from this dispatch. Its original denial remains in the Approval inbox.
                 job["approvalId"] = None
                 job.pop("deniedProfileKey", None)
@@ -592,18 +596,21 @@ class TrainingJobs:
             return
         remaining = self._remaining_gpu_hours(job) if not validation else 0
         approval = self.manager.approvals.records.get(job["approvalId"])
+        previous_profile = job["profileKey"]
+        denied_resume = approval is not None and approval.status == "denied" and job["status"] == "suspended"
 
         def priority(candidate):
             blocker, _, _, key, measured, _ = candidate
             if validation:
-                return (blocker is not None, False, 0)
+                return (blocker is not None, False, False, 0)
             cost = self._estimate(job, measured)["estimatedGpuHours"]
             approved = (
                 _approved_extra(approval)
-                if approval and approval.status == "approved" and job["profileKey"] == key else 0
+                if approval and approval.status == "approved" and previous_profile == key else 0
             )
             needs_approval = cost - remaining - approved > GPU_HOUR_TOLERANCE
-            return (blocker is not None, needs_approval, cost)
+            denied = denied_resume and self._resume_denial_applies(job, key, previous_profile, needs_approval)
+            return (blocker is not None, denied, needs_approval, cost)
 
         selected = min(candidates, key=priority)
         blocker, node, resource, key, measured, runtime = selected
@@ -611,7 +618,6 @@ class TrainingJobs:
             if source and blocker:
                 job["reason"] = blocker
                 return
-            previous_profile = job["profileKey"]
             job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
             if not self._budget(job, remaining, previous_profile):
                 return
