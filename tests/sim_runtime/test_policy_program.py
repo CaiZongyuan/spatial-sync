@@ -44,7 +44,7 @@ def test_real_newton_port_policy_init_cpu_inference_targets_and_cancel_without_w
             response = client.post(
                 "/api/v1/policies",
                 json={
-                    "checkpoint": job["jobId"] + "/checkpoints/model_0.pt",
+                    "checkpoint": job["jobId"] + "/checkpoint-origin.json",
                 },
             )
             assert response.status_code == 201, response.text
@@ -122,7 +122,7 @@ async def test_policy_zone_interlock_uses_real_newton_facts_and_existing_action_
             response = client.post(
                 "/api/v1/policies",
                 json={
-                    "checkpoint": job["jobId"] + "/checkpoints/model_0.pt",
+                    "checkpoint": job["jobId"] + "/checkpoint-origin.json",
                 },
             )
             assert response.status_code == 201, response.text

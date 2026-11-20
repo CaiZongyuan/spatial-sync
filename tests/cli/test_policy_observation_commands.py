@@ -48,7 +48,7 @@ async def test_cli_and_official_mcp_persist_and_verify_numerical_reports(
             spec=spec,
             artifact_factory=lambda job: observation_artifacts(job, tmp_path / "output", runner),
         )
-    policy = invoke("policy", "create", job["jobId"] + "/checkpoints/model_0.pt")
+    policy = invoke("policy", "create", job["jobId"] + "/checkpoint-origin.json")
     check = invoke("policy", "check-observations", policy["id"], "--artifact", "observations/samples.json")
     assert check["result"]["numericalPass"] and check["qualified"] is False
     verified = invoke(

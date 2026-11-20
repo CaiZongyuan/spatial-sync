@@ -22,6 +22,9 @@ for variable, directory in (
 ):
     os.environ.setdefault(variable, str(ROOT / ".scratch/notebooks-browser" / directory))
 
+# Browser fixtures review only the exact archives their fixture builder produced.
+os.environ.setdefault("LW_TASK_AUDIT_FILE", str(Path(os.environ["SPATIAL_STATE_ROOT"]) / "task-audits.json"))
+
 from apps.api.app.main import create_app  # noqa: E402
 from apps.api.app.platform_monitor import platform_snapshot, unavailable_system  # noqa: E402
 from apps.api.app.settings import Settings  # noqa: E402

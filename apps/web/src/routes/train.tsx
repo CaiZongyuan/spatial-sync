@@ -6,7 +6,7 @@ export const Route = createFileRoute('/train')({
     layer: search.layer === 'agent' || search.layer === 'embodied' ? search.layer : undefined,
     agent: typeof search.agent === 'string' && /^agent\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(search.agent) ? search.agent : undefined,
     q: typeof search.q === 'string' ? search.q : undefined,
-    status: typeof search.status === 'string' && ['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(search.status)
+    status: typeof search.status === 'string' && ['queued', 'running', 'suspended', 'succeeded', 'failed', 'cancelled'].includes(search.status)
       ? search.status as JobStatus : undefined,
     goal: typeof search.goal === 'string' && /^goal\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(search.goal) ? search.goal : undefined,
   }),

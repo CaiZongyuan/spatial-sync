@@ -113,7 +113,9 @@ class PolicyLibrary:
             export, versions = read_json(artifacts / "export.json"), read_json(artifacts / "versions.json")
             if (
                 export["checkpoint"] != selected
-                or export["afterLearn"] is not True
+                or (export["afterLearn"] is not (job["kind"] != "checkpoint_finalize"))
+                or (job["kind"] == "checkpoint_finalize"
+                    and export.get("checkpointArchiveSha256") != job["checkpointRef"].split("/", 1)[1])
                 or digest(artifacts / selected) != export["checkpointSha256"]
                 or versions != job["versions"]
                 or any(

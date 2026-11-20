@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T18:05:01.872506+00:00",
+  "capturedAt": "2026-11-19T23:51:35.612190+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -264,20 +264,28 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/policies/action_contract.py",
+      "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
+    },
+    {
       "path": "packages/policies/inference.py",
       "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
     },
     {
       "path": "packages/policies/library.py",
-      "sha256": "840502289a2c92f205c790d6211e97db3e855fb6769bcc6b552ad10d8331d757"
+      "sha256": "32c0eb6849b761060dcb2ed940f70d60ad1669bf32fea20852d2afb2b2a7cca6"
+    },
+    {
+      "path": "packages/policies/motion.py",
+      "sha256": "dcbbe638a08dd37dc81d250375c5c7f462b2a8cb6ed2ee1b21456c03603ed0ee"
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366"
+      "sha256": "acb43f32e80f5041bc05d96bfdda164a98cf8aa5988a94459ba01348c79844f4"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "7ea8f92edd23570010374e285cc706caf51496c82efcd145bb0df36bd1764ec0"
+      "sha256": "c7895fcfc0bef671b1de64b7a31aebc1aa2f2c705e71f6e6d2e13e18555da5c6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -285,7 +293,7 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
+      "sha256": "4e66e74e9943f2446adc3beb075894bdc63e52d38beb207592a4d88089af3d00"
     },
     {
       "path": "packages/programs/biped/posture.py",
@@ -305,7 +313,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "e453e2de5f53dbe4ac07a1fd098042021b2cce659976f43819fbcc58f913fdcc"
+      "sha256": "f725515643bcae604da77dd4db87dd1d49a5deb6ba8148335faf346d0bc10401"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -333,7 +341,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "862365fee30588891ed9d7f1a627cf4343950e35cb2bde436924faba91765a5c"
+      "sha256": "b26dcb7a621da4f521c6a8260f61471b83f61475dc2b8d0e584ff628ab66e80a"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -382,6 +390,10 @@
     {
       "path": "packages/programs/tube/newton.py",
       "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
+    },
+    {
+      "path": "packages/programs/waypoint_guidance.py",
+      "sha256": "53f7b66b8c7bef21e5981ce99329541a02de599a83dcbfad6292356d87b5e814"
     },
     {
       "path": "packages/protocol/internal.py",
@@ -468,6 +480,14 @@
       "sha256": "f2c06d387a5ea01d597d91232835279d7bf3541f3122586b56cc0fece85cdad6"
     },
     {
+      "path": "packages/training/__init__.py",
+      "sha256": "1917b1403857b839e0fe7868245d1a13109b94e2fad708fc1cb92a4a68b70bef"
+    },
+    {
+      "path": "packages/training/declarative.py",
+      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
+    },
+    {
       "path": "packages/transport/__init__.py",
       "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
     },
@@ -491,10 +511,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "918a0546cf3ab096000ee6fd32a41f031acac8550b7cf668a3e6c8f4b3db7ed8",
-    "catalog.json": "1958d0d89306772c5cce73e63eb15459c5aac8891222f436b44f6051875dd796",
-    "state.json": "706779960378c5ccd44fca33b00db541e477c41fb8e034681479f6da9ff22f38",
-    "snapshot.bin": "2713ddbfc77ff4e45da5ac4c76d48cdad95cabcc85c41a7648bbf6284e771fb5",
+    "manifest.json": "89a513a7bbc96e2ed7d35efbf1b6cd45650f151c8bf0670a558252221fa464fc",
+    "catalog.json": "7aad43aeefe12e012eceee8c3152dccad00513c528ea76979b5475df4b6fc0ac",
+    "state.json": "f245ed9d97f3d74aff6d82567f3ca323f5fea2764feba4ec62bdcb9b77460a23",
+    "snapshot.bin": "730ff08a535a47c0070a53926a98c14d29e8914607ebb514ae492134c50cb9b0",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

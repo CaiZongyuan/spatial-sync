@@ -30,7 +30,7 @@ async def test_real_script_http_evaluation_recording_notebook_and_same_suite_pol
         # Existing engineering comparator: finite authored ONNX fixture, not trained-quality evidence.
         spec, policy_task = finger_probe_inputs()
         job = uploaded_job(seed, tmp_path / "policy", spec=spec, task_document=policy_task)
-        created = seed.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"})
+        created = seed.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"})
         assert created.status_code == 201, created.text
         policy = created.json()
         manager = seed.app.state.manager

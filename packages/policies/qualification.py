@@ -7,15 +7,48 @@ from pathlib import Path
 
 import onnx
 
+from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.observation_capture import canonical_hash, code_hash
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, extract_package, package_files, relative_path
 from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, document
+from packages.training.runtime import PINS
 
 from .consistency import compare_observations
 from .library import digest, read_json
-from .native_evidence import NativeProfile, NativeReceipt, NativeSamples
+from .native_evidence import (
+    NATIVE_RECEIPTS,
+    NativeProfile,
+    NativeSamples,
+    validate_native_schema,
+    validate_witnesses,
+)
 from .observations import ObservationSpec
+
+# The pre-finalization verifier understood the same v1 evidence. Preserve its
+# retained decisions when all other implementation and runtime pins still match.
+LEGACY_VERIFIER_FILES = {
+    "packages/policies/observations.py": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366",
+    "packages/policies/consistency.py": "bd3e6ff4d38cbaa72441769eb74346189c66119eab252664a665fdf76adea5c1",
+    "packages/policies/evidence.py": "ffac862ffbe5a11c286841ceef5f8722424157ea19ba79901cf5bbb5e7ca4117",
+    "packages/policies/qualification.py": "e2a48fc0c8dabe4d9f4f8c4d182f782004a6da58773ead36d7aabb93eccdec53",
+    "packages/policies/native_evidence.py": (
+        "91cdc9b874c6f07bd820721207d38098f92880b139b4db9a274f4ba21b7dfece"
+    ),
+}
+
+
+def compatible_legacy_verifier(current):
+    files = {
+        name: sha for name, sha in current["files"].items()
+        if name not in (
+            "packages/policies/motion.py",
+            "packages/policies/action_contract.py",
+            "apps/node/declarative_mjlab.py",
+            "apps/node/declarative_capture.py",
+        )
+    }
+    return current | {"files": files | LEGACY_VERIFIER_FILES}
 
 
 class NativeProfiles:
@@ -57,20 +90,68 @@ class NativeProfiles:
         return matches[0].model_dump(mode="json") if matches else None
 
 
+def declarative_profile(task, spec, job, runtime):
+    """Use the managed compiler and reviewed trainer, with layout from pinned Task data."""
+    if (not runtime or runtime.get("entry") != "mjlab:managed"
+            or runtime.get("compilerHash") != compiler_hash()):
+        raise LibraryError("observation_source_unverified", "Unreviewed declarative compiler identity", 409)
+    versions = runtime["trainerVersions"]
+    expected = PINS["mjlab"] | {"rsl_rl": "5.0.1"}
+    if any(versions.get(key, "").split("+", 1)[0] != value for key, value in expected.items()):
+        raise LibraryError("observation_source_unverified", "Unreviewed declarative trainer versions", 409)
+    # The existing native boundary is the same reviewed mjlab/RSL implementation.
+    driver = document(BUILTIN_ROOT / "compiler-native-runtime.yaml")
+    driver.update(
+        id="platform-declarative-mjlab",
+        compilerHash=runtime["compilerHash"],
+        taskContentHash=task["contentHash"],
+        versions=versions,
+        inputWidth=spec.size,
+        actionWidth=len(spec.action.jointKeys),
+        environments=list(range(min(4, job["plan"]["hyperparameters"]["num_envs"]))),
+        stateProviderFile="declarative_mjlab.py",
+        stateProvider={
+            "module": "lw_declarative_mjlab",
+            "qualname": "DeclarativeEnvironment.lw_policy_observation_state",
+            "sha256": code_hash(compiler_sources()["declarative_mjlab.py"]),
+        },
+    )
+    return NativeProfile.model_validate(driver)
+
+
 class NativeCaptureVerifier:
     def __init__(self, evidence, profiles):
         self.evidence, self.profiles = evidence, profiles
 
+    def _profile(self, policy, job, receipt):
+        task = self.evidence.manager.tasks.show(policy["task"])
+        if task["task"].get("declarative") is None:
+            return self.profiles.require(receipt.capture.profile)
+        profile = declarative_profile(
+            task, self.evidence.manager.tasks.observation(task["id"]), job,
+            job["versions"].get("runtimeIdentity"),
+        )
+        if receipt.capture.profile != profile.id:
+            raise ValueError("Declarative receipt does not identify the managed compiler")
+        return profile
+
     def _facts(self, policy, job, report, envelope, receipt, profile, provider):
         self.evidence._validate_source(policy, job, receipt)
         self.evidence._validate_source(policy, job, envelope)
+        if job["kind"] == "checkpoint_finalize":
+            if getattr(receipt, "finalizedCheckpointSha256", None) != job["checkpointRef"].split("/", 1)[1]:
+                raise ValueError("Native receipt refers to a different source checkpoint")
+        elif not receipt.afterLearn:
+            raise ValueError("Training observation evidence requires a trained export")
         spec = ObservationSpec.model_validate(
             document(self.evidence.manager.policies.resolve(policy["id"])[1] / "obs_spec.yaml")
         )
         package = self.evidence.manager.policies.resolve(policy["id"])[1]
         graph = onnx.load_model(str(package / policy["onnx"]), load_external_data=False)
+        export = read_json(package / "artifacts/export.json")
         if (
-            receipt.capture != envelope.capture
+            (profile.compilerHash is not None and receipt.iteration != export["iteration"])
+            or receipt.capture != envelope.capture
             or receipt.capture.profileSha256 != canonical_hash(profile.model_dump(mode="json"))
             or receipt.capture.runtime.model_dump(mode="json") != profile.runtime()
             or profile.taskContentHash != policy["taskContentHash"]
@@ -88,35 +169,23 @@ class NativeCaptureVerifier:
             raise ValueError(
                 "Actual native source, export boundary or material differs from the reviewed profile"
             )
-        unique, scopes = set(), {}
-        for sample, witness in zip(envelope.samples, receipt.witnesses, strict=True):
-            state = {key: getattr(sample, key) for key in ("state", "references", "previousAction")}
-            if sample.command is not None:
-                state["command"] = sample.command
-            identity = f"env-{witness.environment}/epoch-{witness.epoch}/step-{witness.physicsStep}"
-            scope = (witness.epoch, witness.physicsStep)
-            if (
-                sample.sourceStateId != identity
-                or witness.sourceStateId != identity
-                or witness.stateSha256 != canonical_hash(state)
-                or witness.nativeInputSha256 != canonical_hash(sample.trainingObservation)
-                or witness.stateSha256 in unique
-                or scope <= scopes.get(witness.environment, (-1, -1))
-                or witness.environment not in profile.environments
-            ):
-                raise ValueError("Actual native state/input witnesses are duplicate, foreign or inconsistent")
-            unique.add(witness.stateSha256)
-            scopes[witness.environment] = scope
-        if len(unique) != 256:
-            raise ValueError("Native source did not capture256 distinct actual policy states")
-        result = compare_observations(spec, [sample.model_dump() for sample in envelope.samples])
+        task = read_json(package / "task.json")
+        sample_count = validate_witnesses(
+            receipt, envelope, task=task if profile.compilerHash else None
+        )
+        validate_native_schema(
+            receipt, envelope, compiler=profile.compilerHash, finalized=job["kind"] == "checkpoint_finalize"
+        )
+        result = compare_observations(
+            spec, [sample.model_dump() for sample in envelope.samples], motion=task.get("referenceMotion")
+        )
         return {
             "qualified": result["numericalPass"],
             "scope": "observation_consistency",
             "evidenceMode": profile.evidenceMode,
             "profile": profile.id,
             "profileSha256": canonical_hash(profile.model_dump(mode="json")),
-            "samples": len(unique),
+            "samples": sample_count,
             "maxAbsoluteError": result["maxAbsoluteError"],
             "boundary": profile.boundary,
             "normalization": profile.normalization,
@@ -134,15 +203,18 @@ class NativeCaptureVerifier:
             raw = source.read_bytes()
             if digest(source) != entry["sha256"]:
                 raise ValueError("Native receipt changed during verification")
-            receipt = NativeReceipt.model_validate_json(raw)
+            receipt = NATIVE_RECEIPTS.validate_json(raw)
             envelope = NativeSamples.model_validate_json((path / "package/samples.json").read_bytes())
-            profile = self.profiles.require(receipt.capture.profile)
+            profile = self._profile(policy, job, receipt)
             import tempfile
 
             with tempfile.TemporaryDirectory(prefix="native-source-") as temporary:
-                task = Path(temporary)
-                extract_package(io.BytesIO(self.evidence.manager.tasks.export(policy["task"])), task)
-                provider = task / relative_path(profile.stateProviderFile)
+                if profile.compilerHash:
+                    provider = compiler_sources()[profile.stateProviderFile]
+                else:
+                    task = Path(temporary)
+                    extract_package(io.BytesIO(self.evidence.manager.tasks.export(policy["task"])), task)
+                    provider = task / relative_path(profile.stateProviderFile)
                 facts = self._facts(policy, job, report, envelope, receipt, profile, provider)
                 provider_bytes = provider.read_bytes()
             inputs = {
@@ -192,10 +264,16 @@ class NativeCaptureVerifier:
         _, path = self.evidence._read(policy_id, report["id"])
         frozen = destination_parent(path, ("verifications", verification["id"], "package"))
         package_files(frozen)
-        receipt = NativeReceipt.model_validate_json((frozen / "capture.json").read_bytes())
+        receipt = NATIVE_RECEIPTS.validate_json((frozen / "capture.json").read_bytes())
         envelope = NativeSamples.model_validate_json((path / "package/samples.json").read_bytes())
-        profile = self.profiles.require(receipt.capture.profile)
-        if verification["verifier"] != implementation_identity() or read_json(
+        job = self.evidence.manager.jobs.get(policy["jobId"])
+        profile = self._profile(policy, job, receipt)
+        current = implementation_identity()
+        compatible = [current]
+        if receipt.afterLearn and not profile.compilerHash:
+            earlier = compatible_legacy_verifier(current)
+            compatible.append(earlier)
+        if verification["verifier"] not in compatible or read_json(
             frozen / "profile.json"
         ) != profile.model_dump(mode="json"):
             raise PlanError(
@@ -203,7 +281,7 @@ class NativeCaptureVerifier:
             )
         facts = self._facts(
             policy,
-            self.evidence.manager.jobs.get(policy["jobId"]),
+            job,
             report,
             envelope,
             receipt,

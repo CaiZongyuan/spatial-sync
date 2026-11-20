@@ -7,6 +7,8 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.info.schema_subset import json_equal
+from packages.policies.action_contract import command_endpoints, command_in_bounds
+from packages.policies.motion import motion_observations
 from packages.protocol.math import rotate_vector
 
 
@@ -27,6 +29,8 @@ class Observation(Schema):
         "site_orientation",
         "previous_action",
         "command",
+        "motion_phase",
+        "reference_motion_frame",
     ]
     keys: list[str] = Field(default_factory=list, max_length=64)
     key: str | None = Field(default=None, min_length=1)
@@ -40,6 +44,14 @@ class Observation(Schema):
 
     @model_validator(mode="after")
     def dimensions(self):
+        if self.source in ("motion_phase", "reference_motion_frame"):
+            size = self.shape[0] if len(self.shape) == 1 else 0
+            allowed = (size in (1, 2) if self.source == "motion_phase" else 7 <= size <= 71)
+            if (not allowed or self.keys or self.key is not None or self.frame != "world"
+                    or self.unit != "1" or self.lower is not None or self.upper is not None
+                    or len(self.offset) != size or len(self.scale) != size or 0 in self.scale):
+                raise ValueError("Invalid motion observation layout")
+            return self
         joint = self.source.startswith("joint_")
         vector_term = self.source in ("previous_action", "command")
         if joint:
@@ -89,6 +101,7 @@ class Observation(Schema):
                 or any(lo > hi for lo, hi in zip(self.lower, self.upper, strict=True))
             ):
                 raise ValueError("command observation requires ordered finite lower and upper bounds")
+            command_endpoints(list(zip(self.lower, self.upper, strict=True)))
         elif self.lower is not None or self.upper is not None:
             raise ValueError("Only command observations declare lower and upper bounds")
         if self.source == "projected_gravity":
@@ -157,12 +170,16 @@ class Action(Schema):
 
 
 class ObservationSpec(Schema):
-    schema_version: Literal["lw.obs-spec/1"] = Field(alias="schema")
+    schema_version: Literal["lw.obs-spec/1", "lw.obs-spec/2"] = Field(alias="schema")
     observations: list[Observation] = Field(min_length=1, max_length=128)
     action: Action
 
     @model_validator(mode="after")
     def names(self):
+        if self.schema_version == "lw.obs-spec/1" and any(
+            item.source in ("motion_phase", "reference_motion_frame") for item in self.observations
+        ):
+            raise ValueError("Motion observations require lw.obs-spec/2")
         if len({item.name for item in self.observations}) != len(self.observations):
             raise ValueError("Observation names must be distinct")
         if any(
@@ -176,13 +193,14 @@ class ObservationSpec(Schema):
     def size(self):
         return sum(item.shape[0] for item in self.observations)
 
-    def assemble(self, state, *, previous_action, command=None, references=None):
+    def assemble(self, state, *, previous_action, command=None, references=None, motion=None):
         return assemble(
             self,
             state,
             previous_action=previous_action,
             command=command,
             references=references,
+            motion=motion,
         )
 
 
@@ -200,7 +218,7 @@ def _unit_quaternion(value, label="Frame"):
     return q
 
 
-def assemble(spec, state, *, previous_action, command=None, references=None):
+def assemble(spec, state, *, previous_action, command=None, references=None, motion=None):
     """State has joints:{key:{q,qd}}, bodies:{key:{p,q,w?}}, sites:{key:{p,q}} in Newton coordinates."""
     references = references or {}
 
@@ -208,18 +226,22 @@ def assemble(spec, state, *, previous_action, command=None, references=None):
         return references[value] if value.startswith("$") else value
 
     result = []
+    motion_values = {}
+    if any(item.source in ("motion_phase", "reference_motion_frame") for item in spec.observations):
+        if motion is None:
+            raise ValueError("Motion observations require a pinned reference")
+        motion_values = motion_observations(motion, state["motionElapsed"])
     for item in spec.observations:
         source = item.source
-        if source == "previous_action":
+        if source in motion_values:
+            raw = vector(motion_values[source], item.shape[0])
+        elif source == "previous_action":
             raw = vector(previous_action, item.shape[0])
         elif source == "command":
             if command is None:
                 raise ValueError(f"{item.name} requires a command vector")
             raw = vector(command, item.shape[0])
-            if any(
-                not (lo <= float(val) <= hi)
-                for val, lo, hi in zip(raw, item.lower, item.upper, strict=True)
-            ):
+            if not command_in_bounds(raw, list(zip(item.lower, item.upper, strict=True))):
                 raise ValueError(f"{item.name} command is outside declared [lower, upper] bounds")
         elif source.startswith("joint_"):
             field = "q" if source == "joint_position" else "qd"
@@ -303,17 +325,10 @@ def command_envelope_failure(task, command):
     if envelope is None:
         return None
     try:
-        values = vector(command, len(envelope))
+        accepted = command_in_bounds(command, envelope)
     except (ValueError, TypeError):
-        return {
-            "code": "precondition_failed",
-            "message": "Action command exceeds training command envelope",
-            "details": {"commandEnvelope": envelope},
-        }
-    if any(
-        not (float(lower) <= float(val) <= float(upper))
-        for val, (lower, upper) in zip(values, envelope, strict=True)
-    ):
+        accepted = False
+    if not accepted:
         return {
             "code": "precondition_failed",
             "message": "Action command exceeds training command envelope",

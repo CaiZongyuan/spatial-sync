@@ -1,12 +1,13 @@
 """Policy intent references existing Jobs; no host-path or artifact upload endpoint."""
 
 import anyio
-from fastapi import Request
+from fastapi import Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.api.app.evaluation_views import public_evaluation
 from packages.info.plans import PlanError
 from packages.policies.evidence import ObservationEvidence
+from packages.policies.export import policy_export
 from packages.policies.library import PolicyLibrary
 
 
@@ -51,6 +52,14 @@ def install_policy_routes(app, manager, role_for, *, profiles=None):
             "evidence": {"observationChecks": await anyio.to_thread.run_sync(evidence.list, identity),
                          "evaluations": evaluations}
         }
+
+    @app.get("/api/v1/policies/{name}/{revision}/export")
+    async def export(name: str, revision: str, request: Request):
+        operator(request)
+        data = await anyio.to_thread.run_sync(policy_export, manager, f"policy/{name}@{revision}")
+        return Response(data, media_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{name}-{revision}.zip"'
+        })
 
     @app.post("/api/v1/policies", status_code=201)
     async def create(body: PolicyCreate, request: Request):

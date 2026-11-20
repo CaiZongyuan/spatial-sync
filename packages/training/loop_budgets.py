@@ -12,6 +12,7 @@ from copy import deepcopy
 
 from packages.info.plans import PlanError
 from packages.library.common import LibraryError
+from packages.training.jobs import unspent_reservation
 from packages.training.schema import LoopBudget
 
 
@@ -82,7 +83,7 @@ class LoopBudgets:
             return None, None
 
     def _held_job(self, job):
-        if job["status"] in ("queued", "running"):
+        if job["status"] in ("queued", "running", "suspended"):
             return True
         return any(
             lease["jobId"] == job["jobId"] and lease["leaseId"] == job["leaseId"]
@@ -137,12 +138,7 @@ class LoopBudgets:
             # allowedGpuHours is derived from shared remaining capacity, not an
             # independent reservation or enforced running limit. Use admitted estimates.
             job_capacity = actual_gpu + sum(
-                max(
-                    0,
-                    (job.get("estimatedGpuHours") or 0) - job["chargedGpuHours"],
-                )
-                for job in held_jobs
-                if job.get("budgetReserved") or self.manager.jobs._has_lease(job)
+                unspent_reservation(job) for job in held_jobs
             )
             evaluation_capacity = actual_episodes + sum(
                 max(

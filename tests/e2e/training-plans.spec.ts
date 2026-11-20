@@ -9,7 +9,7 @@ const api = process.env.SPATIAL_API_URL ?? 'http://127.0.0.1:8000';
 test('Task snapshots and training approvals show measured hypotheses, interview and prior changes without a session', async ({ page, request }, info) => {
   const python = process.env.SPATIAL_PYTHON ?? resolve(process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python');
   const name = `training-${randomUUID()}`;
-  const { stdout } = await promisify(execFile)(python, [resolve('../../tests/fixtures/training_task.py'), name], { encoding: 'buffer' });
+  const { stdout } = await promisify(execFile)(python, ['-m', 'tests.fixtures.training_task', name], { cwd: resolve('../..'), encoding: 'buffer' });
   const uploaded = await request.post(`${api}/api/v1/tasks`, { headers: { 'Content-Type': 'application/x-tar' }, data: stdout });
   expect(uploaded.ok(), await uploaded.text()).toBe(true);
   const task = await uploaded.json();

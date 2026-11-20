@@ -46,7 +46,7 @@ def policy_inputs(tmp_path, policy_client):
     created = policy_client.post(
         "/api/v1/policies",
         json={
-            "checkpoint": job["jobId"] + "/checkpoints/model_0.pt",
+            "checkpoint": job["jobId"] + "/checkpoint-origin.json",
         },
     )
     assert created.status_code == 201, created.text
@@ -270,7 +270,7 @@ def test_model_channels_must_match_actual_bound_robot_roles_before_start(
     created = policy_client.post(
         "/api/v1/policies",
         json={
-            "checkpoint": job["jobId"] + "/checkpoints/model_0.pt",
+            "checkpoint": job["jobId"] + "/checkpoint-origin.json",
         },
     )
     assert created.status_code == 201, created.text

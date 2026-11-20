@@ -526,7 +526,8 @@ def create_app(
         if app.state.metadata_worker_auth(request):
             return await call_next(request)
         if manager.jobs.authenticated_node(request.headers) and re.fullmatch(
-            r"/api/v1/(?:nodes/[a-z0-9-]+/heartbeat|jobs/job-[a-f0-9]{32}/(?:inputs(?:/packages/[0-9]+)?|artifacts))",
+            r"/api/v1/(?:nodes/[a-z0-9-]+/heartbeat|jobs/job-[a-f0-9]{32}/"
+            r"(?:inputs(?:/packages/[0-9]+|/checkpoint/[a-f0-9]{64})?|artifacts|checkpoints))",
             request.url.path,
         ):
             return await call_next(request)

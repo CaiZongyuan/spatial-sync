@@ -6,6 +6,8 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from packages.info.program import Reject
+from packages.library.metadata import Locations
 from packages.programs.policy_base import (
     ActionName,
     MultiPolicyConfig,
@@ -13,6 +15,8 @@ from packages.programs.policy_base import (
     SpatialPath,
     inspect_port_joints,
 )
+from packages.programs.waypoint_guidance import slot_command_bounds, waypoint_command, wrap_pi
+from packages.training.declarative import Completion
 
 
 def _orientation_angles(q):
@@ -211,6 +215,17 @@ class EmbodiedPostureProgram:
 
 
 class EmbodiedPolicyConfig(MultiPolicyConfig):
+    locations: dict = Field(default_factory=dict, exclude_if=lambda value: not value,
+                            json_schema_extra={"documentSchema": "locations"})
+    xyTolerance: float = Field(default=.08, gt=0, exclude_if=lambda value: value == .08)
+    yawTolerance: float = Field(default=.2, gt=0, exclude_if=lambda value: value == .2)
+    linearGain: float = Field(default=1.5, gt=0, exclude_if=lambda value: value == 1.5)
+    yawGain: float = Field(default=2., gt=0, exclude_if=lambda value: value == 2.)
+    maxLinearSpeed: float = Field(default=.35, gt=0, exclude_if=lambda value: value == .35)
+    maxLateralSpeed: float = Field(default=.2, ge=0, exclude_if=lambda value: value == .2)
+    maxYawRate: float = Field(default=1., gt=0, exclude_if=lambda value: value == 1.)
+    commandSmoothing: float = Field(default=.35, gt=0, le=1, exclude_if=lambda value: value == .35)
+    headingAlignRad: float = Field(default=.9, gt=0, exclude_if=lambda value: value == .9)
     defaultPosition: list[float] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
@@ -228,14 +243,187 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
 
     def _init_robot(self, ctx):
         self.state_property = _detect_state_property(ctx, self.state_property)
+        self.completions = {
+            action: Completion.model_validate(slot.task["completion"])
+            for action, slot in self.slots.items() if slot.task.get("completion") is not None
+        }
+        self.waypoints = {
+            name: value.model_dump(mode="json")
+            for name, value in Locations.model_validate(ctx.config.locations).waypoints.items()
+        }
+        self.command_keys = {}
+        for action, slot in self.slots.items():
+            completion = self.completions.get(action)
+            bounds = slot_command_bounds(slot)
+            if completion is not None and self.base_body is None:
+                raise ValueError("Embodied completion modes require a bound baseBody")
+            if completion is not None and completion.mode in ("command_track", "waypoint_nav"):
+                if (not bounds or len(bounds) not in (2, 3) or any(lo > hi for lo, hi in bounds)
+                        or any(term.frame != "body" for term in slot.spec.observations
+                               if term.source == "command")):
+                    raise ValueError("Velocity guidance requires bounded body-frame command channels")
+                if completion.mode == "waypoint_nav":
+                    if (not self.waypoints or any(not lo <= 0 <= hi for lo, hi in bounds)
+                            or "waypoint" not in ctx.action_params(action)):
+                        raise ValueError("Navigation requires waypoints, zero command and waypoint parameter")
+                    continue
+            if bounds:
+                keys = tuple(ctx.config.commandParams.get(action, ctx.action_params(action)))
+                if len(keys) != len(bounds) or not set(keys) <= set(ctx.action_params(action)):
+                    raise ValueError("Command parameters must match the Policy command layout")
+                self.command_keys[action] = keys
+        self.smoothed_command = [0., 0., 0.]
+        self.target_waypoint = None
+        self.current_waypoint = None
+        self.last_completed = None
+        self.dwell = 0.
+        self.tracking_error = None
+        self.fallen = False
         if ctx.config.defaultPosition is not None:
             targets = _clamp_posture(ctx.config.jointKeys, ctx.config.defaultPosition, self.joint_limits)
             for key, value in zip(ctx.config.jointKeys, targets, strict=True):
                 ctx.physics.set_joint_target(self.joints[key], [value])
 
+    def _telemetry(self, ctx, **values):
+        values = {name: value for name, value in values.items() if name in ctx.property_names}
+        if values:
+            ctx.set(**values)
+
     def _facts(self, ctx):
         _publish_embodied_facts(ctx, self.joints, self.base_body)
+        if self.completions:
+            self._telemetry(
+                ctx, activeAction=self.handle.action if self.handle else None,
+                lastCompletedAction=self.last_completed, fallen=self.fallen,
+                currentWaypoint=self.current_waypoint, targetWaypoint=self.target_waypoint,
+            )
+            if self.tracking_error is not None:
+                self._telemetry(ctx, trackingError=self.tracking_error)
+
+    def _parameter_coverage_failure(self, inv, ctx, slot):
+        completion = self.completions.get(inv.action)
+        if completion is None or completion.mode != "waypoint_nav":
+            return super()._parameter_coverage_failure(inv, ctx, slot)
+        if inv.params.get("waypoint") not in self.waypoints:
+            return {"code": "unknown_waypoint", "message": "Waypoint is not declared by this Scene"}
+        speed = inv.params.get("speed")
+        if speed is not None and (
+            type(speed) not in (int, float) or not math.isfinite(speed) or speed <= 0
+        ):
+            return {"code": "precondition_failed", "message": "Waypoint speed must be positive"}
+        task = slot.task
+        expected = task["episode"].get("params", {})
+        filtered = {key: value for key, value in inv.params.items() if key not in ("waypoint", "speed")}
+        if filtered != {key: value for key, value in expected.items() if key not in ("waypoint", "speed")}:
+            return {"code": "precondition_failed", "message": "Waypoint parameters exceed training coverage"}
+        return None
+
+    def _accept_action(self, inv, ctx, slot):
+        mode = self.completions.get(inv.action)
+        if mode is None:
+            return None
+        if mode.mode != "posture_recovery" and self.fallen:
+            return Reject(code="robot_fallen", message="Recover posture before starting another action")
+        if mode.mode == "waypoint_nav":
+            failed = ctx.check(self.waypoints[inv.params["waypoint"]].get("requires", []))
+            if failed:
+                return Reject(code="precondition_failed", message=failed[0]["message"])
+        return None
+
+    def _command(self, inv, ctx, slot):
+        completion = self.completions.get(inv.action)
+        if completion is None or completion.mode != "waypoint_nav":
+            keys = self.command_keys.get(inv.action)
+            return [float(inv.params[key]) for key in keys] if keys else None
+        p, q = ctx.physics.body_pose(self.base_body)
+        command, history = waypoint_command(
+            self.waypoints[inv.params["waypoint"]], p, _orientation_angles(q)[3],
+            slot_command_bounds(slot), ctx.config, inv.params.get("speed"),
+            self.smoothed_command if self.handle is inv else [0., 0., 0.],
+        )
+        if self.handle is inv:
+            self.smoothed_command = history
+        return command
 
     def _on_action_start(self, inv, ctx, slot):
-        _publish_embodied_facts(ctx, self.joints, self.base_body)
+        self.last_completed = None
+        self.dwell = 0.
+        self.smoothed_command = [0., 0., 0.]
+        self.target_waypoint = inv.params.get("waypoint")
+        if self.target_waypoint is not None:
+            self.current_waypoint = None
+        self._facts(ctx)
         super()._on_action_start(inv, ctx, slot)
+
+    def _tick_robot(self, ctx, dt):
+        if not self.completions:
+            return
+        completion = self.completions.get(self.handle.action) if self.handle else None
+        p, q = ctx.physics.body_pose(self.base_body)
+        tilt, _, _, yaw = _orientation_angles(q)
+        limits = completion or next(iter(self.completions.values()))
+        self.fallen = tilt > limits.maxTiltDeg or float(p[2]) < limits.minHeight
+        if completion is None:
+            return
+        speed = ctx.physics.body_linear_velocity(self.base_body, frame="body")
+        angular = ctx.physics.body_angular_velocity(self.base_body, frame="body")
+        calm = (
+            math.hypot(*speed) <= completion.maxSpeed and math.hypot(*angular) <= completion.maxAngularSpeed
+        )
+        if completion.mode == "phase_clip":
+            motion = self.active_slot.task["referenceMotion"]
+            duration = motion["frames"][-1]["time"] * (completion.cycles if motion["loop"] else 1)
+            reached = ctx.sim_time - self.started + 1e-9 >= duration
+        elif completion.mode == "posture_recovery":
+            reached = not self.fallen and tilt <= completion.uprightTiltDeg and calm
+        elif completion.mode == "waypoint_nav":
+            wp = self.waypoints[self.target_waypoint]
+            self.tracking_error = math.hypot(float(p[0]) - wp["p"][0], float(p[1]) - wp["p"][1])
+            reached = (
+                self.tracking_error <= (wp.get("xyTolerance") or ctx.config.xyTolerance)
+                and abs(wrap_pi(wp["yaw"] - yaw)) <= (wp.get("yawTolerance") or ctx.config.yawTolerance)
+                and calm
+            )
+        else:
+            desired = self._command(self.handle, ctx, self.active_slot)
+            measured = [speed[0], angular[2]] if len(desired) == 2 else [speed[0], speed[1], angular[2]]
+            self.tracking_error = math.dist(measured, desired)
+            reached = self.tracking_error <= completion.trackingTolerance
+        self.dwell = self.dwell + dt if reached else 0.
+
+    def _fault_failure(self, inv, ctx, slot):
+        completion = self.completions.get(inv.action)
+        if completion is not None and completion.mode != "posture_recovery" and self.fallen:
+            return "robot_fallen", "Base height or tilt left the commissioned range"
+        return None
+
+    def _action_completed(self, inv, ctx, slot):
+        completion = self.completions.get(inv.action)
+        if completion is None:
+            return super()._action_completed(inv, ctx, slot)
+        return (
+            slot.model.inference_calls > self.start_inferences
+            and self.dwell + 1e-9 >= completion.dwellSeconds
+            and not self.fallen
+        )
+
+    def _clear_action(self, ctx):
+        self.target_waypoint = None
+        self.tracking_error = None
+        if self.completions:
+            self._telemetry(ctx, activeAction=None, targetWaypoint=None, fallen=self.fallen)
+
+    def _set_idle_state(self, ctx):
+        super()._set_idle_state(ctx)
+        self._clear_action(ctx)
+
+    def _set_fault_state(self, ctx, code, message):
+        super()._set_fault_state(ctx, code, message)
+        self._clear_action(ctx)
+
+    def _on_action_complete(self, inv, ctx, slot):
+        self.last_completed = inv.action
+        if self.target_waypoint is not None:
+            self.current_waypoint = self.target_waypoint
+        self._facts(ctx)
+        super()._on_action_complete(inv, ctx, slot)

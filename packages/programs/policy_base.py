@@ -130,15 +130,21 @@ def step_policy_inference(
     references: dict[str, str] | None = None,
     command: list[float] | None = None,
     joint_limits: dict[str, tuple[float | None, float | None]] | None = None,
+    motion: dict | None = None,
+    motion_elapsed: float = 0.0,
 ) -> np.ndarray:
     """Execute one CPU ONNX policy step, clamping targets to finite physical joint limits."""
     refs = references or {}
+    state = extract_observation_state(port, spec, refs)
+    if motion is not None:
+        state["motionElapsed"] = motion_elapsed
     observation = assemble(
         spec,
-        extract_observation_state(port, spec, refs),
+        state,
         previous_action=previous,
         command=command,
         references=refs,
+        motion=motion,
     )
     observation_digest.update(observation.tobytes())
     output = model.infer(observation)
@@ -529,6 +535,7 @@ class MultiPolicyProgram:
             return
         slot = self.slots[inv.action]
         self.references = self._references(inv, ctx, slot)
+        self.start_inferences = slot.model.inference_calls
         slot.action_starts += 1
         slot.previous[:] = 0.0
         self.active_slot = slot
@@ -598,6 +605,8 @@ class MultiPolicyProgram:
                 references=self.references,
                 command=cmd,
                 joint_limits=self.joint_limits,
+                motion=slot.task.get("referenceMotion"),
+                motion_elapsed=ctx.sim_time - self.started,
             )
             self.next_inference += interval
         except (ValueError, KeyError, RuntimeError) as exc:

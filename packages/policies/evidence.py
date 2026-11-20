@@ -74,6 +74,10 @@ def implementation_identity():
             name: code_hash(REPO_ROOT / name)
             for name in (
                 "packages/policies/observations.py",
+                "packages/policies/motion.py",
+                "packages/policies/action_contract.py",
+                "apps/node/declarative_mjlab.py",
+                "apps/node/declarative_capture.py",
                 "packages/policies/consistency.py",
                 "packages/policies/evidence.py",
                 "packages/policies/evidence_contract.py",
@@ -160,7 +164,9 @@ class ObservationEvidence:
             job, source, entry = self._artifact(policy, artifact)
             raw = source.read_bytes()
             schema = json.loads(raw).get("schema")
-            envelope = NativeSamples if schema == "lw.policy-native-observation-samples/1" else Samples
+            envelope = NativeSamples if schema in (
+                "lw.policy-native-observation-samples/1", "lw.policy-native-observation-samples/2",
+            ) else Samples
             envelope = envelope.model_validate_json(raw)
             self._validate_source(policy, job, envelope)
             identifiers = [sample.sourceStateId for sample in envelope.samples]
@@ -169,7 +175,10 @@ class ObservationEvidence:
             spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
             for sample in envelope.samples:
                 vector(sample.previousAction, len(spec.action.jointKeys))
-            result = compare_observations(spec, [sample.model_dump() for sample in envelope.samples])
+            task = read_json(package / "task.json")
+            result = compare_observations(
+                spec, [sample.model_dump() for sample in envelope.samples], motion=task.get("referenceMotion")
+            )
             result["provenance"] = "authenticated source-Job artifact"
             result["independentTrainingSemantics"] = "not_verified_by_numerical_comparison"
             implementation = implementation_identity()
@@ -300,7 +309,9 @@ class ObservationEvidence:
             report, check_path = self._read(policy_id, identifier)
             policy, _ = self.manager.policies.resolve(policy_id)
             job, source, entry = self._artifact(policy, artifact)
-            if json.loads(source.read_bytes()).get("schema") == "lw.policy-native-observation-capture/1":
+            if json.loads(source.read_bytes()).get("schema") in (
+                "lw.policy-native-observation-capture/1", "lw.policy-native-observation-capture/2",
+            ):
                 return self.native.verify_source(policy_id, identifier, artifact)
             receipt = CaptureReceipt.model_validate_json(source.read_bytes())
             self._validate_source(policy, job, receipt)

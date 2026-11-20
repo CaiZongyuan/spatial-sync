@@ -20,6 +20,8 @@ def isolated_recordings(tmp_path, monkeypatch):
     monkeypatch.setenv("SPATIAL_RECORDINGS_ROOT", str(tmp_path / "recordings"))
     monkeypatch.setenv("SPATIAL_STATE_ROOT", str(tmp_path / "state"))
     monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "user-library"))
+    audit = tmp_path / "state" / "task-audits.json"
+    monkeypatch.setenv("LW_TASK_AUDIT_FILE", str(audit))
     # A developer shell may point the gateway at the maintained library; tests own their store.
     monkeypatch.delenv("SPATIAL_CATALOG_METADATA_ROOT", raising=False)
     monkeypatch.setenv("SPATIAL_CATALOG_ROOT", "")

@@ -55,7 +55,7 @@ spec = observation_spec()
 spec['observations'][0]['keys'] = spec['action']['jointKeys'] = ['/World/Lab/RobotA/fr3/fr3_joint1']
 with httpx.Client(base_url=sys.argv[1], trust_env=False, timeout=30) as client:
     job = uploaded_job(client, Path(sys.argv[2]), spec=spec)
-    policy = client.post('/api/v1/policies', json={'checkpoint': job['jobId'] + '/checkpoints/model_0.pt'})
+    policy = client.post('/api/v1/policies', json={'checkpoint': job['jobId'] + '/checkpoint-origin.json'})
     policy.raise_for_status()
     policy = policy.json()
     seeded = client.post('/fixture/controller-promotions/train', json={'policy': policy['id']})

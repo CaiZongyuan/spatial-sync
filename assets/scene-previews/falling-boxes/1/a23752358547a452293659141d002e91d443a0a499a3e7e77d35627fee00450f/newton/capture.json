@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-19T18:07:27.304762+00:00",
+  "capturedAt": "2026-11-19T23:49:36.877262+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -132,20 +132,28 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/policies/action_contract.py",
+      "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
+    },
+    {
       "path": "packages/policies/inference.py",
       "sha256": "4e889dfecc1949b5c7355c538e03df1a5eba04a7e1ddc7b6535dc460ca33d7d4"
     },
     {
       "path": "packages/policies/library.py",
-      "sha256": "840502289a2c92f205c790d6211e97db3e855fb6769bcc6b552ad10d8331d757"
+      "sha256": "32c0eb6849b761060dcb2ed940f70d60ad1669bf32fea20852d2afb2b2a7cca6"
+    },
+    {
+      "path": "packages/policies/motion.py",
+      "sha256": "dcbbe638a08dd37dc81d250375c5c7f462b2a8cb6ed2ee1b21456c03603ed0ee"
     },
     {
       "path": "packages/policies/observations.py",
-      "sha256": "22b2d3b128d7990715eafb326c14986c3968dff043b5dc00dd0c24ce46318366"
+      "sha256": "acb43f32e80f5041bc05d96bfdda164a98cf8aa5988a94459ba01348c79844f4"
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "7ea8f92edd23570010374e285cc706caf51496c82efcd145bb0df36bd1764ec0"
+      "sha256": "c7895fcfc0bef671b1de64b7a31aebc1aa2f2c705e71f6e6d2e13e18555da5c6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -153,7 +161,7 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "827dda5657645c5c8bb35863712c296e8f737a0056ad79d068337f562664534d"
+      "sha256": "4e66e74e9943f2446adc3beb075894bdc63e52d38beb207592a4d88089af3d00"
     },
     {
       "path": "packages/programs/biped/posture.py",
@@ -173,7 +181,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "e453e2de5f53dbe4ac07a1fd098042021b2cce659976f43819fbcc58f913fdcc"
+      "sha256": "f725515643bcae604da77dd4db87dd1d49a5deb6ba8148335faf346d0bc10401"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -201,7 +209,7 @@
     },
     {
       "path": "packages/programs/policy_base.py",
-      "sha256": "862365fee30588891ed9d7f1a627cf4343950e35cb2bde436924faba91765a5c"
+      "sha256": "b26dcb7a621da4f521c6a8260f61471b83f61475dc2b8d0e584ff628ab66e80a"
     },
     {
       "path": "packages/programs/robot_arm/grasp.py",
@@ -250,6 +258,10 @@
     {
       "path": "packages/programs/tube/newton.py",
       "sha256": "b459557c9ebf471a4dc8f3b59e046dd06de21858ff15834ce2c1075e6a2906ca"
+    },
+    {
+      "path": "packages/programs/waypoint_guidance.py",
+      "sha256": "53f7b66b8c7bef21e5981ce99329541a02de599a83dcbfad6292356d87b5e814"
     },
     {
       "path": "packages/protocol/internal.py",
@@ -324,6 +336,14 @@
       "sha256": "f2c06d387a5ea01d597d91232835279d7bf3541f3122586b56cc0fece85cdad6"
     },
     {
+      "path": "packages/training/__init__.py",
+      "sha256": "1917b1403857b839e0fe7868245d1a13109b94e2fad708fc1cb92a4a68b70bef"
+    },
+    {
+      "path": "packages/training/declarative.py",
+      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
+    },
+    {
       "path": "packages/transport/__init__.py",
       "sha256": "ac4ef311df127b44856fb6936806a6dba72cc3d5d13bf6fddd1a392d30676949"
     },
@@ -347,10 +367,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "dcde47701fd991a358eb80a3feb150f8c8e60da6df5dceb1d0b9c707ac31dc2a",
-    "catalog.json": "791090dd55bc8f732ef76f5bd53c1510b0509e0aef38482cfbcfa7e5a70a4185",
-    "state.json": "d1f9ecf6b41a0098633b62bae97c98629623bd743b074208cb538628d4b002da",
-    "snapshot.bin": "2654bd725de09dff6a7f7da8ee321fb95e1078b1c2752d6efe5092fb74c1705a"
+    "manifest.json": "12a38288dd9ae5173f91adb7b47105057637b72e20ba8155b5aebe136752a63b",
+    "catalog.json": "25d2709261f9afebc4ef7477adcb6c00b517fa12248e82bb9e15622a37f7e656",
+    "state.json": "09ffa5839a63ce2af0f2b4f71937470e3c996a6b55ec81f78a279e1c967528a1",
+    "snapshot.bin": "a7f29a45e0c141b03a192c8152440d9d67713d6f0b2b015ee6356615987214b6"
   },
   "counts": {
     "physicalEntities": 3,

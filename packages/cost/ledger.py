@@ -54,6 +54,12 @@ class CostLedger:
                 "memoryReport": report_signature(report),
                 "entries": [],
             }
+            attempts = job.get("attempts", [])
+            if attempts:
+                latest = attempts[-1]
+                job["costLedger"].update(
+                    leaseId=latest["leaseId"], attemptThroughSeconds=latest["gpuSeconds"],
+                )
             if charged:
                 job["costLedger"]["entries"].append(
                     {
@@ -73,12 +79,14 @@ class CostLedger:
         prices = None
         for job in jobs.values():
             state = job["costLedger"]
-            if job["leaseId"] and job["leaseId"] != state.get("leaseId"):
+            attempts = job.get("attempts", [])
+            attempt = attempts[-1] if attempts else None
+            node_id = attempt["nodeId"] if attempt else job["nodeId"]
+            if not attempt and job["leaseId"] and job["leaseId"] != state.get("leaseId"):
                 node = self.manager.jobs.nodes.get(job["nodeId"], {})
                 lease = node.get("leases", {}).get(job["resourceId"])
                 if lease and lease["leaseId"] == job["leaseId"]:
-                    # Queue time is known not to own this GPU. Only a new
-                    # fenced dispatch advances the initial observation bound.
+                    # Queue time is known not to own this GPU.
                     state["lastObservedAt"] = max(state["lastObservedAt"], lease["assignedAt"])
                     state["leaseId"] = job["leaseId"]
             report = job.get("lastNodeReport") or {}
@@ -87,24 +95,52 @@ class CostLedger:
                 memory = report.get("memoryUsedMb")
                 signature = report_signature(report)
                 if memory is not None and state.get("memoryReport") != signature:
-                    state["memorySamples"].append({"at": now, "memoryUsedMb": memory})
+                    state["memorySamples"].append({"at": now, "memoryUsedMb": memory, "nodeId": node_id})
                     state["memoryReport"] = signature
-            charged = job["chargedGpuHours"] * 3600
-            if charged <= state["throughSeconds"]:
-                continue
-            if prices is None:
-                try:
-                    prices = self.resources.prices()
-                except (OSError, ValueError):
-                    prices = {"revision": None, "gpus": [], "unavailable": True}
-            rate = next((row["usdPerHour"] for row in prices["gpus"] if row["nodeId"] == job["nodeId"]), None)
-            state["entries"].append(
-                {
-                    "startAt": min(now, state["lastObservedAt"]),
-                    "endAt": now,
-                    "gpuSeconds": charged - state["throughSeconds"],
-                    "throughSeconds": charged,
-                    "source": "lease-timeout" if charged > state["reportedSeconds"] else "node-report",
+            pending = [(attempt, now)]
+            if attempt and attempt["leaseId"] != state.get("leaseId"):
+                previous = next(
+                    (row for row in reversed(attempts) if row["leaseId"] == state.get("leaseId")), None,
+                )
+                if previous is not None:
+                    # Reconciliation can accrue the prior lease's timeout and assign
+                    # the next lease before either change reaches this transaction.
+                    pending.insert(0, (previous, previous["finishedAt"]))
+
+            for charged_attempt, at in pending:
+                if charged_attempt:
+                    if charged_attempt["leaseId"] != state.get("leaseId"):
+                        state.update(
+                            leaseId=charged_attempt["leaseId"], attemptThroughSeconds=0.0,
+                            lastObservedAt=max(state["lastObservedAt"], charged_attempt["startedAt"]),
+                        )
+                    attempt_seconds = charged_attempt["gpuSeconds"]
+                    delta = attempt_seconds - state.get("attemptThroughSeconds", 0.0)
+                    reported_seconds = charged_attempt["reportedGpuSeconds"]
+                    charged_node = charged_attempt["nodeId"]
+                else:
+                    attempt_seconds = job["chargedGpuHours"] * 3600
+                    delta = attempt_seconds - state["throughSeconds"]
+                    reported_seconds = state["reportedSeconds"]
+                    charged_node = node_id
+                if delta <= 0:
+                    continue
+                if prices is None:
+                    try:
+                        prices = self.resources.prices()
+                    except (OSError, ValueError):
+                        prices = {"revision": None, "gpus": [], "unavailable": True}
+                rate = next(
+                    (row["usdPerHour"] for row in prices["gpus"] if row["nodeId"] == charged_node), None,
+                )
+                through_seconds = state["throughSeconds"] + delta
+                entry = {
+                    "nodeId": charged_node,
+                    "startAt": min(at, state["lastObservedAt"]),
+                    "endAt": at,
+                    "gpuSeconds": delta,
+                    "throughSeconds": through_seconds,
+                    "source": "lease-timeout" if attempt_seconds > reported_seconds else "node-report",
                     "priceRevision": prices["revision"],
                     "usdPerHour": rate,
                     "priceReason": (
@@ -115,8 +151,11 @@ class CostLedger:
                     if rate is None
                     else None,
                 }
-            )
-            state.update(throughSeconds=charged, lastObservedAt=now)
+                if charged_attempt:
+                    entry.update(leaseId=charged_attempt["leaseId"], attemptThroughSeconds=attempt_seconds)
+                    state["attemptThroughSeconds"] = attempt_seconds
+                state["entries"].append(entry)
+                state.update(throughSeconds=through_seconds, lastObservedAt=at)
 
     @staticmethod
     def attribution(job):
@@ -140,12 +179,22 @@ class CostLedger:
             "job": job["jobId"],
         }
 
+    @staticmethod
+    def _nodes(job):
+        if job.get("source") == "runtime-import":
+            return {None}
+        attempts = job.get("attempts", [])
+        return {row["nodeId"] for row in attempts} if attempts else {job["nodeId"]}
+
     def _jobs(self, filters):
         self.manager.jobs._require_available()
         return [
             job
             for job in self._all_items()
-            if all(self.attribution(job)[key] == value for key, value in filters.items() if value is not None)
+            if all(
+                value in self._nodes(job) if key == "node" else self.attribution(job)[key] == value
+                for key, value in filters.items() if value is not None
+            )
         ]
 
     def _all_items(self):
@@ -173,24 +222,28 @@ class CostLedger:
         )
         return reporting_window(key, self.manager.jobs.clock(), start=start, end=end, earliest=earliest)
 
-    def aggregate(self, jobs, window, *, include_end=True):
+    def aggregate(self, jobs, window, *, include_end=True, node=None):
         seconds = reported = historical = unpriced = known_usd = 0.0
         peak, revisions, warnings = None, set(), set()
         for job in jobs:
             if job.get("source") == "runtime-import":
                 continue
             state = job["costLedger"]
+            attempts = {row["leaseId"]: row for row in job.get("attempts", [])}
             for entry in state["entries"]:
+                if node is not None and entry.get("nodeId", job["nodeId"]) != node:
+                    continue
                 fraction = overlap_fraction(entry, window.start, window.end, include_end=include_end)
                 if not fraction:
                     continue
                 delta = entry["gpuSeconds"] * fraction
                 seconds += delta
                 # Later accepted reports can confirm a conservative timeout prefix without recharging it.
-                confirmed = min(
-                    entry["gpuSeconds"],
-                    max(0, state["reportedSeconds"] - (entry["throughSeconds"] - entry["gpuSeconds"])),
-                )
+                attempt = attempts.get(entry.get("leaseId"))
+                reported_seconds = attempt["reportedGpuSeconds"] if attempt else state["reportedSeconds"]
+                through_seconds = entry.get("attemptThroughSeconds", entry["throughSeconds"])
+                confirmed = min(entry["gpuSeconds"],
+                                max(0, reported_seconds - (through_seconds - entry["gpuSeconds"])))
                 reported += confirmed * fraction
                 if entry["source"] == "historical-counter":
                     historical += delta
@@ -202,7 +255,8 @@ class CostLedger:
                 if entry["priceRevision"] is not None:
                     revisions.add(entry["priceRevision"])
             for sample in state["memorySamples"]:
-                if window.start <= sample["at"] <= window.end:
+                if (window.start <= sample["at"] <= window.end
+                        and (node is None or sample.get("nodeId", job["nodeId"]) == node)):
                     peak = max(peak or 0, sample["memoryUsedMb"])
         result = {
             **dict.fromkeys(LLM_FIELDS),
@@ -236,12 +290,16 @@ class CostLedger:
             )
             for dimension in DIMENSIONS
         }
+        choices["node"] = sorted({node for job in self._all_items() for node in self._nodes(job) if node})
         return {
             "version": 1,
             "window": window.document(),
             "filters": filters,
-            "totals": self.aggregate(jobs, window),
-            "cards": {key: self.aggregate(jobs, self.window(key)) for key in ("today", "7d", "all")},
+            "totals": self.aggregate(jobs, window, node=filters.get("node")),
+            "cards": {
+                key: self.aggregate(jobs, self.window(key), node=filters.get("node"))
+                for key in ("today", "7d", "all")
+            },
             "choices": choices,
             "availability": {
                 "llm": bool(
@@ -268,7 +326,7 @@ class CostLedger:
                     **self.aggregate(
                         jobs,
                         type(window)(window.key, start, end, window.bucket_seconds),
-                        include_end=end == window.end,
+                        include_end=end == window.end, node=filters.get("node"),
                     ),
                 }
                 for start, end in window.buckets()
@@ -279,11 +337,17 @@ class CostLedger:
         if by not in DIMENSIONS:
             raise PlanError("invalid_cost_dimension", "Use agent, model, node, goal, plan or job", status=422)
         groups = defaultdict(list)
+        selected_node = filters.get("node")
         for job in self._jobs(filters):
-            groups[self.attribution(job)[by]].append(job)
+            keys = (self._nodes(job) if not selected_node else {selected_node}) if by == "node" else (
+                self.attribution(job)[by],
+            )
+            for key in keys:
+                groups[key].append(job)
         rows = []
         for key, jobs in groups.items():
-            values = self.aggregate(jobs, window)
+            group_node = key if by == "node" else selected_node
+            values = self.aggregate(jobs, window, node=group_node)
             rows.append(
                 {
                     "key": key,
@@ -292,9 +356,9 @@ class CostLedger:
                     "jobs": [
                         {
                             "jobId": job["jobId"],
-                            "nodeId": job["nodeId"],
+                            "nodeId": group_node or job["nodeId"],
                             "status": job["status"],
-                            **self.aggregate([job], window),
+                            **self.aggregate([job], window, node=group_node),
                         }
                         for job in jobs
                         if job.get("source") != "runtime-import"

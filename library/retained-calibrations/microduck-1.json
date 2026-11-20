@@ -1,0 +1,146 @@
+{
+  "asset": "robot/microduck@1",
+  "assetContentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b",
+  "assetSourceEntrypoint": "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
+  "sourceRepository": "https://github.com/pollen-robotics/microduck_rl",
+  "sourceRevision": "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07",
+  "sourceEntrypoint": "src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
+  "sourceSha256": "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
+  "sourceLicenses": [
+    {
+      "scope": "project",
+      "license": "Apache-2.0",
+      "sourcePath": "LICENSE",
+      "document": "LICENSE",
+      "sha256": "2d3fd9ffffa70a4307498ec630b14a6b4731e010f8ddda92686eaf65733c2dfe"
+    },
+    {
+      "scope": "3D model files",
+      "license": "Creative Commons BY-SA-NC",
+      "sourcePath": "README.md",
+      "document": "README-LICENSE.md",
+      "sha256": "3b4dca96574e3b7ffc3e132f4a9d7a088334722faf62c4c1dfd88971ab5a5155"
+    }
+  ],
+  "mapping": {
+    "schema": "lw.joint-calibration/1",
+    "baseTransform": [
+      0.9961802141847969,
+      0.0,
+      -0.08732113642602385,
+      0.010478536371122862,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.08732113642602385,
+      0.0,
+      0.9961802141847969,
+      -0.0017696459377920248,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "joints": [
+      {
+        "jointKey": "/Asset/joints/left_hip_yaw",
+        "sourceName": "left_hip_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_hip_roll",
+        "sourceName": "left_hip_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_hip_pitch",
+        "sourceName": "left_hip_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_knee",
+        "sourceName": "left_knee",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_ankle",
+        "sourceName": "left_ankle",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/neck_pitch",
+        "sourceName": "neck_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_pitch",
+        "sourceName": "head_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_yaw",
+        "sourceName": "head_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_roll",
+        "sourceName": "head_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_yaw",
+        "sourceName": "right_hip_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_roll",
+        "sourceName": "right_hip_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_pitch",
+        "sourceName": "right_hip_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_knee",
+        "sourceName": "right_knee",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_ankle",
+        "sourceName": "right_ankle",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      }
+    ]
+  }
+}

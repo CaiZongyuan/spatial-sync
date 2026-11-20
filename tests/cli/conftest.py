@@ -47,6 +47,7 @@ def gateway_url(gateway_directory):
                 "SPATIAL_RECORDINGS_ROOT": str(directory / "recordings"),
                 "SPATIAL_STATE_ROOT": str(directory / "state"),
                 "LW_LIBRARY": str(directory / "user-library"),
+                "LW_TASK_AUDIT_FILE": str(directory / "task-audits.json"),
                 "LW_CATALOG": str(ROOT / "catalog" / "simready.json"),
             },
         )
@@ -68,6 +69,13 @@ def gateway_url(gateway_directory):
             yield url
         finally:
             stop(process)
+
+
+@pytest.fixture(autouse=True)
+def use_gateway_task_audits(request, isolated_recordings, monkeypatch):
+    if "gateway_directory" in request.fixturenames:
+        directory = request.getfixturevalue("gateway_directory")
+        monkeypatch.setenv("LW_TASK_AUDIT_FILE", str(directory / "task-audits.json"))
 
 
 @pytest.fixture

@@ -82,7 +82,7 @@ async def test_installed_clients_request_private_review_and_observe_actual_publi
                     "/World/Lab/RobotA/fr3/fr3_joint1"
                 ]
                 job = uploaded_job(http, tmp_path, spec=spec)
-                policy = invoke("policy", "create", job["jobId"] + "/checkpoints/model_0.pt")
+                policy = invoke("policy", "create", job["jobId"] + "/checkpoint-origin.json")
                 seeded = http.post("/fixture/controller-promotions/train", json={"policy": policy["id"]})
                 assert seeded.status_code == 200, seeded.text
                 assert seeded.json()["sourceStarts"] == 0 and seeded.json()["evidenceMode"] == "controlled"

@@ -87,6 +87,6 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
         return pack_package(output)
 
     job = uploaded_job(client, tmp_path, spec=spec, artifact_factory=artifacts)
-    created = client.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"})
+    created = client.post("/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"})
     assert created.status_code == 201, created.text
     return created.json(), "/api/v1/policies/training-probe/1/observation-checks"

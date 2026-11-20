@@ -58,12 +58,19 @@ def main():
     (output / "policy.onnx").write_bytes(b"fake ONNX contract payload")
     logs = Path.cwd() / "logs"
     logs.mkdir()
-    (logs / "model_0.pt").write_bytes(b"fake checkpoint contract payload")
+    legacy = logs / "model_0.pt"
+    legacy.write_bytes(b"fake checkpoint contract payload")
+    origin = output / "checkpoint-origin.json"
+    origin.write_text(json.dumps({
+        "schema": "lw.node-local-checkpoint/1", "jobId": inputs["job"]["jobId"],
+        "leaseId": inputs["job"]["leaseId"], "iteration": 0,
+        "checkpointSha256": hashlib.sha256(legacy.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
     (output / "export.json").write_text(
         json.dumps(
             {
-                "checkpoint": "checkpoints/model_0.pt",
-                "checkpointSha256": hashlib.sha256((logs / "model_0.pt").read_bytes()).hexdigest(),
+                "checkpoint": origin.name,
+                "checkpointSha256": hashlib.sha256(origin.read_bytes()).hexdigest(),
                 "policy": "policy.onnx",
                 "policySha256": hashlib.sha256((output / "policy.onnx").read_bytes()).hexdigest(),
                 "iteration": 0,

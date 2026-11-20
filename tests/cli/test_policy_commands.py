@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import zipfile
 
 import httpx
 from cli_support import LW, ROOT, result
@@ -45,11 +46,18 @@ async def test_installed_policy_cli_and_mcp_share_readback_and_rejection(
     ]
     with httpx.Client(base_url=gateway_url, trust_env=False) as http:
         job = uploaded_job(http, tmp_path, node_headers=NODE | {"X-Node-Token": token})
-        checkpoint = job["jobId"] + "/checkpoints/model_0.pt"
+        checkpoint = job["jobId"] + "/checkpoint-origin.json"
         policy = invoke("policy", "create", checkpoint)
         assert policy["qualified"] is False and not policy["idempotent"]
         assert invoke("policy", "create", checkpoint)["idempotent"]
         assert invoke("policy", "show", policy["id"])["checkpointSha256"] == policy["checkpointSha256"]
+        archive = tmp_path / "policy.zip"
+        assert invoke("policy", "export", policy["id"], str(archive)) == {
+            "id": policy["id"], "output": str(archive),
+        }
+        with zipfile.ZipFile(archive) as package:
+            assert json.loads(package.read("manifest.json"))["policyContentHash"] == policy["contentHash"]
+        assert invoke("policy", "export", policy["id"], str(archive), code=1)["error"]
         refused = invoke("policy", "promote", policy["id"], "--scene", policy["scene"], code=1)
         assert refused["error"]["statusCode"] == 409
         assert refused["error"]["detail"]["code"] == "candidate_not_accepted"

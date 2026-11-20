@@ -13,7 +13,11 @@ from copy import deepcopy
 from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
+from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
+from packages.training import checkpoints
+from packages.training.finalization import finalization_profile
+from packages.training.inputs import publish_attempt_artifacts
 from packages.training.job_contract import VALIDATION_ITERATIONS, VALIDATION_TIMEOUT
 from packages.training.node_telemetry import NodeTelemetryHistory
 from packages.training.runtime import (
@@ -37,6 +41,18 @@ def _secret_digest(secret):
 def _approved_extra(approval):
     details = approval.details
     return max(0, details["estimatedGpuHours"] - details["remainingGpuHours"])
+
+
+def unspent_reservation(job):
+    if not job.get("budgetReserved") or job["status"] in TERMINAL:
+        return 0.0
+    estimate = job.get("estimatedGpuHours") or 0.0
+    attempts = job.get("attempts", [])
+    if attempts and attempts[-1]["leaseId"] == job.get("leaseId"):
+        used = attempts[-1]["gpuSeconds"] / 3600
+    else:
+        used = 0.0 if attempts else job["chargedGpuHours"]
+    return max(0.0, estimate - used)
 
 
 class TrainingJobs:
@@ -228,12 +244,14 @@ class TrainingJobs:
         return self.get(identity)
 
     def document(self, job):
-        internal = ("plan", "lastNodeReport", "costLedger", "logTail")
+        internal = ("plan", "lastNodeReport", "costLedger", "logTail", "checkpointSource",
+                    "resumeTarget", "artifactLeaseId", "deniedProfileKey")
         value = deepcopy(
             {key: value for key, value in job.items() if key not in internal}
         ) | {
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
+        value.setdefault("attempts", [])
         if job["reason"] == "pending_approval":
             value["code"] = "pending_approval"
         return value
@@ -245,14 +263,18 @@ class TrainingJobs:
             raise PlanError("plan_not_approved", "The current training plan revision must be approved")
         return value
 
-    def request(self, plan_id, seed, actor, request_id, revision=None, *, kind="training", target_node=None):
+    def request(self, plan_id, seed, actor, request_id, revision=None, *, kind="training",
+                target_node=None, checkpoint=None):
         self._require_available()
+        if (kind == "checkpoint_finalize") != (checkpoint is not None):
+            raise PlanError("invalid_job", "Provide a Checkpoint only for checkpoint_finalize", status=422)
         for job in self.records.values():
             if job["requestId"] == request_id and job["requestedBy"] == actor.model_dump():
                 if (
                     job["planId"] != plan_id
                     or job["kind"] != kind
                     or job.get("targetNodeId") != target_node
+                    or job.get("checkpointRef") != checkpoint
                     or seed is not None
                     and job["seed"] != seed
                     or revision is not None
@@ -260,8 +282,18 @@ class TrainingJobs:
                 ):
                     raise PlanError("idempotency_conflict", "Request ID belongs to different job inputs")
                 return self.document(job)
+        source = self.select_checkpoint(checkpoint) if checkpoint else None
+        if source:
+            parent = self.get(source["jobId"])
+            source_seed = parent["seed"] if seed is None else seed
+            if (plan_id, revision or parent["planRevision"], source_seed) != (
+                parent["planId"], parent["planRevision"], parent["seed"],
+            ):
+                raise PlanError("checkpoint_inputs_mismatch", "Use the source Job's Plan and seed")
+            revision, seed = parent["planRevision"], parent["seed"]
         validation = kind == "plan_validation"
-        plan = self._validation_plan(plan_id, revision) if validation else self._approved_plan(plan_id)
+        plan = (self._validation_plan(plan_id, revision) if validation
+                else self._approved_plan(plan_id, revision if source else None))
         if not validation and revision is not None and plan["revision"] != revision:
             raise PlanError("plan_not_approved", "Select the current approved plan revision")
         if seed is None:
@@ -277,6 +309,7 @@ class TrainingJobs:
         if plan["hyperparameters"].get("device", "cuda") not in ("cuda", "cpu"):
             raise PlanError("invalid_job", "Training device must be explicitly cpu or cuda", status=422)
         task = self.manager.tasks.show(plan["task"])
+        self.manager.tasks.require_execution(task)
         scene = self.manager.library.resolve(task["task"]["scene"])
         backend = task["task"].get("mjlab") or task["task"].get("isaaclab") or {}
         is_mjlab = task["task"].get("mjlab") is not None
@@ -353,6 +386,12 @@ class TrainingJobs:
             "targetNodeId": target_node,
             "backend": "mjlab" if is_mjlab else "isaaclab",
         }
+        if source:
+            source_lease = {"leaseId": source["leaseId"], "runtimeIdentity": source["runtime"]}
+            if checkpoints.identity(job, source_lease)["inputsSha256"] != source["inputsSha256"]:
+                raise PlanError("checkpoint_inputs_mismatch", "Checkpoint differs from approved inputs")
+            finalization_profile(self.manager, job, source["runtime"], task=task)
+            job.update(checkpointRef=checkpoint, checkpointSource=source)
         if validation:
             job["validationLimits"] = {
                 "iterations": VALIDATION_ITERATIONS, "timeoutSeconds": VALIDATION_TIMEOUT,
@@ -384,19 +423,56 @@ class TrainingJobs:
             for item in self.records.values()
             if item["planId"] == job["planId"] and item["jobId"] != job["jobId"]
         ]
-        consumed = 0.0
+        consumed = job["chargedGpuHours"]
         for item in peers:
-            reserved = item["budgetReserved"] and item["status"] not in TERMINAL
-            estimate = (item["estimatedGpuHours"] or 0) if reserved else 0
-            consumed += max(item["chargedGpuHours"], estimate)
+            consumed += item["chargedGpuHours"] + unspent_reservation(item)
         return max(0, job["plan"]["budget"]["gpuHours"] - consumed)
 
-    def _budget(self, job, remaining, same_profile):
+    def select_checkpoint(self, reference):
+        job_id, _, sha256 = reference.partition("/")
+        job = self.get_committed(job_id)
+        for descriptor in job.get("checkpoints", []):
+            if descriptor["sha256"] == sha256:
+                return descriptor
+        raise PlanError("unknown_checkpoint", "Select a committed portable Checkpoint", status=404)
+
+    @staticmethod
+    def resume_source(job):
+        if job["kind"] == "checkpoint_finalize":
+            return job["checkpointSource"]
+        return job.get("checkpoints", [None])[-1] if job.get("checkpoints") else None
+
+    def resume(self, identity, target):
+        self._require_available()
+        job = self.get(identity)
+        if job["status"] != "suspended" or job["leaseId"]:
+            raise PlanError("job_not_suspended", "Select an unassigned suspended training Job")
+        if target and target != "local" and target not in self.node_credentials:
+            raise PlanError("unknown_node", "Select a registered Compute Node", status=404)
+        job["resumeTarget"] = target
+        self.reconcile()
+        self._queue_event(job)
+        self._save()
+        return self.document(job)
+
+    @staticmethod
+    def _resume_denial_applies(job, key, previous_profile, over_budget):
+        return over_budget or key == job.get("deniedProfileKey", previous_profile)
+
+    def _budget(self, job, remaining, previous_profile):
         estimate = job["estimatedGpuHours"]
         extra = max(0, estimate - remaining)
         over_budget = extra > GPU_HOUR_TOLERANCE
         approval = self.manager.approvals.records.get(job["approvalId"])
+        if approval and approval.status == "denied" and job["status"] == "suspended":
+            job.setdefault("deniedProfileKey", previous_profile)
+            if not self._resume_denial_applies(job, job["profileKey"], previous_profile, over_budget):
+                # Detach the gate from this dispatch. Its original denial remains in the Approval inbox.
+                job["approvalId"] = None
+                job.pop("deniedProfileKey", None)
+                approval = None
         if approval:
+            same_profile = job["profileKey"] == previous_profile
             superseded = (
                 approval.status == "unavailable"
                 or approval.status in ("pending", "approved") and not same_profile
@@ -442,7 +518,8 @@ class TrainingJobs:
         now = self.clock()
         for node in self.nodes.values():
             self._expire_leases(node, now)
-        queued = [job for job in self.records.values() if job["status"] == "queued" and not job["leaseId"]]
+        queued = [job for job in self.records.values()
+                  if job["status"] in ("queued", "suspended") and not job["leaseId"]]
         # Rebuild queued reservations in order. Leased jobs keep their pinned amount.
         for job in queued:
             job["budgetReserved"] = False
@@ -460,15 +537,26 @@ class TrainingJobs:
                 job.update(status="cancelled", reason="plan_not_approved", finishedAt=now)
                 self._queue_event(job)
                 continue
-            target = job.get("targetNodeId")
+            target = job.get("resumeTarget") if job["status"] == "suspended" else job.get("targetNodeId")
             if target and target != "local" and target not in self.node_credentials:
+                if job["status"] == "suspended":
+                    job["reason"] = "node_unavailable"
+                    continue
                 job.update(status="cancelled", reason="node_revoked", finishedAt=now)
                 self._queue_event(job)
                 continue
+            if job["kind"] == "checkpoint_finalize":
+                try:
+                    finalization_profile(self.manager, job, job["checkpointSource"]["runtime"])
+                except (PlanError, LibraryError) as error:
+                    job.update(status="failed", reason=error.detail["code"], finishedAt=now)
+                    self._queue_event(job)
+                    continue
             self._schedule(job, now, validation)
 
     def _schedule(self, job, now, validation):
-        target = job.get("targetNodeId")
+        source = self.resume_source(job)
+        target = job.get("resumeTarget") if job["status"] == "suspended" else job.get("targetNodeId")
         reason = "estimate_unavailable"
         if validation or target and target not in self.nodes:
             reason = "node_unavailable"
@@ -490,6 +578,9 @@ class TrainingJobs:
             except RuntimeMismatch as error:
                 reason = error.code
                 continue
+            if source and (node.get("checkpointVersion") != 1 or runtime != source["runtime"]):
+                reason = "checkpoint_runtime_mismatch"
+                continue
             for resource in resources:
                 key = runtime_profile_key(job["plan"], job["taskContentHash"], node, resource, runtime)
                 profiles = (self.validation_profiles.get(key), node["profiles"].get(key))
@@ -505,25 +596,30 @@ class TrainingJobs:
             return
         remaining = self._remaining_gpu_hours(job) if not validation else 0
         approval = self.manager.approvals.records.get(job["approvalId"])
+        previous_profile = job["profileKey"]
+        denied_resume = approval is not None and approval.status == "denied" and job["status"] == "suspended"
 
         def priority(candidate):
             blocker, _, _, key, measured, _ = candidate
             if validation:
-                return (blocker is not None, False, 0)
+                return (blocker is not None, False, False, 0)
             cost = self._estimate(job, measured)["estimatedGpuHours"]
             approved = (
                 _approved_extra(approval)
-                if approval and approval.status == "approved" and job["profileKey"] == key else 0
+                if approval and approval.status == "approved" and previous_profile == key else 0
             )
             needs_approval = cost - remaining - approved > GPU_HOUR_TOLERANCE
-            return (blocker is not None, needs_approval, cost)
+            denied = denied_resume and self._resume_denial_applies(job, key, previous_profile, needs_approval)
+            return (blocker is not None, denied, needs_approval, cost)
 
         selected = min(candidates, key=priority)
         blocker, node, resource, key, measured, runtime = selected
         if not validation:
-            same_profile = job["profileKey"] == key
+            if source and blocker:
+                job["reason"] = blocker
+                return
             job.update(self._estimate(job, measured), profileKey=key, profile=deepcopy(measured))
-            if not self._budget(job, remaining, same_profile):
+            if not self._budget(job, remaining, previous_profile):
                 return
         if blocker:
             job["reason"] = blocker
@@ -548,6 +644,8 @@ class TrainingJobs:
         return None
 
     def _reserve_resource(self, job, node, resource, now, runtime):
+        source = self.resume_source(job)
+        log_after = len(self.read_logs(job["jobId"])) if source and job["kind"] == "training" else 0
         # This boundary shares ownership with the registration thread, without I/O or library locks.
         with self.manager._resource_lock:
             if reason := self._resource_blocker(node, resource, now):
@@ -556,11 +654,33 @@ class TrainingJobs:
             self.lease_sequence += 1
             lease = {"jobId": job["jobId"], "leaseId": str(self.lease_sequence), "assignedAt": now,
                      "quarantined": False}
-            if node["id"] != "local" and resource["id"] != "cpu":
+            start_iteration = source["iteration"] if source else 0
+            lease["startIteration"] = start_iteration
+            portable = (
+                runtime and runtime["backend"] == "mjlab" and node.get("checkpointVersion") == 1
+                and job["kind"] in ("training", "checkpoint_finalize")
+            )
+            if portable:
+                lease.update(checkpointVersion=1, logAfter=log_after)
+                if source:
+                    lease["resumeCheckpoint"] = source
+            if (node["id"] != "local" or portable) and resource["id"] != "cpu":
                 lease["cleanupVersion"] = 1
             if runtime:
                 lease.update(runtime, runtimeIdentity=runtime)
             node["leases"][resource["id"]] = lease
+            job.setdefault("attempts", []).append({
+                "leaseId": lease["leaseId"], "nodeId": node["id"], "instanceId": node["instanceId"],
+                "hardware": {
+                    "summary": node["hardware"], "resourceId": resource["id"],
+                    "model": resource.get("name"), "computeCapability": resource.get("computeCapability"),
+                },
+                "startIteration": start_iteration, "endIteration": start_iteration,
+                "startedAt": now, "finishedAt": None, "gpuSeconds": 0.0, "reportedGpuSeconds": 0.0,
+            })
+            job.pop("lastNodeReport", None)
+            if source and job["kind"] == "training":
+                job["metrics"]["iteration"] = start_iteration
             job.update(nodeId=node["id"], resourceId=resource["id"], leaseId=lease["leaseId"],
                        resourceModel=resource.get("name") if job["executionDevice"] == "cuda" else None,
                        reason="node_starting")
@@ -612,7 +732,7 @@ class TrainingJobs:
     def _fence_lease(self, node, resource, reason, now):
         lease = node["leases"][resource]
         self._fail_lease(lease, reason, now)
-        if node["id"] == "local":
+        if node["id"] == "local" and not lease.get("checkpointVersion"):
             lease.update(quarantined=True, cleanupOnly=True)
             return
         if resource != "cpu":
@@ -655,16 +775,55 @@ class TrainingJobs:
             del self.gpu_quarantine[body.leaseId]
             self._save()
 
+    @staticmethod
+    def _attempt(job, lease_id):
+        attempts = job.get("attempts", [])
+        return attempts[-1] if attempts and attempts[-1]["leaseId"] == lease_id else None
+
+    def _record_elapsed(self, job, lease, seconds, *, reported):
+        attempt = self._attempt(job, lease["leaseId"])
+        if job["executionDevice"] != "cuda":
+            return
+        if attempt is None:
+            job["chargedGpuHours"] = max(job["chargedGpuHours"], seconds / 3600)
+            return
+        if reported:
+            attempt["reportedGpuSeconds"] = max(attempt["reportedGpuSeconds"], seconds)
+        previous = attempt["gpuSeconds"]
+        attempt["gpuSeconds"] = max(previous, seconds)
+        job["chargedGpuHours"] += (attempt["gpuSeconds"] - previous) / 3600
+
     def _fail_lease(self, lease, reason, now):
         job = self.records[lease["jobId"]]
-        if job["status"] not in TERMINAL:
-            job.update(status="failed", reason=reason, finishedAt=now)
-            if job["executionDevice"] == "cuda":
-                job["chargedGpuHours"] = max(job["chargedGpuHours"], (now - lease["assignedAt"]) / 3600)
-            self._queue_event(job)
+        if job["status"] in TERMINAL:
+            return
+        self._record_elapsed(job, lease, now - lease["assignedAt"], reported=False)
+        if attempt := self._attempt(job, lease["leaseId"]):
+            attempt["finishedAt"] = now
+        if (lease.get("checkpointVersion") and job["kind"] == "training"
+                and job.get("checkpoints") and not job["cancelRequested"]):
+            job.update(status="suspended", reason=reason, finishedAt=None, leaseId=None,
+                       nodeId=None, resourceId=None, resourceModel=None, budgetReserved=False,
+                       estimatedGpuHours=None, estimatedWallSeconds=None, profileKey=None, profile=None,
+                       artifacts=[], versions=None)
+            if job["approvalId"]:
+                self.manager.approvals.set_status(job["approvalId"], "unavailable")
+                job["approvalId"] = None
+            job.pop("artifactLeaseId", None)
+            job.pop("lastNodeReport", None)
+        else:
+            status = "cancelled" if lease.get("checkpointVersion") and job["cancelRequested"] else "failed"
+            job.update(status=status, reason=reason, finishedAt=now, budgetReserved=False)
+        self._queue_event(job)
 
     def _estimate(self, job, profile):
+        source = self.resume_source(job)
         iterations = job["plan"]["hyperparameters"]["max_iterations"]
+        if job["kind"] == "checkpoint_finalize":
+            # A bounded inference rollout generates the native witnesses.
+            iterations = 1
+        elif source:
+            iterations -= source["iteration"]
         wall = (
             profile.get("dispatchOverheadSeconds", 0) + profile["setupSeconds"]
             + profile["iterationSeconds"] * iterations
@@ -824,7 +983,7 @@ class TrainingJobs:
             elapsed = report.elapsedSeconds
             if (
                 elapsed is not None and report.status != "cleaned"
-                and elapsed < job["metrics"].get("elapsedSeconds", 0)
+                and elapsed < (last_report or {}).get("elapsedSeconds", 0)
             ):
                 raise PlanError("invalid_node_report", "Job elapsed time cannot decrease", status=422)
             if report.status == "succeeded" and "runtimeIdentity" in lease:
@@ -848,10 +1007,26 @@ class TrainingJobs:
                         "trainer_version_mismatch", "Trainer changed on the leased node", status=422
                     )
             self._check_validation(job, lease, report, now)
-            if report.status == "succeeded" and job["kind"] == "training" and not job["artifacts"]:
+            if report.status == "succeeded" and job["kind"] in ("training", "checkpoint_finalize") and (
+                not job["artifacts"]
+                or lease.get("checkpointVersion") and job.get("artifactLeaseId") != lease["leaseId"]
+            ):
                 raise PlanError(
                     "artifacts_incomplete", "Upload verified artifacts before success", status=422
                 )
+            if report.logAfter < lease.get("logAfter", 0):
+                raise PlanError("invalid_log_cursor", "Logs precede the current attempt", status=422)
+            if lease.get("checkpointVersion"):
+                last_iteration = (
+                    lease["startIteration"] if job["kind"] == "checkpoint_finalize"
+                    else job["plan"]["hyperparameters"]["max_iterations"]
+                )
+                if report.status == "succeeded" and report.iteration != last_iteration:
+                    raise PlanError("invalid_node_report", "Success did not reach the lease end", status=422)
+                if report.iteration is not None and not (
+                    lease["startIteration"] <= report.iteration <= last_iteration
+                ):
+                    raise PlanError("invalid_node_report", "Iteration exceeds the lease range", status=422)
             self._log_suffix(job, report.logAfter, report.logs)
             fresh.append((job, report, data))
         if node is None:
@@ -881,6 +1056,7 @@ class TrainingJobs:
             isaaclabVersions=body.isaaclabVersions,
             compilerHash=body.compilerHash,
             trainingEntries=body.trainingEntries,
+            checkpointVersion=body.checkpointVersion,
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )
         for profile in body.profiles:
@@ -897,10 +1073,18 @@ class TrainingJobs:
             ) if key in data}
             metrics = job["metrics"]
             elapsed = report.elapsedSeconds
+            lease = node["leases"][job["resourceId"]]
+            attempt = self._attempt(job, lease["leaseId"])
             if elapsed is not None:
-                metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), elapsed)
-                if job["executionDevice"] == "cuda":
-                    job["chargedGpuHours"] = max(job["chargedGpuHours"], elapsed / 3600)
+                previous_elapsed = 0 if not attempt else attempt.get("elapsedSeconds", 0)
+                if attempt is not None:
+                    attempt["elapsedSeconds"] = max(previous_elapsed, elapsed)
+                    metrics["elapsedSeconds"] = sum(row.get("elapsedSeconds", 0) for row in job["attempts"])
+                else:
+                    metrics["elapsedSeconds"] = max(metrics.get("elapsedSeconds", 0), elapsed)
+                self._record_elapsed(job, lease, elapsed, reported=True)
+            if attempt and report.iteration is not None:
+                attempt["endIteration"] = max(attempt["endIteration"], report.iteration)
             if report.status != "cleaned":
                 measurements = {"memoryUsedMb": report.memoryUsedMb}
                 if report.iteration is not None and report.iteration >= metrics.get("iteration", 0):
@@ -916,11 +1100,16 @@ class TrainingJobs:
                 job.update(status="running", reason=report.reason, startedAt=job["startedAt"] or now)
             elif report.status in TERMINAL or report.status == "cleaned":
                 if job["status"] not in TERMINAL:
+                    if report.status == "succeeded" and lease.get("checkpointVersion"):
+                        publish_attempt_artifacts(self.manager, job)
                     job.update(
                         status=report.status if report.status != "cleaned" else "failed",
                         reason=report.reason,
                         finishedAt=now,
                     )
+                if attempt and attempt["finishedAt"] is None:
+                    attempt["finishedAt"] = now
+                job["budgetReserved"] = False
                 with self.manager._resource_lock:
                     del node["leases"][job["resourceId"]]
             job["lastNodeReport"] = data
@@ -951,6 +1140,8 @@ class TrainingJobs:
                        if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
                     **({"cleanupOnly": True, "quarantined": lease["quarantined"]}
                        if lease.get("cleanupOnly") or identity == "local" and lease["quarantined"] else {}),
+                    **({"logAfter": lease["logAfter"], "startIteration": lease["startIteration"]}
+                       if lease.get("checkpointVersion") else {}),
                     **self._cleanup_offer(node, gpu, lease),
                 }
                 for gpu, lease in node["leases"].items()
@@ -1101,7 +1292,8 @@ class TrainingJobs:
         self._require_available()
         job = self.get(approval.subjectId)
         current = self.manager.approvals.records[approval.approvalId]
-        if job["approvalId"] != approval.approvalId or job["status"] != "queued" or job["leaseId"]:
+        if (job["approvalId"] != approval.approvalId
+                or job["status"] not in ("queued", "suspended") or job["leaseId"]):
             raise ApprovalConflict("This job approval can no longer be changed")
         expected = {"approve": "approved", "deny": "denied", "revoke": "revoked"}[decision]
         if current.status == expected:
@@ -1109,6 +1301,8 @@ class TrainingJobs:
         if current.status != "pending" and decision != "revoke":
             raise ApprovalConflict("Job approval already processed")
         self.manager.approvals.decide(approval.approvalId, decision, actor, note)
+        if decision == "revoke":
+            job.pop("deniedProfileKey", None)
         self.reconcile()
         self._queue_event(job)
         self._save()
@@ -1118,7 +1312,7 @@ class TrainingJobs:
         return bool(
             job
             and job["approvalId"] == approval.approvalId
-            and job["status"] == "queued"
-            and not self._has_lease(job)
+            and job["status"] in ("queued", "suspended")
+            and not job["leaseId"]
             and approval.status in ("approved", "denied")
         )

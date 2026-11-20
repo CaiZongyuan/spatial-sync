@@ -288,7 +288,7 @@ async def _upload_policy(
     )
     assert fin.status_code == 200, fin.text
     pol_resp = await client.post(
-        "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoints/model_0.pt"}
+        "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"}
     )
     assert pol_resp.status_code == 201, pol_resp.text
     return pol_resp.json(), plan

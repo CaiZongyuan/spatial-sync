@@ -59,8 +59,10 @@ def install_training_view_routes(app, manager, views, role_for, authenticate_nod
         await websocket.accept()
         if job["status"] != "running":
             try:
+                suspended = job["status"] == "suspended"
                 await views.send(websocket, views.envelope(
-                    job, "ended", {"status": job["status"], "reason": job["reason"]},
+                    job, "status" if suspended else "ended",
+                    {"state": "stale"} if suspended else {"status": job["status"], "reason": job["reason"]},
                 ))
             except PlanError as error:
                 await websocket.close(code=1011, reason=error.detail["code"])

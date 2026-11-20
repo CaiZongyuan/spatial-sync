@@ -870,3 +870,45 @@ prior process evidence is retained in Git history.
 Close owned sessions, stop owned processes and verify listeners and Runner
 children are gone. Preserve unrelated services. A retained preview needs an
 explicit owner and address. Passing local checks does not claim remote CI.
+
+## Portable training Checkpoints
+
+The GPU-free HTTP acceptance runs against a fake clock and two authenticated
+Compute Nodes. The pinned trainer command runs real CPU PPO with a small
+synthetic vector environment, plus the normal bridge save and finalize hooks.
+
+```bash
+.venv/bin/python -m pytest tests/gateway/test_checkpoint_jobs.py -q --durations=2
+CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$PWD" \
+  "$MJLAB_PYTHON" tests/sim_runtime/checkpoint_cpu_smoke.py
+```
+
+Portable dispatch requires the managed mjlab entry and an equal runtime identity
+on both nodes. The trainer pins are mjlab 1.3.0, MuJoCo 4.0.1, MuJoCo Warp 3.8.1,
+Warp 1.12.0, Torch 2.9.1 and RSL-RL 5.0.1. Each Checkpoint contains a bounded
+safetensors file and a JSON manifest. Restore starts a fresh rollout with the
+saved model, optimizer, normalizers, learning rate and curriculum counters.
+The result is statistical continuation. Older Job artifacts are addressable by
+their existing paths. The managed legacy runner exports a JSON source reference
+for its node-local checkpoints.
+
+```bash
+.venv/bin/lw job ls --status suspended --json
+.venv/bin/lw job show "$JOB_ID" --json
+.venv/bin/lw job resume "$JOB_ID" --node "$SECOND_NODE_ID" --json
+.venv/bin/lw job start "$PLAN_ID" --kind checkpoint_finalize \
+  --checkpoint "$JOB_ID/$CHECKPOINT_SHA256" --node "$SECOND_NODE_ID" --json
+```
+
+For the Epic's physical acceptance, register two separately authenticated
+Linux GPU nodes against the same gateway using the current checkout and
+the same pinned managed trainer. Start each node with
+`python -m apps.node.runner --url "$GATEWAY" --root "$NODE_ROOT" --node-id "$NODE_ID" --mjlab-trainer "$TRAINER_PREFIX_JSON"`.
+Measure a validation profile on each device for the exact approved Task,
+configuration and environment count. With an appropriately approved budget,
+dispatch training on A and record a committed Checkpoint. Use the owner handle
+to disconnect A, wait for the recorded suspension and check the old lease
+fence. Resume on B with a greater lease ID and record both iteration ranges,
+runtime identities and per-node GPU charges. For the selected checkpoint,
+record the ONNX and 256 distinct native witness results from a finalize Job.
+Use a separate slower-profile case to observe the extra-budget Approval Gate.
