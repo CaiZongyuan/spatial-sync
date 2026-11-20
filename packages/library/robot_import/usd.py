@@ -55,6 +55,9 @@ def load(source, entry, meters_per_unit=None):
     colliders = {}
     for path, name in derived.collider_names_by_path.items():
         prim = stage.GetPrimAtPath(path)
+        if path not in derived.body_names_by_path and prim.HasAPI(UsdPhysics.MassAPI):
+            if UsdPhysics.MassAPI(prim).GetMassAttr().Get() not in (None, 0.):
+                raise invalid("USD collider mass is outside the supported robot import subset", path=path)
         mesh = UsdPhysics.MeshCollisionAPI(prim)
         approximation = mesh.GetApproximationAttr().Get() if mesh else None
         contact = bound_contact_material(prim)
@@ -77,8 +80,7 @@ def load(source, entry, meters_per_unit=None):
             body.mass = None
         center = mass.GetCenterOfMassAttr().Get()
         if center is None or tuple(center) == (-math.inf,) * 3:
-            if body.mass is None:
-                body.center = None
+            body.center = None
         elif not all(math.isfinite(value) for value in center):
             raise invalid("USD center of mass must be finite", path=path)
         diagonal = mass.GetDiagonalInertiaAttr().Get()

@@ -140,8 +140,16 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
     if len(roots) != 1:
         raise invalid("Expected exactly one MJCF robot root", path=entry)
     for index in range(model.ngeom):
-        if model.geom_bodyid[index] == 0 and model.geom_type[index] != mujoco.mjtGeom.mjGEOM_PLANE:
+        body = int(model.geom_bodyid[index])
+        if body == 0 and model.geom_type[index] != mujoco.mjtGeom.mjGEOM_PLANE:
             raise invalid("An MJCF robot archive can only include a world floor plane", path=entry)
+        dimension = int(model.geom_condim[index])
+        if dimension > 3 and (model.geom_contype[index] or model.geom_conaffinity[index]):
+            geom = model.geom(index).name or str(index)
+            raise invalid(
+                f"MJCF condim={dimension} requires unsupported torsional or rolling contact friction",
+                path=f"{names.get(body, 'world')}/{geom}",
+            )
     if standing_key is not None:
         identifier = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, standing_key)
         if identifier < 0:

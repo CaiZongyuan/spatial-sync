@@ -71,7 +71,7 @@ def inertial(body, density, length, kilograms, path):
     center = body.center * length if body.center is not None else None
     inertia = body.inertia * kilograms * length**2 if body.inertia is not None else None
     estimated = mass is None or inertia is None
-    if estimated:
+    if estimated or center is None:
         parts = []
         for shape in body.shapes:
             if shape.collision:
@@ -80,9 +80,9 @@ def inertial(body, density, length, kilograms, path):
                 mesh.apply_scale(length)
                 parts.append(mesh.mass_properties)
         volume = sum(part.volume for part in parts)
-        if volume <= 0:
+        if estimated and volume <= 0:
             raise invalid("Missing inertia requires volumetric collision geometry", path=path)
-        if center is None:
+        if center is None and volume > 0:
             center = sum((part.volume * part.center_mass for part in parts), np.zeros(3)) / volume
         if mass is None:
             mass = (body.density if body.density is not None else density) * volume

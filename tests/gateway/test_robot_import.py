@@ -305,8 +305,8 @@ def test_mjcf_inferred_inertia_uses_recipe_density_and_keeps_authored_mass(clien
     assert client.get(item["files"]["source/probe.xml"]).content == model
 
 
-@pytest.mark.parametrize("zero_mass", [False, True])
-def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_path, zero_mass):
+@pytest.mark.parametrize("mass_mode", ["implicit", "zero", "collider"])
+def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_path, mass_mode):
     import mujoco
     import numpy as np
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
@@ -329,14 +329,24 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
         UsdPhysics.CollisionAPI.Apply(collider.GetPrim())
         mass = UsdPhysics.MassAPI.Apply(link.GetPrim())
         mass.CreateDiagonalInertiaAttr(Gf.Vec3f(8, 9, 10))
-        mass.CreateCenterOfMassAttr(Gf.Vec3f(1, 2, 3))
+        if name != "tip":
+            mass.CreateCenterOfMassAttr(Gf.Vec3f(1, 2, 3))
         if name == "arm":
-            if zero_mass:
+            if mass_mode == "zero":
                 mass.CreateMassAttr(0.)
             mass.CreateDensityAttr(.001)
             mass.CreatePrincipalAxesAttr(Gf.Quatf(math.sqrt(.5), Gf.Vec3f(0, 0, math.sqrt(.5))))
+            if mass_mode == "collider":
+                UsdPhysics.MassAPI.Apply(collider.GetPrim()).CreateMassAttr(.9)
         else:
             mass.CreateMassAttr(1.)
+        if name == "tip":
+            collider.AddTranslateOp().Set(Gf.Vec3d(4, 0, 0))
+            small_box = UsdGeom.Cube.Define(stage, "/Robot/tip/small_box")
+            small_box.CreateSizeAttr(4)
+            small_box.AddTranslateOp().Set(Gf.Vec3d(13, 0, 0))
+            UsdPhysics.CollisionAPI.Apply(small_box.GetPrim())
+            UsdPhysics.MassAPI.Apply(small_box.GetPrim()).CreateMassAttr(0.)
     fixed = UsdPhysics.FixedJoint.Define(stage, "/Robot/anchor")
     fixed.CreateBody1Rel().SetTargets(["/Robot/base"])
     fixed.CreateLocalPos0Attr(Gf.Vec3f(0, 0, 20))
@@ -363,6 +373,13 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     manifest["calibration"] = {"density": 250.}
     package["robot.json"] = json.dumps(manifest).encode()
     reply = upload(client, package)
+    if mass_mode == "collider":
+        assert reply.status_code == 422, reply.text
+        problem, = reply.json()["detail"]["problems"]
+        assert problem["path"] == "/Robot/arm/box"
+        assert "collider mass" in problem["message"]
+        assert client.get("/api/v1/library/assets/robot/calibration-probe/1").status_code == 404
+        return
     assert reply.status_code == 200, reply.text
     item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
     assert client.get(item["files"]["source/probe.usda"]).content == source
@@ -372,6 +389,11 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     path.write_bytes(client.get(item["files"]["asset.usda"]).content)
     derived = derive_usd_mjcf(path)
     model = derived.to_mjmodel()
+    tip = model.body(derived.body_names_by_path["/Asset/links/tip"]).id
+    assert model.body_mass[tip] == pytest.approx(.5)
+    # The larger cube is eight times the volume of the small cube.
+    assert model.body_ipos[tip] == pytest.approx([.05, 0, 0])
+    assert model.body_inertia[tip] == pytest.approx([.0004, .00045, .0005])
     arm = model.body(derived.body_names_by_path["/Asset/links/arm"]).id
     assert model.body_mass[arm] == pytest.approx(.256)
     assert model.body_ipos[arm] == pytest.approx([.01, .02, .03])
@@ -396,6 +418,47 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     mujoco.mj_forward(model, data)
     assert data.qfrc_actuator.tolist() == pytest.approx([.3, .9])
     assert data.qfrc_passive.tolist() == pytest.approx([-1e-5 * 180 / math.pi, -.3])
+
+
+@pytest.mark.parametrize("condim", [3, 4, 6])
+def test_mjcf_robot_import_requires_supported_contact_friction(client, tmp_path, condim):
+    import mujoco
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    source = f"""<mujoco>
+      <default><geom condim="{condim}" friction=".8 .3 .2"/></default>
+      <worldbody><body name="base"><freejoint/>
+        <geom name="base-box" type="box" size=".1 .1 .1" mass="2"/>
+        <geom name="visual" size=".05" condim="6" contype="0" conaffinity="0" mass="0"/>
+        <body name="tip" pos=".3 0 0"><joint name="motor-a"/>
+          <geom size=".05" condim="3" mass=".25"/>
+        </body>
+      </body></worldbody>
+    </mujoco>""".encode()
+    native = mujoco.MjModel.from_xml_string(source.decode())
+    box = native.geom("base-box").id
+    assert native.geom_condim[box] == condim
+    assert native.geom_friction[box] == pytest.approx([.8, .3, .2])
+    reply = upload(client, files("probe.xml", source))
+    url = "/api/v1/library/assets/robot/calibration-probe/1"
+    if condim > 3:
+        assert reply.status_code == 422, reply.text
+        problem, = reply.json()["detail"]["problems"]
+        assert problem["path"] == "base/base-box"
+        assert f"condim={condim}" in problem["message"]
+        assert client.get(url).status_code == 404
+        return
+    assert reply.status_code == 200, reply.text
+    files_readback = client.get(url).json()["files"]
+    assert client.get(files_readback["source/probe.xml"]).content == source
+    path = tmp_path / "readback.usda"
+    path.write_bytes(client.get(files_readback["asset.usda"]).content)
+    derived = derive_usd_mjcf(path)
+    model = derived.to_mjmodel()
+    box, = [name for prim, name in derived.collider_names_by_path.items() if "/base/" in prim]
+    assert model.geom(box).condim[0] == 3
+    assert model.geom(box).friction[0] == pytest.approx(.8)
 
 
 def test_policy_export_checks_scene_coordinates_of_explicit_calibration(client, tmp_path):
