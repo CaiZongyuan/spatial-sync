@@ -52,7 +52,7 @@ export interface EvaluationScore {
   episodes: number;
   score: number;
   ci95: [number, number] | null;
-  decision: 'baseline' | 'accepted' | 'rejected' | 'reported';
+  decision: 'baseline_candidate' | 'baseline' | 'accepted' | 'rejected' | 'reported';
   reference?: string | null;
   phases?: Record<string, { passed: number; episodes: number; rate: number }>;
   recordings: string[];

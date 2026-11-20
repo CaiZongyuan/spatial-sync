@@ -103,12 +103,17 @@ class EvaluationStore:
                 row
                 for row in reversed(self.rows)
                 if row["key"] == key
-                and (row["decision"] in ("baseline", "accepted")
-                     or row["decision"] == "baseline_candidate" and self.is_initial_reference(row))
+                and self.score_decision(row) in ("baseline", "accepted")
                 and comparison_identity(row) == requested
             ),
             None,
         )
+
+    def score_decision(self, row):
+        decision = row.get("decision")
+        if decision == "baseline_candidate" and self.is_initial_reference(row):
+            return "baseline"
+        return decision
 
     def append(self, row):
         with self._reference_lock:

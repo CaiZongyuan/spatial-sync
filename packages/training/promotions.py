@@ -713,9 +713,13 @@ class ControllerPromotions:
                     result["error"] = {"code": error.detail["code"]}
         evidence = value["context"].get("testEvidence")
         if evidence:
-            result["train"] = {key: deepcopy(value["context"][field])
-                               for key, field in (("candidate", "currentAccepted"),
-                                                  ("reference", "priorReference"))}
+            decision = self.manager.evaluations.store.score_decision
+            result["train"] = {}
+            for side, field in (("candidate", "currentAccepted"), ("reference", "priorReference")):
+                row = deepcopy(value["context"][field])
+                if row is not None:
+                    row["decision"] = decision(row)
+                result["train"][side] = row
             result["test"] = {side: item["result"] for side, item in evidence.items()}
             result["candidateBelowReference"] = "reference" in evidence and (
                 evidence["candidate"]["result"]["score"] < evidence["reference"]["result"]["score"]
@@ -830,7 +834,13 @@ class ControllerPromotions:
                 value["deployment"] = {"scene": result["scene"], "controller": result["controller"]}
             else:
                 value["error"] = result.get("error", {"code": "publication_incomplete"})
-            return self._save(value)
+            saved = self._save(value)
+            if result["phase"] == "committed" and value["context"]["priorReference"] is None:
+                evaluation = value["context"]["currentAccepted"]["evaluationId"]
+                record = self.manager.evaluations.store.records.get(evaluation)
+                if record is not None:
+                    self.manager.notebooks.observe(record)
+            return saved
         except (PlanError, LibraryError) as error:
             value.update(status="blocked", error={"code": error.detail["code"]})
             return self._save(value)

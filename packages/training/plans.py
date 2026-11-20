@@ -12,6 +12,7 @@ from packages.info.plans import PlanError
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
 from packages.protocol.schema import Actor
+from packages.training.loop_budgets import goal_id
 from packages.training.schema import TrainingPlan
 
 
@@ -134,10 +135,21 @@ class TrainingPlanStore:
             value.setdefault("id", plan_id or "plan-" + uuid.uuid4().hex[:16])
             value["revision"] = previous_revision.plan.revision + 1 if previous_revision else 1
             try:
+                task_snapshot = None
+                evaluation = value.get("evaluation")
+                if (self.goal_suites is not None and value.get("program") is None
+                        and isinstance(evaluation, dict) and "episodes" not in evaluation
+                        and isinstance(value.get("task"), str)):
+                    task_snapshot = self.tasks.show(value["task"])
+                    task = task_snapshot["task"]
+                    frozen = self.goal_suites.frozen_for(goal_id(value), task["implements"])
+                    if task.get("declarative") and frozen is not None:
+                        value["evaluation"] = evaluation | {"episodes": frozen[1]["episodes"]}
                 plan = TrainingPlan.model_validate(value)
                 if plan.status != "draft" or (plan_id and plan.id != plan_id):
                     raise ValueError("Submit draft content; identity and lifecycle are server-owned")
-                task_snapshot = self.tasks.show(plan.task)
+                if task_snapshot is None:
+                    task_snapshot = self.tasks.show(plan.task)
                 self._require_program(plan, task_snapshot)
                 task = task_snapshot["task"]
                 if plan.evaluation.scene != task["scene"]:

@@ -9,7 +9,7 @@ import '../robot-resources.css';
 function ControllerEvaluation({ version }: { version: ControllerVersion }) {
   const evidence = version.evaluationEvidence;
   if (evidence?.status !== 'measured' || evidence.score == null || !evidence.suite) return <>公开 train 成绩未知</>;
-  const decision = ({ accepted: '已接受', rejected: '已拒绝', baseline: '基线', reported: '已报告' } as Record<string, string>)[evidence.decision ?? ''] ?? evidence.decision;
+  const decision = ({ baseline_candidate: '首轮候选', accepted: '已接受', rejected: '已拒绝', baseline: '基线', reported: '已报告' } as Record<string, string>)[evidence.decision ?? ''] ?? evidence.decision;
   return <><strong>{evidence.successes} / {evidence.episodes} · {(evidence.score * 100).toFixed(1)}%</strong>
     <small>公开 train · {decision} · {evidence.currentEvidence === 'verified' ? '当前输入证据已核验' : '当前输入证据未知'}</small>
     {evidence.evidenceMode === 'controlled' && <small>受控工程分数</small>}

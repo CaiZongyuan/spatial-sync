@@ -27,23 +27,26 @@ def test_goal_suite_freezes_at_human_approval_and_reuses_identity(tmp_path):
     (package / "obs_spec.yaml").write_text(yaml.safe_dump(spec))
     plan = training_plan(
         goalId="goal/suite-probe",
-        evaluation={"scene": task["scene"], "episodes": 30, "threshold": 26},
+        evaluation={"scene": task["scene"], "episodes": 36, "threshold": 34},
     )
 
-    def submit(client):
+    def submit(client, *, parent=None, evaluation=None):
         (package / "task.yaml").write_text(yaml.safe_dump(task))
         pushed = client.post(
             "/api/v1/tasks", content=pack_package(package), headers={"Content-Type": "application/x-tar"},
         )
         assert pushed.status_code == 201, pushed.text
-        return client.post("/api/v1/plans", json=plan | {"task": pushed.json()["id"]})
+        route = f"/api/v1/plans/{parent}/revisions" if parent else "/api/v1/plans"
+        return client.post(route, json=plan | {
+            "task": pushed.json()["id"], "evaluation": evaluation or plan["evaluation"],
+        })
 
     with TestClient(create_app()) as client:
         first = submit(client)
         assert first.status_code == 201, first.text
         first = first.json()
         preview = first["goalSuite"]
-        assert preview["episodes"] == 30
+        assert preview["episodes"] == 36
         assert preview["asset"]["id"] == "robot/microduck@1"
         available = client.get("/api/v1/suites").json()["suites"]
         assert not any(row.get("goalId") == plan["goalId"] for row in available)
@@ -61,9 +64,14 @@ def test_goal_suite_freezes_at_human_approval_and_reuses_identity(tmp_path):
         assert frozen["contentHash"]
         assert retry.json()["details"]["goalSuite"] == frozen
         task["declarative"]["rewards"][0]["weight"] = 2.0
-        revised = submit(client)
+        revised = submit(client, parent=first["id"], evaluation={"scene": task["scene"], "threshold": 34})
         assert revised.status_code == 201, revised.text
-        assert revised.json()["goalSuite"] == frozen
+        revision = revised.json()
+        assert revision["goalSuite"] == frozen
+        assert revision["evaluation"]["episodes"] == 36 and revision["budget"]["episodes"] == 72
+        changed_count = submit(client, evaluation=plan["evaluation"] | {"episodes": 40})
+        assert changed_count.status_code == 409
+        assert changed_count.json()["detail"]["code"] == "goal_suite_changed"
         task["success"] = {"all": [{"property": "baseHeight", "gte": 0.2}]}
         rejected = submit(client)
         assert rejected.status_code == 409, rejected.text
@@ -72,8 +80,8 @@ def test_goal_suite_freezes_at_human_approval_and_reuses_identity(tmp_path):
     with TestClient(create_app()) as client:
         name = frozen["id"].removeprefix("suite/").replace("@", "/")
         suite = client.get(f"/api/v1/suites/{name}").json()
-        assert suite["contentHash"] == frozen["contentHash"] and len(suite["episodes"]) == 30
-        assert set(case["id"] for case in suite["episodes"]) == {f"train-{i + 1}" for i in range(30)}
+        assert suite["contentHash"] == frozen["contentHash"] and len(suite["episodes"]) == 36
+        assert set(case["id"] for case in suite["episodes"]) == {f"train-{i + 1}" for i in range(36)}
         denied = client.post("/api/v1/evaluations", json={
             "suite": frozen["id"], "subject": "policy/unreachable@1", "split": "test",
         }, headers={"X-Actor": "agent:suite-probe"})

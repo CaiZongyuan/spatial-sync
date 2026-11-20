@@ -27,6 +27,11 @@ from packages.training.schema import TrialPerturbation
 PREFIX = "suite/goal-bound-"
 
 
+def suite_identity(goal, implements):
+    key = json.dumps([goal, implements], separators=(",", ":"))
+    return PREFIX + hashlib.sha256(key.encode()).hexdigest()[:32] + "@1"
+
+
 class GoalSuites:
     def __init__(self, manager):
         self.manager = manager
@@ -43,6 +48,9 @@ class GoalSuites:
         return next(
             ((approval, suite) for approval, suite in self.approved() if suite["id"] == identity), None
         )
+
+    def frozen_for(self, goal, implements):
+        return self.matching(suite_identity(goal, implements))
 
     def _package(self, approval_id):
         root = self.manager.library_assets.roots["user"]
@@ -124,9 +132,8 @@ class GoalSuites:
                 raise ValueError("Goal Suite parameters must use the pinned Task coverage")
         if math.prod(map(len, overrides.values())) > plan.evaluation.episodes:
             raise ValueError("Goal Suite episode count must cover the requested parameter combinations")
-        key = json.dumps([plan.goalId, task["implements"]], separators=(",", ":"))
         return {
-            "id": PREFIX + hashlib.sha256(key.encode()).hexdigest()[:32] + "@1",
+            "id": suite_identity(plan.goalId, task["implements"]),
             "goalId": plan.goalId, "implements": task["implements"],
             "scene": scene.id, "sceneContentHash": scene.content_hash,
             "robot": task["robot"], "asset": asset_pin, "success": task["success"],

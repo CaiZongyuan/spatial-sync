@@ -2,6 +2,7 @@
 
 import threading
 from copy import deepcopy
+from types import SimpleNamespace
 
 from apps.api.app.evaluation_views import public_candidate, public_episode
 from packages.info.evaluation_identity import comparison_identity, implementation_identities
@@ -18,7 +19,10 @@ TERMINAL = {"completed", "failed", "cancelled"}
 class NotebookService:
     def __init__(self, manager):
         self.manager = manager
-        self.store = LabNotebooks(manager.settings.state_root, manager.library_assets.roots["user"])
+        self.store = LabNotebooks(
+            manager.settings.state_root, manager.library_assets.roots["user"],
+            publication_projection=self._project_decision,
+        )
         self.started = False
         self.error = False
         self._lock = threading.RLock()
@@ -96,6 +100,49 @@ class NotebookService:
             "allocatedEpisodes": sum(case["split"] == "train" for case in suite.metadata["episodes"]),
         }
 
+    def prepare_goal_evaluation(self, job, suite, scene):
+        """Use the current eligible revision of the source Plan, then the newest compatible Plan."""
+        plans = self.manager.training_plans
+        source = plans.get(job["planId"], job["planRevision"])
+        goal = goal_id(source.plan.model_dump(mode="json"))
+        _, active = plans.snapshot()
+        ordered = sorted(
+            active.values(),
+            key=lambda record: (record.plan.id == source.plan.id, record.createdAtMs, record.plan.id),
+            reverse=True,
+        )
+        count = sum(case["split"] == "train" for case in suite.metadata["episodes"])
+        eligible = False
+        for record in ordered:
+            plan = plans.document(record)
+            bound = plan.get("goalSuite") or {}
+            if (plan["status"] != "approved" or goal_id(plan) != goal
+                    or (bound.get("id"), bound.get("contentHash")) != (suite.id, suite.content_hash)):
+                continue
+            eligible = True
+            if self._remaining_evaluation_episodes(plan) < count:
+                continue
+            return self.prepare_evaluation(
+                SimpleNamespace(planId=plan["id"], planRevision=plan["revision"]), suite, scene
+            )
+        if eligible:
+            raise PlanError(
+                "plan_evaluation_budget_exhausted",
+                "A fresh approved Plan is required for more evaluation attempts",
+            )
+        raise PlanError("plan_not_approved", "Approve a current Plan for the Policy's frozen Goal Suite")
+
+    def _remaining_evaluation_episodes(self, plan):
+        used = 0
+        for record in self.manager.loop_budgets._evaluation_records():
+            if record.get("planId") != plan["id"]:
+                continue
+            attempts = record.get("attemptedEpisodes", len(record.get("episodes", [])))
+            if self.manager.loop_budgets._held_evaluation(record):
+                attempts = max(attempts, record.get("allocatedEpisodes", 0))
+            used += attempts
+        return plan_budget(plan)["episodes"] - used
+
     def admit_evaluation(self, context):
         """Called inside the evaluator's existing admission lock immediately before durable save."""
         if context is None:
@@ -109,15 +156,7 @@ class NotebookService:
         ):
             raise PlanError("plan_not_approved", "Plan changed before evaluation admission", status=409)
         self.manager.jobs._require_available()
-        used = 0
-        for record in self.manager.loop_budgets._evaluation_records():
-            if record.get("planId") != context["planId"]:
-                continue
-            attempts = record.get("attemptedEpisodes", len(record.get("episodes", [])))
-            if self.manager.loop_budgets._held_evaluation(record):
-                attempts = max(attempts, record.get("allocatedEpisodes", 0))
-            used += attempts
-        if used + context["allocatedEpisodes"] > plan_budget(plan)["episodes"]:
+        if context["allocatedEpisodes"] > self._remaining_evaluation_episodes(plan):
             raise PlanError(
                 "plan_evaluation_budget_exhausted",
                 "A fresh approved Plan is required for more evaluation attempts",
@@ -191,6 +230,8 @@ class NotebookService:
             state, reason = "changed_during_execution", "Implementation changed after evaluation admission"
         elif not result or own_key is None:
             state, reason = "unknown", "Complete comparison evidence is unavailable"
+        elif self.manager.evaluations.store.score_decision(result) == "baseline_candidate":
+            state, reason = "unknown", "The initial Reference awaits Controller publication"
         elif reference_id is None:
             state, reason = "baseline", None
         elif reference is None or self._comparison_key(reference) is None:
@@ -338,7 +379,7 @@ class NotebookService:
         """Current comparison/deployment facts are projections, separate from historical receipts."""
         if entry.get("layer") == "agent":
             return self.manager.agent_rsi.public_notebook_entry(entry)
-        result = deepcopy(entry)
+        result = self._project_decision(deepcopy(entry))
         record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
         promotions = getattr(self.manager, "controller_promotions", None)
         deployment = promotions.notebook_deployment(record) if promotions is not None else None
@@ -365,6 +406,14 @@ class NotebookService:
             result["recordedComparison"] = deepcopy(entry["comparison"])
             result["comparison"] = current
         return result
+
+    def _project_decision(self, entry):
+        if entry.get("layer") != "agent" and entry["reportedDecision"] == "baseline_candidate":
+            store = self.manager.evaluations.store
+            evaluation = store.records.get(entry["evaluationId"], {})
+            if store.score_decision(evaluation.get("result") or {}) == "baseline":
+                entry["reportedDecision"] = "baseline"
+        return entry
 
     def _fixed_scope(self, entry):
         record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
