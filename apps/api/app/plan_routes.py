@@ -84,11 +84,17 @@ def install_plan_routes(app, manager, role_for):
             return store.document(await store.create(payload, session, actor))
 
     @app.post("/api/v1/plans/{plan_id}/revisions", status_code=201)
-    async def revise_plan(plan_id: str, body: dict[str, Any], request: Request):
+    async def revise_plan(
+        plan_id: str, body: dict[str, Any], request: Request, baseRevision: int | None = Query(None, ge=1),
+    ):
         actor = operator(request)
         async with publication:
             if any(plan_id in selected.records for selected in training_stores(manager)):
                 selected = training_store(manager, identifier=plan_id)
+                if baseRevision is not None and selected.get(plan_id).plan.revision != baseRevision:
+                    raise PlanError(
+                        "plan_revision_changed", "The selected Plan revision is no longer current", status=409
+                    )
                 layer = "agent" if selected is manager.agent_rsi else "embodied"
                 if body.get("layer", "embodied") != layer:
                     raise PlanError("invalid_plan_layer", "A Plan revision cannot change layer", status=422)

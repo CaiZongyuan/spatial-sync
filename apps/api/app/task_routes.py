@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 from pydantic import JsonValue
 
 from packages.library.archive import MAX_UPLOAD_BYTES, invalid
+from packages.library.task_rewards import RewardWeights, revise_reward_weights
 from packages.training.declarative import Data, ReferencePin
 
 
@@ -32,6 +33,12 @@ def install_task_routes(app, tasks, role_for):
         return await anyio.to_thread.run_sync(
             tasks.assemble_reference, body.reference, body.task, body.observation
         )
+
+    @app.post("/api/v1/tasks/{name}/{rev}/reward-weights", status_code=201)
+    async def task_rewards(name: str, rev: str, body: RewardWeights, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        return await anyio.to_thread.run_sync(revise_reward_weights, tasks, f"task/{name}@{rev}", body)
 
     @app.post("/api/v1/tasks", status_code=201)
     async def task_push(request: Request):
