@@ -89,6 +89,23 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
             self.command_bounds = self.command.new_tensor(command_endpoints(command))
         super().__init__(cfg, device, **kwargs)
 
+    def enable_reward_validation(self):
+        self.validate_reward_state = True
+        omitted = tuple(
+            term.params["expression"] for term in self.cfg.rewards.values()
+            if term.func is expression_term and term.weight == 0.0
+        )
+        if omitted:
+            compute = self.reward_manager.compute
+
+            def validate_and_compute(dt):
+                # Use the same post-step state as the reward terms, before auto-reset.
+                for expression in omitted:
+                    expression_term(self, expression)
+                return compute(dt)
+
+            self.reward_manager.compute = validate_and_compute
+
     def indices(self, kind, keys):
         cache_key = (kind, tuple(keys))
         if cache_key not in self._indices:

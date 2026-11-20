@@ -352,7 +352,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         agent_dict = asdict(agent_cfg)
         if validation:
             if declarative:
-                env.validate_reward_state = True
+                env.enable_reward_validation()
 
             def synchronize():
                 if device != "cpu":

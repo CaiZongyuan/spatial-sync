@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import math
 import secrets
 import time
 import uuid
@@ -32,6 +33,10 @@ from packages.training.runtime import profile_key as profile_key
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 GPU_HOUR_TOLERANCE = 1e-12
+
+
+def _valid_peak_memory(value):
+    return type(value) in (int, float) and 0 < value < math.inf
 
 
 def _secret_digest(secret):
@@ -432,6 +437,7 @@ class TrainingJobs:
         estimate = self.validation_estimate(record.approvalId)
         job = self.records.get(estimate.get("validationJobId"))
         plan = record.plan.model_dump(mode="json", by_alias=True)
+        timing = job["metrics"].get("validation", {}) if job else {}
         if job and (
             job["status"] == "succeeded" and job["kind"] == "plan_validation"
             and job["planApprovalId"] == record.approvalId
@@ -442,7 +448,8 @@ class TrainingJobs:
             and job["plan"]["evaluation"] == plan["evaluation"]
             and job["plan"].get("goalSuite") == record.goalSuite
             and job["metrics"].get("iteration") == VALIDATION_ITERATIONS
-            and job["metrics"].get("validation", {}).get("numEnvs") == plan["hyperparameters"].get("num_envs")
+            and timing.get("numEnvs") == plan["hyperparameters"].get("num_envs")
+            and (job["executionDevice"] != "cuda" or _valid_peak_memory(timing.get("peakMemoryMb")))
             and job.get("validationCompilerHash") == compiler_hash()
         ):
             return estimate
@@ -885,6 +892,14 @@ class TrainingJobs:
             raise PlanError(
                 "invalid_validation", "Timing does not cover the assigned bounded validation", status=422
             )
+
+        if job["executionDevice"] == "cuda" and not _valid_peak_memory(timing.peakMemoryMb):
+            task = self.manager.tasks.show(job["task"])["task"]
+            if (task.get("declarative") or {}).get("layerB"):
+                raise PlanError(
+                    "invalid_validation", "CUDA Layer B validation requires positive peak memory in MiB",
+                    status=422,
+                )
 
     def _record_validation(self, job, node, timing, elapsed, now):
         iteration = max(timing.samplesSeconds)

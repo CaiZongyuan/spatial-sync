@@ -171,7 +171,10 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
         headers = actor | {"Content-Type": "application/x-tar"}
         rejected = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
         assert rejected.status_code == 422 and "layerB.rewards[0].expression" in rejected.text
-        layer["rewards"][0]["expression"] = {"op": "div", "args": [1, 0]}
+        layer["rewards"][0] = {
+            "weight": 0.0,
+            "expression": {"op": "add", "args": [1, {"op": "div", "args": [0, 0]}]},
+        }
         (source / "task.yaml").write_text(yaml.safe_dump(task))
         pushed = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
         assert pushed.status_code == 201, pushed.text
@@ -231,10 +234,10 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
 
             failed = terminal(job)
             assert failed["status"] == "failed"
-            assert "layerB.rewards[0].expression: div produced a non-finite value" == failed["reason"]
+            assert failed["reason"] == "layerB.rewards[0].expression.args[1]: div produced a non-finite value"
             assert http.post("/api/v1/jobs", headers=actor, json=start).status_code == 409
             assert http.post(decision_url, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
-            layer["rewards"][0]["expression"] = valid
+            layer["rewards"][0] = {"weight": 1.0, "expression": valid}
             (source / "task.yaml").write_text(yaml.safe_dump(task))
             passed_task = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
             assert passed_task.status_code == 201, passed_task.text
@@ -242,6 +245,7 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
             checked = terminal(job)
             assert checked["status"] == "succeeded" and checked["metrics"]["iteration"] == 3, checked
             assert checked["metrics"]["validation"]["numEnvs"] == 2
+            assert checked["metrics"]["validation"].get("peakMemoryMb") is None
             assert len(checked["metrics"]["validation"]["samplesSeconds"]) == 2
             approval = http.post(
                 f"/api/v1/approvals/{plan['approvalId']}/decision",
@@ -307,13 +311,13 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
         assert http.post(decision_url, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
         assert http.post("/api/v1/jobs", headers=actor, json=start).status_code == 409
 
-        layer["rewards"][0]["expression"] = valid
+        layer["rewards"][0] = {"weight": 1.0, "expression": valid}
         (source / "task.yaml").write_text(yaml.safe_dump(task))
         revised = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
         assert revised.status_code == 201, revised.text
         previous, _, first_preflight = preflight(revised.json()["id"], revision_of=plan["id"])
 
-        def complete(job, environments):
+        def complete(job, environments, *, peak_memory=32.0):
             (lease_assignment,) = beat(http, node, **runtime).json()["assignments"]
             receipt = {
                 "jobId": job["jobId"],
@@ -326,6 +330,7 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
                     "setupSeconds": 2.0,
                     "warmupSeconds": 1.0,
                     "samplesSeconds": [1.0, 1.0],
+                    **({"peakMemoryMb": peak_memory} if peak_memory is not None else {}),
                 },
             }
             response = beat(http, node, reports=[receipt], **runtime)
@@ -342,9 +347,15 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
         denied = http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"})
         assert denied.status_code == 409 and denied.json()["detail"]["code"] == "plan_validation_required"
         assert complete(current_preflight, 2).status_code == 422
+        missing_peak = complete(current_preflight, 4, peak_memory=None)
+        assert missing_peak.status_code == 422
+        assert missing_peak.json()["detail"]["code"] == "invalid_validation"
+        assert complete(current_preflight, 4, peak_memory=0.0).status_code == 422
         assert http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
         final_report = complete(current_preflight, 4)
         assert final_report.is_success, final_report.text
+        measured = http.get(f"/api/v1/jobs/{current_preflight['jobId']}", headers=actor).json()
+        assert measured["metrics"]["validation"]["peakMemoryMb"] == 32.0
         allowed = http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"})
         assert allowed.is_success, allowed.text
         detail = allowed.json()["details"]
