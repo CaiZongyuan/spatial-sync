@@ -15,7 +15,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-20T02:23:01.582798+00:00",
+  "capturedAt": "2026-11-20T04:34:14.162474+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -463,7 +463,11 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "6e51ade3cc1fa530822da1d4c83727ebdd7b739174fdb802f9c9614a95b21398"
+      "sha256": "c491a92ec762ff2e1d92eb7b321ac6a12351021cb9cc1e998850f24ef3110fd3"
+    },
+    {
+      "path": "packages/training/reward_state.py",
+      "sha256": "62f2b7896e41c2c941291616f1e825cae2f21a4a9ec09d59afefc8943e824271"
     },
     {
       "path": "packages/transport/__init__.py",
@@ -489,10 +493,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "408555041bf40890f61cd101ac44cd44d922e2b87a54431e20ae17fce0bbd671",
-    "catalog.json": "372aab92ea7fe1b416bb28376fa59b411f006fa965acaf591cf21873a0be92cd",
-    "state.json": "402f560362315e7cf32c3da2d2cdcac8eb96910c287ddb3d808ef925be800991",
-    "snapshot.bin": "a223fbe5193f46021ad272fdfb629df7d52a428161300f171805e8c39951931f",
+    "manifest.json": "322d16155a0ae5450923c4a9aa577572e5c315257f6d6b295a7460072b004399",
+    "catalog.json": "29b96da4779f5a27e04c0d67752a3d39b6a7c0346b5c3c6c24423360c77f40b0",
+    "state.json": "09f98bf2360a16fd7b2cd561171460ced2d3ef8daa0c5082849ec6d1c8330006",
+    "snapshot.bin": "01827564c0403d6488ae4975e484794d98ca0bca97745448d6199b9a59fd4c6f",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",
