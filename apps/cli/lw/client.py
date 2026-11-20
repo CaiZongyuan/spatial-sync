@@ -1280,6 +1280,38 @@ class GatewayClient:
             **({"checkpoint": checkpoint} if checkpoint else {}),
         })
 
+    async def motion_video_upload(self, file, license, attribution, sourceUrl=None, *, actor="cli:lw"):
+        from packages.motion.contract import MAX_VIDEO_BYTES
+
+        with Path(file).open("rb") as stream:
+            content = stream.read(MAX_VIDEO_BYTES + 1)
+        if len(content) > MAX_VIDEO_BYTES:
+            raise ValueError("Video upload exceeds 16 MiB")
+        params = {"license": license, "attribution": attribution}
+        if sourceUrl:
+            params["sourceUrl"] = sourceUrl
+        return await self.request(
+            "POST", "/api/v1/library/motion-videos", params=params, actor=actor, content=content,
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
+    async def motion_start(self, video, targetNodeId=None, requestId=None, *, actor="cli:lw"):
+        return await self.request("POST", "/api/v1/jobs", actor=actor, json={
+            "kind": "motion_preprocess", "motionVideo": video, "targetNodeId": targetNodeId,
+            "requestId": requestId or uuid.uuid4().hex,
+        })
+
+    async def motion_video_list(self):
+        return (await self.request("GET", "/api/v1/library/motion-videos"))["videos"]
+
+    async def motion_clip_list(self):
+        return (await self.request("GET", "/api/v1/library/motion-clips"))["clips"]
+
+    async def motion_clip_show(self, id):
+        if not re.fullmatch(r"motion-clip/[a-f0-9]{64}@1", id):
+            raise ValueError("Select an exact motion-clip version")
+        return await self.request("GET", "/api/v1/library/motion-clips/" + id.split("/")[1].replace("@", "/"))
+
     async def job_resume(self, id, targetNodeId=None, *, actor="cli:lw"):
         return await self.request("POST", "/api/v1/jobs/" + quote(id, safe="") + "/resume", actor=actor,
                                   json={"targetNodeId": targetNodeId} if targetNodeId else {})

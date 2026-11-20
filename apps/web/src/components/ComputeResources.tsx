@@ -22,7 +22,8 @@ export function ComputeResources() {
       {!result.jobs ? <p className="resource-note">{result.jobsError ? '队列暂不可用。' : '正在读取队列…'}</p> : queued?.length ?
         <div className="resource-table-scroll"><table aria-label="资源等待队列"><thead><tr><th>作业</th><th>计划 / Task</th><th>所需设备</th><th>等待原因</th><th>提交时间</th></tr></thead>
           <tbody>{queued.map(job => <tr key={job.jobId}><td><Link to="/train/jobs/$id" params={{ id: job.jobId }}><code>{job.jobId}</code></Link></td>
-            <td><Link to="/plans/$planId" params={{ planId: job.planId }}>{job.planId}</Link><small>{job.task}</small></td>
+            <td>{job.planId ? <><Link to="/plans/$planId" params={{ planId: job.planId }}>{job.planId}</Link>
+              <small>{job.task}</small></> : <span>{job.motionVideo}</span>}</td>
             <td>{job.executionDevice === 'cpu' ? 'CPU' : 'GPU'}</td><td>{jobReason(job.reason) ?? '等待节点分配资源'}</td><td>{localTime(job.createdAt)}</td></tr>)}</tbody></table></div> :
         <p className="resource-note">当前没有排队作业。</p>}
     </div></section>

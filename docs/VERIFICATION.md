@@ -921,3 +921,33 @@ fence. Resume on B with a greater lease ID and record both iteration ranges,
 runtime identities and per-node GPU charges. For the selected checkpoint,
 record the ONNX and 256 distinct native witness results from a finalize Job.
 Use a separate slower-profile case to observe the extra-budget Approval Gate.
+
+## Motion Clip extraction
+
+The gateway needs FFprobe to inspect uploaded H.264 MP4 or VP8/VP9 WebM video.
+Upload accepts at most 16 MiB, 20 seconds, 600 decoded frames, and 2,073,600
+pixels per frame. Use an operator credential for upload and Job submission.
+The registered Node uses its CPU lease and its own Python environment with
+MediaPipe 0.10.32 and OpenCV's FFmpeg backend. Configure the fixed Google
+Pose Landmarker Lite float16/1 model, whose SHA-256 is
+`59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a`.
+
+```sh
+.venv/bin/python -m apps.node.runner --url "$LW_URL" --root "$NODE_ROOT" \
+  --pose-python "$POSE_PYTHON" --pose-model "$POSE_MODEL"
+lw motion video-upload "$VIDEO" --license 'CC BY 3.0' --attribution "$AUTHOR" --source-url "$SOURCE_URL" --json
+lw motion start "$VIDEO_ID" --node "$NODE_ID" --json
+lw job show "$JOB_ID" --json
+lw motion show "$CLIP_ID" --json
+```
+
+Provide the Node's registered credential through the existing Node setup.
+The Motion Clip contains source presentation timestamps, estimated body
+landmarks relative to the hips, capture diagnostics, and source and model
+provenance. Job diagnostics identify missing people, multiple detected
+people, and occluded body landmarks. A successful clip preserves gaps in the
+source timeline. It records global root translation as unobserved.
+
+```sh
+.venv/bin/python -m pytest -q tests/unit/test_motion_contract.py tests/gateway/test_motion_jobs.py
+```

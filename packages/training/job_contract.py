@@ -31,11 +31,12 @@ class CleanupReceipt(Schema):
 
 
 class StartJob(Schema):
-    planId: Text
+    planId: Text | None = None
     seed: int | None = None
     planRevision: int | None = Field(default=None, ge=1)
     requestId: str | None = Field(default=None, min_length=1, max_length=200)
-    kind: Literal["training", "plan_validation", "checkpoint_finalize"] = "training"
+    kind: Literal["training", "plan_validation", "checkpoint_finalize", "motion_preprocess"] = "training"
+    motionVideo: str | None = Field(default=None, pattern=r"^motion-video/[a-f0-9]{64}$")
     targetNodeId: NodeId | None = None
     checkpoint: str | None = Field(default=None, pattern=r"^job-[a-f0-9]{32}/[a-f0-9]{64}$")
 
@@ -97,6 +98,7 @@ class NodeHeartbeat(Schema):
     legacyHardware: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     gpus: list[GPU] = Field(max_length=16)
     cpuAvailable: bool = False
+    poseRuntime: Literal["mediapipe-pose-landmarker-lite/1"] | None = None
     hostname: Text | None = None
     trainerVersions: dict[str, Text] | None = Field(default=None, max_length=16)
     isaaclabVersions: dict[str, Text] | None = Field(default=None, max_length=16)

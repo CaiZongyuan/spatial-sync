@@ -53,7 +53,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
 
   useEffect(() => {
     setPlan(undefined); setPlanError(undefined);
-    if (!job) return;
+    if (!job?.planId) return;
     const controller = new AbortController();
     void request<TrainingPlanDocument>(`/plans/${encodeURIComponent(job.planId)}?revision=${job.planRevision}`, { signal: controller.signal })
       .then(result => { if (!controller.signal.aborted) setPlan(result); })
@@ -104,6 +104,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
     </div>
     <div className="job-detail-columns"><div>
       {job.status === 'running' && job.kind === 'training' && <TrainingViewGrid key={job.leaseId} jobId={jobId} onStatusChange={setView} />}
+      {job.kind !== 'motion_preprocess' && <>
       <JobMetricCharts history={job.metricsHistory} />
       <section className="panel"><h2>TensorBoard</h2>
         <div className="job-tensorboard-controls"><button type="button" disabled={tensorboardPending} onClick={() => void openTensorboard()}>
@@ -120,6 +121,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
           <td><code title={artifact.sha256}>{artifact.sha256.slice(0, 12)}</code></td></tr>)}</tbody></table>
         : !job.checkpoints?.length && <p>{job.status === 'queued' || job.status === 'running'
           ? '等待训练产物。' : '该作业未产生检查点。'}</p>}</section>
+      </>}
       {!!job.attempts?.length && <section className="panel"><h2>训练尝试</h2>
         <table><thead><tr><th>租约</th><th>节点 / GPU</th><th>迭代区间</th><th>GPU 秒</th></tr></thead>
           <tbody>{job.attempts.map(attempt => <tr key={attempt.leaseId}>
@@ -132,18 +134,22 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         <li key={artifact.path}><code>{artifact.path}</code> · {artifact.size.toLocaleString()} B</li>)}</ul> : <p>暂无已上传产物。</p>}</section>
     </div><aside>
       <section className="panel"><h2>作业检查器</h2><dl>
-        <dt>状态</dt><dd>{statuses[job.status]}</dd><dt>Task</dt><dd>{job.task}</dd>
-        <dt>场景</dt><dd>{job.scene}</dd><dt>节点 / 设备</dt><dd>{job.nodeId ?? '—'} / {job.executionDevice}</dd>
+        <dt>状态</dt><dd>{statuses[job.status]}</dd>
+        {job.kind === 'motion_preprocess' ? <>
+          <dt>源视频</dt><dd>{job.motionVideo}</dd>
+          {job.motionClip && <><dt>Motion Clip</dt><dd>{job.motionClip.id}</dd></>}
+        </> : <><dt>Task</dt><dd>{job.task}</dd><dt>场景</dt><dd>{job.scene}</dd>
         <dt>Seed</dt><dd>{job.seed}</dd><dt>GPU 型号</dt><dd>{job.resourceModel ?? '—'}</dd>
         <dt>训练端 Newton</dt><dd>{job.versions?.versions.newton ?? '—'}</dd>
         <dt>视图实际 Newton / Solver</dt><dd>{view?.hello ? `${view.hello.source.newtonVersion} / ${view.hello.source.solver}` : '—'}</dd>
         <dt>视图实际 dt / 环境</dt><dd>{view?.hello ? `${view.hello.source.physicsDt}s / ${view.hello.environments.join(', ')}` : '—'}</dd>
-        <dt>几何捕获 Newton</dt><dd>{view?.hello?.capture?.source.newtonVersion ?? '—'}</dd>
+        <dt>几何捕获 Newton</dt><dd>{view?.hello?.capture?.source.newtonVersion ?? '—'}</dd></>}
+        <dt>节点 / 设备</dt><dd>{job.nodeId ?? '—'} / {job.executionDevice}</dd>
         <dt>说明</dt><dd>{job.reason ?? '—'}</dd></dl>
         {job.approvalId && <Link to="/approvals">查看作业审批</Link>}</section>
-      <section className="panel"><h2>批准的训练计划 · 修订 {job.planRevision}</h2>
+      {job.planId && <section className="panel"><h2>批准的训练计划 · 修订 {job.planRevision}</h2>
         {planError ? <p role="alert">{planError}</p> : plan ? <TrainingPlanDetails plan={plan} changes={plan.changes} />
-          : <p role="status">正在读取固定计划修订…</p>}</section>
+          : <p role="status">正在读取固定计划修订…</p>}</section>}
     </aside></div>
   </main>;
 }

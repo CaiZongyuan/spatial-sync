@@ -35,7 +35,9 @@ export interface JobVersions {
 }
 export interface TrainingJob {
   jobId: string;
-  kind: 'training' | 'plan_validation' | 'checkpoint_finalize';
+  kind: 'training' | 'plan_validation' | 'checkpoint_finalize' | 'motion_preprocess';
+  motionVideo?: string;
+  motionClip?: { id: string; sha256: string; bytes: number } | null;
   status: JobStatus;
   planId: string;
   planRevision: number;
