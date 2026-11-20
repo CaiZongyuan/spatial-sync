@@ -18,6 +18,8 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
+  const [clipError, setClipError] = useState('');
+  const [clipRead, setClipRead] = useState(0);
   const requestId = useRef<string | undefined>(undefined);
   const jobId = job?.jobId;
   const active = job?.status === 'queued' || job?.status === 'running';
@@ -50,15 +52,16 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
     const resultId = clipId;
     const source = video;
     const controller = new AbortController();
+    setClipError('');
     async function readResult() {
       const value = await request<MotionClip>(motionVersionPath(resultId, 'motion-clip'), { signal: controller.signal });
       if (value.id !== resultId || value.sha256 !== clipHash || value.source.id !== source.id ||
           value.source.sha256 !== source.sha256) throw new Error('提取结果与固定源视频不符。');
       if (!controller.signal.aborted) setClip(value);
     }
-    void readResult().catch((failure: Error) => { if (!controller.signal.aborted) setError(failure.message); });
+    void readResult().catch((failure: Error) => { if (!controller.signal.aborted) setClipError(failure.message); });
     return () => controller.abort();
-  }, [clipId, clipHash, video]);
+  }, [clipId, clipHash, video, clipRead]);
 
   function select(files: FileList | null) {
     if (busy || active || !files?.length) return;
@@ -68,6 +71,7 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
     }
     requestId.current = undefined;
     setFile(files[0]); setVideo(undefined); setJob(undefined); setClip(undefined); setError(''); setPollError('');
+    setClipError('');
   }
 
   return <details className="motion-workflow">
@@ -117,6 +121,7 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
       <button type="button" disabled={busy || active} onClick={() => {
         requestId.current = undefined;
         setFile(undefined); setVideo(undefined); setJob(undefined); setClip(undefined); setError(''); setPollError('');
+        setClipError('');
       }}>选择另一视频</button>
     </>}
     {busy && <p role="status">正在提交…</p>}
@@ -124,6 +129,9 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
       {job.nodeId ? ` ${job.nodeId} / CPU` : active ? ' 等待兼容 CPU 节点' : ' —'}
       {job.reason && ` · ${jobReason(job.reason)}`} · <Link to="/train/jobs/$id" params={{ id: job.jobId }}>查看提取作业</Link></p>}
     {pollError && <p role="alert">{pollError}</p>}
+    {clipId && !clip && (clipError ? <div><p role="alert">{clipError}</p>
+      <button type="button" onClick={() => setClipRead(read => read + 1)}>重试读取片段</button>
+    </div> : <p role="status">正在读取固定片段…</p>)}
     {error && <p role="alert">{error}</p>}
     {clip && <form className="motion-form" onSubmit={async event => {
       event.preventDefault();
@@ -132,7 +140,7 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
       try {
         const reference = await motionWrite<ReferenceDetail>('/library/reference-motions', {
           asset, assetContentHash: contentHash, clip: { id: clip.id, sha256: clip.sha256 },
-          mapping: JSON.parse(String(form.get('mapping'))), inPlace: form.has('inPlace'),
+          mapping: JSON.parse(String(form.get('mapping'))), inPlace: true,
         });
         if (reference.motion.asset !== asset || reference.motion.assetContentHash !== contentHash ||
             reference.source.clip?.id !== clip.id || reference.source.clip.sha256 !== clip.sha256) {
@@ -146,7 +154,7 @@ export function MotionVideoWorkflow({ asset, contentHash, onReference }: {
       <p>姿态模型 {clip.model.runtime} · {clip.model.landmarkLicense} · <code title={clip.model.sha256}>{clip.model.sha256}</code></p>
       <p>目标 <code>{asset}</code> · <code title={contentHash}>{contentHash}</code></p>
       <label>肢体映射 JSON<textarea name="mapping" maxLength={16384} rows={4} required disabled={busy} /></label>
-      <label><input type="checkbox" name="inPlace" defaultChecked disabled={busy} /> 原地模式</label>
+      <p>单目视频采用原地模式。需要世界平移轨迹时，请提供 Asset 坐标系中的关键帧。</p>
       <button type="submit" disabled={busy}>生成参考动作</button>
     </form>}
   </details>;

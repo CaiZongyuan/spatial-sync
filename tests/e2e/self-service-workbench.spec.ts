@@ -310,8 +310,31 @@ remoteTest('video drop binds a CPU result and reviewed ghost to one robot revisi
   });
   expect(published.ok(), await published.text()).toBe(true);
   const { motionClip } = await published.json();
+  const clipPath = `/api/v1/library/motion-clips/${motionClip.sha256}/1`;
+  const clipReads: string[] = [];
+  const replayWrites: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/v1/library/motion-clips/')) clipReads.push(path);
+    if (request.method() === 'POST' && (path === '/api/v1/jobs' || path === '/api/v1/library/motion-videos')) {
+      replayWrites.push(path);
+    }
+  });
+  const failures = [429, 503];
+  await page.route(`**${clipPath}`, async route => {
+    const status = failures.shift();
+    if (status) await route.fulfill({ status, json: { detail: { message: `Clip read ${status}` } } });
+    else await route.continue();
+  });
   expect((await beat([{ ...status, status: 'succeeded' }])).status()).toBe(200);
+  await expect(page.getByText('Clip read 429', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '重试读取片段' }).click();
+  await expect(page.getByText('Clip read 503', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '重试读取片段' }).click();
   await expect(page.getByText(motionClip.id, { exact: true })).toBeVisible();
+  expect(clipReads).toEqual([clipPath, clipPath, clipPath]);
+  expect(replayWrites).toEqual([]);
+  await expect(page.getByRole('link', { name: '查看提取作业' })).toHaveAttribute('href', `/train/jobs/${job.jobId}`);
   const mapping = {
     pelvis: '/Asset/trunk_base', trunk: '/Asset/trunk_base', head: '/Asset/jaw_soft',
     leftFoot: '/Asset/ankle_left/left_foot', rightFoot: '/Asset/ankle_right/right_foot',
@@ -323,19 +346,45 @@ remoteTest('video drop binds a CPU result and reviewed ghost to one robot revisi
       ['hip_yaw', 'hip_roll', 'hip_pitch', 'ankle'].map(joint => `/Asset/joints/${side}_${joint}`)),
   };
   await page.getByLabel('肢体映射 JSON').fill(JSON.stringify(mapping));
+  await expect(page.getByRole('checkbox', { name: '原地模式' })).toHaveCount(0);
+  await expect(page.getByText(/世界平移轨迹.*关键帧/)).toBeVisible();
+  const model = page.getByLabel('素材静态模型预览');
+  const canvas = model.locator('canvas');
+  await expect(model).toHaveAttribute('data-model-state', 'ready');
+  const originalCanvas = await canvas.elementHandle();
   const awaitingReference = page.waitForResponse(reply => reply.request().method() === 'POST'
     && new URL(reply.url()).pathname === '/api/v1/library/reference-motions');
   await page.getByRole('button', { name: '生成参考动作' }).click();
   const fitted = await awaitingReference;
   expect(fitted.status(), await fitted.text()).toBe(201);
+  expect(fitted.request().postDataJSON()).toMatchObject({ inPlace: true });
   const reference = await fitted.json();
   expect(reference.motion).toMatchObject({ asset: asset.id, assetContentHash: asset.contentHash });
   expect(reference.source).toMatchObject({ clip: { id: motionClip.id, sha256: motionClip.sha256 }, video: { id: source.id } });
   await expect(page.getByLabel('参考动作版本')).toHaveValue(reference.id);
-  await expect(page.getByLabel('参考动作三维运动学预览').locator('canvas')).toBeVisible();
+  await expect(model).toHaveAttribute('data-motion-overlay', 'visible');
+  expect(await canvas.evaluate((current, original) => current === original, originalCanvas)).toBe(true);
+  expect(Number(await model.getAttribute('data-mesh-count'))).toBeGreaterThan(0);
+  const firstFrame = await canvas.screenshot();
   const phase = page.getByRole('slider', { name: '相位时间' });
   await phase.press('End');
   await expect(phase).toHaveValue(String(reference.ghost.samples.at(-1).time));
+  await expect.poll(async () => (await canvas.screenshot()).equals(firstFrame)).toBe(false);
+  await expect(page.getByText('关键点误差', { exact: true })).toBeVisible();
+  await expect(page.getByText('速度与上限', { exact: true })).toBeVisible();
+  const feasibility = page.getByRole('region', { name: '参考动作可行性' });
+  const reportValue = (label: string) => feasibility.getByText(label, { exact: true }).locator('..').locator('dd');
+  await expect(reportValue('根线速度 / 上限')).toHaveText(
+    `${reference.report.maxRootSpeedMps} m/s / ${reference.report.bounds.rootSpeedMps} m/s`,
+  );
+  await expect(reportValue('旋转关节速度上限')).toHaveText(`${reference.report.bounds.jointSpeedRadps} rad/s`);
+  await expect(reportValue('移动关节速度上限')).toHaveText(`${reference.report.bounds.slideSpeedMps} m/s`);
+  for (const [name, value] of Object.entries(reference.report.keypointErrorM)) {
+    const row = feasibility.getByRole('row', { name: new RegExp(name) });
+    await expect(row).toContainText(`${value} m`);
+    const target = reference.report.keypointTargets?.[name];
+    if (target) await expect(row).toContainText(target.path);
+  }
   await page.getByText('从参考动作创建 Task', { exact: true }).click();
   const submit = page.getByRole('button', { name: '创建固定版本 Task' });
   await expect(submit).toBeDisabled();
@@ -367,7 +416,7 @@ remoteTest('video drop binds a CPU result and reviewed ghost to one robot revisi
   await readonly.goto(`${web}/assets/robot/microduck/1`);
   expect((await (await permissions).json()).role).toBe('viewer');
   await readonly.getByLabel('参考动作版本').selectOption(reference.id);
-  await expect(readonly.getByLabel('参考动作三维运动学预览').locator('canvas')).toBeVisible();
+  await expect(readonly.getByLabel('素材静态模型预览')).toHaveAttribute('data-motion-overlay', 'visible');
   await expect(readonly.getByText('视频提取与重定向', { exact: true })).toHaveCount(0);
   await expect(readonly.getByText('从参考动作创建 Task', { exact: true })).toHaveCount(0);
 });

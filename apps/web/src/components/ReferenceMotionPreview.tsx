@@ -1,15 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { Line, OrbitControls } from '@react-three/drei';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { request } from '../lib/api';
 import { ApprovalInboxContext } from '../lib/approvals';
 import { motionVersionPath, motionWrite, referenceMatches,
-  type GhostPreview, type MotionPin, type ReferenceDetail, type ReferencePin } from '../lib/motion';
+  type GhostFrame, type GhostPreview, type MotionPin, type ReferenceDetail, type ReferencePin } from '../lib/motion';
 import { ghostPositionsAt, phaseTime } from '../lib/motion-phase';
-import { useViewerTheme } from '../lib/scene/viewer-theme';
 import { MotionVideoWorkflow } from './MotionVideoWorkflow';
+import { ReferenceFeasibility } from './ReferenceFeasibility';
 
-export function ReferenceMotionPreview({ asset, contentHash }: { asset: string; contentHash: string }) {
+export function ReferenceMotionPreview({ asset, contentHash, onGhost }: {
+  asset: string; contentHash: string; onGhost: (frame?: GhostFrame) => void;
+}) {
   const permissions = useContext(ApprovalInboxContext);
   const operator = permissions.inbox?.role === 'operator' && !permissions.error;
   const [references, setReferences] = useState<ReferencePin[]>([]);
@@ -40,18 +40,26 @@ export function ReferenceMotionPreview({ asset, contentHash }: { asset: string; 
         {references.map(row => <option value={row.id} key={row.id}>{row.id}</option>)}
       </select></label>}
       {error && <p role="alert">{error}</p>}
-      {pin && <ReferencePlayer key={pin.id} pin={pin} operator={operator} />}
+      {pin && <ReferencePlayer key={pin.id} pin={pin} operator={operator} onGhost={onGhost} />}
     </div>
   </section>;
 }
 
-function ReferencePlayer({ pin, operator }: { pin: ReferencePin; operator: boolean }) {
-  const theme = useViewerTheme();
+function ReferencePlayer({ pin, operator, onGhost }: {
+  pin: ReferencePin; operator: boolean; onGhost: (frame?: GhostFrame) => void;
+}) {
   const [loaded, setLoaded] = useState<{ detail: ReferenceDetail; preview: GhostPreview }>();
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string>();
   const duration = loaded?.preview.ghost.samples.at(-1)?.time ?? 0;
+  const ghost = useMemo(() => {
+    const track = loaded?.preview.ghost;
+    if (!track?.samples[0]?.positions.length) return undefined;
+    return { links: track.links, positions: ghostPositionsAt(track.samples, time) };
+  }, [loaded, time]);
+  useEffect(() => { onGhost(ghost); }, [ghost, onGhost]);
+  useEffect(() => () => onGhost(undefined), [onGhost]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,11 +96,8 @@ function ReferencePlayer({ pin, operator }: { pin: ReferencePin; operator: boole
 
   if (error) return <p role="alert">{error}</p>;
   if (!loaded) return <p role="status">正在读取参考动作…</p>;
-  const { detail, preview } = loaded;
-  const first = preview.ghost.samples[0]?.positions;
-  if (!first?.length) return <p role="alert">此版本没有运动学帧。</p>;
-  const positions = ghostPositionsAt(preview.ghost.samples, time);
-  const radius = first.reduce((bound, point) => Math.max(bound, ...point.map(Math.abs)), .1);
+  const { detail } = loaded;
+  if (!ghost) return <p role="alert">此版本没有运动学帧。</p>;
   const rights = detail.source.video?.license ?? detail.source.keyframes?.license;
 
   return <>
@@ -107,22 +112,8 @@ function ReferencePlayer({ pin, operator }: { pin: ReferencePin; operator: boole
       {detail.source.model && <div><dt>姿态模型</dt><dd>{detail.source.model.runtime} · {detail.source.model.landmarkLicense}
         <code title={detail.source.model.sha256}>{detail.source.model.sha256}</code>
         <small>检测器许可 {detail.source.model.detectorLicense ?? '未记录'}</small></dd></div>}
-      <div><dt>可行性</dt><dd>足滑 {detail.report.maxFootSlipM ?? '—'} m · 支撑裕量 {detail.report.minSupportMarginM ?? '—'} m ·
-        关节限位饱和 {detail.report.jointLimitSaturation ?? '—'}</dd></div>
     </dl>
-    <div className="asset-detail-model" aria-label="参考动作三维运动学预览">
-      <Canvas camera={{ position: [radius * 2.4, radius * 1.8, radius * 2.2], near: radius / 1000 }}>
-        <gridHelper args={[radius * 4, 12]} />
-        <group rotation={[-Math.PI / 2, 0, 0]}>
-          {preview.ghost.links.map(([a, b]) => <Line key={b} points={[positions[a], positions[b]]}
-            color={theme.accent} lineWidth={3} transparent opacity={0.7} />)}
-          {positions.map((point, index) => <mesh key={index} position={point}>
-            <sphereGeometry args={[radius / 45, 8, 6]} /><meshBasicMaterial color={theme.accent} transparent opacity={0.75} />
-          </mesh>)}
-        </group>
-        <OrbitControls target={[0, first[0][2], 0]} />
-      </Canvas>
-    </div>
+    <a href="#asset-model-preview">查看素材与幽灵叠加</a>
     <div className="motion-playback">
       <button type="button" onClick={() => { if (!playing && time >= duration) setTime(0); setPlaying(!playing); }}>
         {playing ? '暂停' : '播放'}
@@ -131,6 +122,7 @@ function ReferencePlayer({ pin, operator }: { pin: ReferencePin; operator: boole
         onChange={event => { setPlaying(false); setTime(Number(event.target.value)); }} /></label>
       <output>{time.toFixed(2)} / {duration.toFixed(2)} s</output>
     </div>
+    <ReferenceFeasibility report={detail.report} />
     {operator && <ReferenceTaskForm pin={{ id: pin.id, sha256: pin.sha256 }} />}
   </>;
 }

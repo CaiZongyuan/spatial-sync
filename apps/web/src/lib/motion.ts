@@ -11,15 +11,27 @@ export interface MotionClip extends MotionPin {
   diagnostics: { visibleFrames: number; missingFrames: number; noPersonFrames: number };
 }
 export interface ReferencePin extends MotionPin { asset: string; assetContentHash: string }
+export interface MotionFeasibility {
+  maxFootSlipM?: number;
+  minSupportMarginM?: number;
+  jointLimitSaturation?: number;
+  keypointErrorM?: Record<string, number>;
+  keypointTargets?: Record<string, { path?: string; source?: string }>;
+  maxRootSpeedMps?: number;
+  maxRootAngularSpeedRadps?: number;
+  maxJointSpeed?: Record<string, number>;
+  bounds?: { rootSpeedMps?: number; rootAngularSpeedRadps?: number; jointSpeedRadps?: number; slideSpeedMps?: number };
+}
 export interface ReferenceDetail extends MotionPin {
   motion: { asset: string; assetContentHash: string };
   source: { clip?: MotionPin; video?: MotionVideo; model?: PoseModel; keyframes?: { license: VideoRights } };
-  report: { maxFootSlipM?: number; minSupportMarginM?: number; jointLimitSaturation?: number };
+  report: MotionFeasibility;
 }
 export interface GhostPreview extends ReferencePin {
   loop: boolean;
   ghost: { links: [number, number][]; samples: { time: number; positions: Point[] }[] };
 }
+export interface GhostFrame { links: [number, number][]; positions: Point[] }
 
 export function motionVersionPath(id: string, kind: 'motion-clip' | 'reference-motion') {
   const prefix = `${kind}/`;

@@ -46,6 +46,104 @@ lw task show task/fr3-pick-tube@1 --json
 
 检查返回的版本和 `contentHash`。同内容重推会返回已有版本；推送只做静态快照，不运行包里的代码。
 
+### 最小 Layer B 连通性例子
+
+在可编辑的项目目录创建 `layer-b-probe/`，将下面两份 YAML 分别保存为 `task.yaml` 和 `obs_spec.yaml`。示例固定内置 `microduck-arena@1`，用单关节和一条观测验证提交、编译和预检链路。正式训练时按访谈选定完整观测与控制布局。
+
+`layer-b-probe/task.yaml`
+
+```yaml
+name: layer-b-probe
+title: Microduck Layer B connectivity check
+scene: microduck-arena@1
+robot: /World/Lab/Microduck
+implements: biped/v1.standUp
+episode: {params: {fromFall: front}}
+success: {property: fallen, equals: false}
+control: {hz: 50.0, action: joint_position_offset}
+observation: obs_spec.yaml
+mjlab: {task_id: Lab-Microduck-LayerB-Probe-v0, sceneInput: usd, physics_dt: 0.002, decimation: 10}
+declarative:
+  schema: lw.mjlab-task/1
+  baseBody: /World/Lab/Microduck/trunk_base
+  episodeSeconds: 3.0
+  rewards: []
+  layerB:
+    state: lw.reward-state/1
+    rewards:
+      - weight: 0.25
+        expression:
+          op: clamp
+          args: [{op: component, args: [{state: base_position_world}, 2]}, 0.0, 1.0]
+evaluation:
+  scene: microduck-arena@1
+  episodes: 4
+  threshold: 3
+  seeds: [201, 202, 203, 204]
+  params: {fromFall: [front, back, left, right]}
+loopBudget: {gpuHours: 1.0, episodes: 60, days: 2.0}
+```
+
+`layer-b-probe/obs_spec.yaml`
+
+```yaml
+schema: lw.obs-spec/2
+observations:
+  - name: left_knee_position
+    source: joint_position
+    keys: [/World/Lab/Microduck/joints/left_knee]
+    frame: world
+    unit: rad
+    shape: [1]
+    offset: [0.0]
+    scale: [1.0]
+action:
+  space: joint_position_offset
+  jointKeys: [/World/Lab/Microduck/joints/left_knee]
+  units: [rad]
+  defaultPosition: [-0.0049]
+  scale: [0.1]
+  lower: [-1.570796]
+  upper: [1.570796]
+```
+
+提交目录，再将返回的精确 Task ID 填入以下 `layer-b-plan.yaml` 的 `task`。填写真实访谈记录后提交，保留返回的 Plan ID、修订及种子。
+
+```text
+lw task push layer-b-probe --json
+```
+
+`layer-b-plan.yaml`
+
+```yaml
+kind: training
+title: Check Microduck Layer B compilation
+goal: Check Microduck Layer B compilation
+task: task/layer-b-probe@1
+algorithm: {library: rsl_rl, name: PPO, version: "5.0.1"}
+model: {actor: [8], critic: [8]}
+hyperparameters: {device: cpu, num_envs: 2, max_iterations: 4, num_steps_per_env: 4, num_learning_epochs: 1, num_mini_batches: 1}
+jobs: {seeds: [42]}
+budget: {gpuHours: 0, episodes: 60}
+evaluation: {scene: microduck-arena@1, episodes: 30, threshold: 24}
+rationale: Check the height reward on the pinned observation and action layout.
+hypotheses:
+  - id: H1.1
+    cause: The new expression must compile on the selected runtime.
+    change: Add the bounded base-height reward expression.
+    predict: {metric: finite_validation_iterations, to: ">= 3"}
+notebookRead: []
+interview: Replace with the actual interview record before submission.
+```
+
+```text
+lw plan submit layer-b-plan.yaml --json
+lw job start <plan-id> --revision 1 --seed 42 --kind plan_validation --node <compute-node-id> --json
+lw job show <preflight-job-id> --json
+```
+
+从成功 Job 核对 `planRevision`、`taskContentHash` 及 `metrics.validation` 的 `numEnvs`、`setupSeconds`、`warmupSeconds`、`samplesSeconds`。CUDA 预检还需要实际 `peakMemoryMb`，审批卡引用对应预检 Job 与实测预计 GPU 小时。CPU 示例的零 GPU 小时对应 CPU 执行；正式预算使用目标设备、目标并行规模的测量。
+
 动作模仿沿 [素材库动作流程](../lab-library/SKILL.md) 获取精确 Reference Motion。请人检查对应机器人版本的三维预览后，提交含 `reference`（`id` 和 `sha256`）、声明式 `task` 和 `observation` 的 JSON。计划提交后，针对精确修订和目标规模发起有界预检，再将实际报告交给审批人。
 
 ```text
