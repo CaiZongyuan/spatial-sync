@@ -21,7 +21,7 @@ class NotebookService:
         self.manager = manager
         self.store = LabNotebooks(
             manager.settings.state_root, manager.library_assets.roots["user"],
-            publication_projection=self._project_decision,
+            publication_projection=self._project_score,
         )
         self.started = False
         self.error = False
@@ -207,7 +207,7 @@ class NotebookService:
             "judge": identity["judge"],
         }
 
-    def _comparison(self, record, result, current_implementations):
+    def _comparison(self, record, result, current_implementations, *, decision):
         records = self.manager.evaluations.store.records
         own_key = self._comparison_key(record)
         group = record["evaluationId"]
@@ -230,7 +230,7 @@ class NotebookService:
             state, reason = "changed_during_execution", "Implementation changed after evaluation admission"
         elif not result or own_key is None:
             state, reason = "unknown", "Complete comparison evidence is unavailable"
-        elif self.manager.evaluations.store.score_decision(result) == "baseline_candidate":
+        elif decision == "baseline_candidate":
             state, reason = "unknown", "The initial Reference awaits Controller publication"
         elif reference_id is None:
             state, reason = "baseline", None
@@ -272,7 +272,9 @@ class NotebookService:
             ),
             None,
         )
-        comparison = self._comparison(record, result, current_implementations)
+        comparison = self._comparison(
+            record, result, current_implementations, decision=result.get("decision") if result else None,
+        )
         hypotheses = []
         for definition in context["hypotheses"]:
             judgement = judge_hypothesis(
@@ -379,13 +381,25 @@ class NotebookService:
         """Current comparison/deployment facts are projections, separate from historical receipts."""
         if entry.get("layer") == "agent":
             return self.manager.agent_rsi.public_notebook_entry(entry)
-        result = self._project_decision(deepcopy(entry))
         record = self.manager.evaluations.store.records.get(entry["evaluationId"], {})
+        result = self._project_score(deepcopy(entry), record)
         promotions = getattr(self.manager, "controller_promotions", None)
         deployment = promotions.notebook_deployment(record) if promotions is not None else None
         if deployment is not None and deployment != entry["deployment"]:
             result["recordedDeployment"] = deepcopy(entry["deployment"])
             result["deployment"] = deployment
+        return result
+
+    def _project_score(self, entry, record=None):
+        if entry.get("layer") == "agent":
+            return entry
+        store = self.manager.evaluations.store
+        if record is None:
+            record = store.records.get(entry["evaluationId"], {})
+        score = record.get("result") if record.get("status") == "completed" else None
+        decision = store.score_decision(score or {})
+        if entry["reportedDecision"] == "baseline_candidate" and decision == "baseline":
+            entry["reportedDecision"] = "baseline"
         if record.get("notebookContext") is None:
             current = entry["comparison"] | {
                 "state": "unknown",
@@ -397,22 +411,15 @@ class NotebookService:
         else:
             current = self._comparison(
                 record,
-                record.get("result") if record.get("status") == "completed" else None,
+                score,
                 record.get("notebookExecution"),
+                decision=decision,
             )
         if current["state"] not in ("baseline", "comparable"):
             current.update(referenceEvaluationId=None, referenceScore=None)
         if current != entry["comparison"]:
-            result["recordedComparison"] = deepcopy(entry["comparison"])
-            result["comparison"] = current
-        return result
-
-    def _project_decision(self, entry):
-        if entry.get("layer") != "agent" and entry["reportedDecision"] == "baseline_candidate":
-            store = self.manager.evaluations.store
-            evaluation = store.records.get(entry["evaluationId"], {})
-            if store.score_decision(evaluation.get("result") or {}) == "baseline":
-                entry["reportedDecision"] = "baseline"
+            entry["recordedComparison"] = entry["comparison"]
+            entry["comparison"] = current
         return entry
 
     def _fixed_scope(self, entry):
