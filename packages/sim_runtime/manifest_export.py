@@ -4,6 +4,7 @@ from importlib.metadata import version
 
 import newton
 import warp as wp
+from newton.solvers import SolverMuJoCo
 
 from packages.assets.bindings import apply_bindings
 from packages.protocol.math import normalize_quaternion
@@ -213,6 +214,8 @@ def export_manifest(
 
     warnings.extend(getattr(sim.builder, "spatial_warnings", ()) if hasattr(sim, "builder") else ())
     apply_bindings(nodes, sim.scene_id, warnings)
+    solver = sim.solver
+    solver_name = "SolverMuJoCo" if isinstance(solver, SolverMuJoCo) else type(solver).__name__
     return SceneManifest.model_validate(
         {
             "sessionId": session_id,
@@ -223,7 +226,7 @@ def export_manifest(
             "source": {
                 "kind": "newton",
                 "newtonVersion": version("newton"),
-                "solver": "SolverMuJoCo" if sim.solver_kind == "mujoco" else type(sim.solver).__name__,
+                "solver": solver_name,
                 "physicsDt": sim.physics_dt,
                 "basePublishHz": publish_hz,
                 "realtimeFactor": realtime_factor,
