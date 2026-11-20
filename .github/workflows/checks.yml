@@ -129,6 +129,14 @@ jobs:
         with:
           node-version: 22
       - uses: pnpm/action-setup@v4
+      - name: Ensure FFmpeg and FFprobe for browser media tests
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            apt-get update
+            apt-get install --no-install-recommends -y ffmpeg
+          fi
+          ffmpeg -version
+          ffprobe -version
       - name: Install frozen Python dependencies from PyPI
         run: |
           uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null
