@@ -55,10 +55,12 @@ def mass_fields(prim):
         fields["diagonalInertia"] = diagonal
     axes = api.GetPrincipalAxesAttr().Get()
     if axes is not None:
-        if not all(math.isfinite(value) for value in (axes.GetReal(), *axes.GetImaginary())):
+        quaternion = (axes.GetReal(), *axes.GetImaginary())
+        if not all(math.isfinite(value) for value in quaternion):
             raise invalid("USD principalAxes must be finite", path=path)
-        if any(axes.GetImaginary()):
-            fields["principalAxes"] = axes
+        norm = math.hypot(*quaternion)
+        if norm > 1e-12:
+            fields["principalAxes"] = tuple(value / norm for value in quaternion)
     return fields
 
 
@@ -71,6 +73,8 @@ def collider_density(prim, bodies):
     if path != owner:
         fields = mass_fields(prim)
         unsupported = fields.keys() - {"density"}
+        if not any(fields.get("principalAxes", (1., 0., 0., 0.))[1:]):
+            unsupported.discard("principalAxes")
         # A collider's COM and mass can still change the inferred inertia or COM.
         if "diagonalInertia" in body_fields:
             unsupported -= {"diagonalInertia", "principalAxes"}
@@ -139,6 +143,7 @@ def load(source, entry, meters_per_unit=None):
             body.center = None
         if "diagonalInertia" not in fields:
             body.inertia = None
+            body.inferred_principal_axes = fields.get("principalAxes")
         if "density" in fields:
             body.density = fields["density"] * density_scale
     source_joints = {joint.name: joint for joint in derived.joints}

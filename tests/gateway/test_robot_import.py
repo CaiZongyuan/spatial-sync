@@ -420,23 +420,8 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     assert data.qfrc_passive.tolist() == pytest.approx([-1e-5 * 180 / math.pi, -.3])
 
 
-@pytest.mark.parametrize(("density_source", "expected_mass", "expected_center"), [
-    ("collider", 1.28, .08),
-    ("material", 1.536, 1 / 15),
-    ("shadowed", .512, .05),
-    ("equal", .512, .05),
-    ("centerOfMass", None, None),
-    ("diagonalInertia", None, None),
-    ("principalAxes", None, None),
-    ("sentinels", 1.28, .08),
-    ("body-fields", 1.8, .02),
-])
-def test_usd_robot_import_preserves_effective_collider_density(
-    client, tmp_path, density_source, expected_mass, expected_center,
-):
-    from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
-
-    from apps.node.usd_mjcf import derive_usd_mjcf
+def two_link_usd_with_box_colliders(offset):
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
     stage = Usd.Stage.CreateInMemory()
     UsdGeom.SetStageMetersPerUnit(stage, .01)
@@ -452,18 +437,43 @@ def test_usd_robot_import_preserves_effective_collider_density(
         shape = UsdGeom.Cube.Define(stage, f"/Robot/{name}/box")
         shape.CreateSizeAttr(8)
         UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
-    arm = stage.GetPrimAtPath("/Robot/arm")
-    if density_source != "material":
-        UsdPhysics.MassAPI.Apply(arm).CreateDensityAttr(.001)
     heavy = UsdGeom.Cube.Define(stage, "/Robot/arm/heavy")
     heavy.CreateSizeAttr(8)
-    heavy.AddTranslateOp().Set(Gf.Vec3d(10, 0, 0))
+    heavy.AddTranslateOp().Set(Gf.Vec3d(*offset))
     UsdPhysics.CollisionAPI.Apply(heavy.GetPrim())
+    joint = UsdPhysics.RevoluteJoint.Define(stage, "/Robot/hinge")
+    joint.CreateBody0Rel().SetTargets(["/Robot/base"])
+    joint.CreateBody1Rel().SetTargets(["/Robot/arm"])
+    joint.CreateLocalPos0Attr(Gf.Vec3f(30, 0, 0))
+    return stage, stage.GetPrimAtPath("/Robot/arm"), heavy.GetPrim()
+
+
+@pytest.mark.parametrize(("density_source", "expected_mass", "expected_center"), [
+    ("collider", 1.28, .08),
+    ("material", 1.536, 1 / 15),
+    ("shadowed", .512, .05),
+    ("equal", .512, .05),
+    ("centerOfMass", None, None),
+    ("diagonalInertia", None, None),
+    ("principalAxes", None, None),
+    ("sentinels", 1.28, .08),
+    ("body-fields", 1.8, .02),
+])
+def test_usd_robot_import_preserves_effective_collider_density(
+    client, tmp_path, density_source, expected_mass, expected_center,
+):
+    from pxr import Gf, UsdPhysics, UsdShade
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    stage, arm, heavy = two_link_usd_with_box_colliders((10, 0, 0))
+    if density_source != "material":
+        UsdPhysics.MassAPI.Apply(arm).CreateDensityAttr(.001)
     if density_source in ("material", "shadowed"):
         material = UsdShade.Material.Define(stage, "/Robot/Material")
         UsdPhysics.MaterialAPI.Apply(material.GetPrim()).CreateDensityAttr(.004)
-        UsdShade.MaterialBindingAPI.Apply(heavy.GetPrim()).Bind(material, materialPurpose="physics")
-    collider_mass = UsdPhysics.MassAPI.Apply(heavy.GetPrim())
+        UsdShade.MaterialBindingAPI.Apply(heavy).Bind(material, materialPurpose="physics")
+    collider_mass = UsdPhysics.MassAPI.Apply(heavy)
     collider_mass.CreateDensityAttr({"equal": .001, "material": 0., "shadowed": 0.}.get(density_source, .004))
     if density_source in ("centerOfMass", "body-fields"):
         collider_mass.CreateCenterOfMassAttr(Gf.Vec3f(1, 0, 0))
@@ -482,10 +492,6 @@ def test_usd_robot_import_preserves_effective_collider_density(
         body_mass.CreateMassAttr(3.6)
         body_mass.CreateCenterOfMassAttr(Gf.Vec3f(2, 0, 0))
         body_mass.CreateDiagonalInertiaAttr(Gf.Vec3f(8, 9, 10))
-    joint = UsdPhysics.RevoluteJoint.Define(stage, "/Robot/hinge")
-    joint.CreateBody0Rel().SetTargets(["/Robot/base"])
-    joint.CreateBody1Rel().SetTargets(["/Robot/arm"])
-    joint.CreateLocalPos0Attr(Gf.Vec3f(30, 0, 0))
 
     package = files("density.usda", stage.GetRootLayer().ExportToString().encode())
     manifest = json.loads(package["robot.json"])
@@ -515,6 +521,77 @@ def test_usd_robot_import_preserves_effective_collider_density(
         cube_inertia = expected_mass * .08**2 / 6
         transverse = cube_inertia + expected_mass * expected_center * (.10 - expected_center)
         assert model.body_inertia[body] == pytest.approx([cube_inertia, transverse, transverse])
+
+
+@pytest.mark.parametrize(("case", "axes", "diagonal", "offset"), [
+    ("axes-only", (.70710678, 0., 0., .70710678), None, (10, 0, 0)),
+    ("authored-identity", (1., 0., 0., 0.), None, (3, 10, 0)),
+    ("diagonal-only", None, (8, 9, 10), (3, 10, 0)),
+    ("both", (.70710678, 0., 0., .70710678), (8, 9, 10), (3, 10, 0)),
+    ("sentinels", (0., 0., 0., 0.), (0, 0, 0), (3, 10, 0)),
+    ("derived", None, None, (3, 10, 0)),
+    ("repeated-moments", (.70710678, 0., .70710678, 0.), None, (0, 0, 0)),
+])
+def test_usd_robot_import_preserves_partial_principal_axes(client, tmp_path, case, axes, diagonal, offset):
+    import numpy as np
+    from pxr import Gf, Usd, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf, mujoco_link_inertia
+
+    stage, arm, heavy = two_link_usd_with_box_colliders(offset)
+    mass_api = UsdPhysics.MassAPI.Apply(arm)
+    mass_api.CreateDensityAttr(.001)
+    UsdPhysics.MassAPI.Apply(heavy).CreateDensityAttr(.004)
+    if axes is not None:
+        mass_api.CreatePrincipalAxesAttr(Gf.Quatf(*axes))
+    if diagonal is not None:
+        mass_api.CreateDiagonalInertiaAttr(Gf.Vec3f(*diagonal))
+
+    def cube(prim):
+        properties = UsdPhysics.RigidBodyAPI.MassInformation()
+        properties.volume = 8**3
+        properties.inertia = Gf.Matrix3f(8**5 / 6)
+        properties.centerOfMass = Gf.Vec3f(0.)
+        positions = {"box": (0, 0, 0), "heavy": offset}
+        properties.localPos = Gf.Vec3f(*positions[prim.GetName()])
+        properties.localRot = Gf.Quatf(1.)
+        return properties
+
+    def basis(quaternion):
+        q = Gf.Quatd(quaternion.GetReal(), Gf.Vec3d(quaternion.GetImaginary())).GetNormalized()
+        return np.asarray(Gf.Matrix3d().SetRotate(q)).T
+
+    source_mass, source_diagonal, source_com, source_axes = (
+        UsdPhysics.RigidBodyAPI(arm).ComputeMassProperties(cube)
+    )
+    if case == "diagonal-only":
+        # The explicit moments use the default body frame when rotation is omitted.
+        source_axes = Gf.Quatf(1.)
+    source_basis = basis(source_axes)
+    source_tensor = (source_basis * np.asarray(source_diagonal) * .5 * .01**2) @ source_basis.T
+
+    source = stage.GetRootLayer().ExportToString().encode()
+    package = files("axes.usda", source)
+    manifest = json.loads(package["robot.json"])
+    manifest["calibration"] = {"density": 1000.}
+    package["robot.json"] = json.dumps(manifest).encode()
+    result = upload(client, package)
+    assert result.status_code == 200, result.text
+    item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    assert client.get(item["files"]["source/axes.usda"]).content == source
+    path = tmp_path / "readback.usda"
+    path.write_bytes(client.get(item["files"]["asset.usda"]).content)
+    prim_path = "/Asset/links/arm"
+    derived = derive_usd_mjcf(path)
+    model = derived.to_mjmodel()
+    body = model.body(derived.body_names_by_path[prim_path]).id
+    assert model.body_mass[body] == pytest.approx(source_mass * .5)
+    assert model.body_ipos[body] == pytest.approx(np.asarray(source_com) * .01, abs=1e-8)
+    np.testing.assert_allclose(mujoco_link_inertia(model, body), source_tensor, rtol=2e-6, atol=1e-8)
+    if axes is not None and any(axes) and diagonal is None:
+        baked = Usd.Stage.Open(str(path))
+        published_axes = UsdPhysics.MassAPI(baked.GetPrimAtPath(prim_path)).GetPrincipalAxesAttr().Get()
+        np.testing.assert_allclose(basis(published_axes), source_basis, atol=1e-7)
 
 
 @pytest.mark.parametrize(("condim", "priority", "override", "parameters", "field"), [

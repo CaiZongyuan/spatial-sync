@@ -52,6 +52,7 @@ class Body:
     sites: dict = field(default_factory=dict)
     estimated_inertia: bool = False
     density: float | None = None
+    inferred_principal_axes: tuple[float, float, float, float] | None = None
 
 
 @dataclass

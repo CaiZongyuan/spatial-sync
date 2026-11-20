@@ -103,6 +103,24 @@ def collision_mass(shape, length, path):
     )
 
 
+def usd_diagonal_inertia(inertia):
+    # OpenUSD keeps the inferred moment order when principalAxes is authored alone.
+    # Use its mass callback with the already-aggregated tensor at unit density.
+    stage = Usd.Stage.CreateInMemory()
+    body = UsdGeom.Xform.Define(stage, "/Body").GetPrim()
+    rigid = UsdPhysics.RigidBodyAPI.Apply(body)
+    UsdPhysics.MassAPI.Apply(body).CreateDensityAttr(1.)
+    UsdPhysics.CollisionAPI.Apply(UsdGeom.Cube.Define(stage, "/Body/Shape").GetPrim())
+    properties = UsdPhysics.RigidBodyAPI.MassInformation()
+    properties.volume = 1.
+    properties.centerOfMass = Gf.Vec3f(0.)
+    properties.inertia = Gf.Matrix3f(inertia.tolist())
+    properties.localPos = Gf.Vec3f(0.)
+    properties.localRot = Gf.Quatf(1.)
+    _, diagonal, _, _ = rigid.ComputeMassProperties(lambda _: properties)
+    return diagonal
+
+
 def inertial(body, density, length, kilograms, path):
     mass = body.mass * kilograms if body.mass is not None else None
     center = body.center * length if body.center is not None else None
@@ -138,6 +156,8 @@ def inertial(body, density, length, kilograms, path):
     diagonal, axes = np.linalg.eigh(inertia)
     if diagonal[0] <= 0 or diagonal[2] > diagonal[0] + diagonal[1] + 1e-10:
         raise invalid("Inertia is not physically realizable", path=path)
+    if body.inferred_principal_axes is not None:
+        return mass, center, usd_diagonal_inertia(inertia), body.inferred_principal_axes, estimated
     # An already diagonal tensor needs no principal-frame rotation. This
     # avoids round-off from reconstructing exact zeros with Float32 quaternions.
     body_diagonal = np.diag(inertia)
