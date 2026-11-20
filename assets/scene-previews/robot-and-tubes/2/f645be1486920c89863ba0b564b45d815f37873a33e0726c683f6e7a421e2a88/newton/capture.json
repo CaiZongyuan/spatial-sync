@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T14:32:53.572042+00:00",
+  "capturedAt": "2026-11-20T15:15:29.486987+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -406,7 +406,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "7529253b8691375c0f7df062448d9081c674f8c16f8984aaa3dc2390fff9bde1"
+      "sha256": "521ae77be24cec9cdc20e2da229d1aa255c92631a070d0ff64570b429215b2d6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -533,6 +533,10 @@
       "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
     },
     {
+      "path": "packages/sim_runtime/control_clock.py",
+      "sha256": "f09ad0563048bd1c6366e56103e9d5705807ca887e1db32ffc2ee71093581596"
+    },
+    {
       "path": "packages/sim_runtime/info_catalog.py",
       "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
@@ -586,7 +590,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "07840e3efa0e6b0ffc72cbb689a195977a0d1e5a982efdc00fcbde715dc71a04"
+      "sha256": "31b894427e4e639fa12bde6cd3226547437789aea89121fbd34171c27b2eab8d"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -636,10 +640,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "183b15a0710fdac76ea8fb538f0552c28c9f3058ef1ec2216c324b38173e0b08",
-    "catalog.json": "3d9b8f306a055d40abbcaebc01c157377c92ee416a4cf94eede5a5c87a36318a",
-    "state.json": "47148650b39a4e67682940d1210ad55e5fc6ec5da59315451adc7c33ccb60ad3",
-    "snapshot.bin": "49aef0518e316c3fcc9773e98ef124e0dd203ecf134283981f7f558b9f5de92a",
+    "manifest.json": "38a13b0c1393efc1bc31fd17cf916cdb17d9b1611509e404c3b61ef1a4b6a386",
+    "catalog.json": "3adcfb350902c81ed24bab925e3306f7bde3aa3287c7b90bf2e84b9704803ca8",
+    "state.json": "653107529d294f1ab5b22eeb5e8e536b4d2e636532611f234d068e22a8ed61ff",
+    "snapshot.bin": "3355b9ef50908c3f50a9ff4c5844392bcb2ca07c1f5908a897b698dfbb61a9a1",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

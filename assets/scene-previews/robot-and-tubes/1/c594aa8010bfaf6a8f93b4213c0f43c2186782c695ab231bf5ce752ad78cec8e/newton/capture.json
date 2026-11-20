@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T14:32:35.889761+00:00",
+  "capturedAt": "2026-11-20T15:15:10.943431+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -293,7 +293,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "7529253b8691375c0f7df062448d9081c674f8c16f8984aaa3dc2390fff9bde1"
+      "sha256": "521ae77be24cec9cdc20e2da229d1aa255c92631a070d0ff64570b429215b2d6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -420,6 +420,10 @@
       "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
     },
     {
+      "path": "packages/sim_runtime/control_clock.py",
+      "sha256": "f09ad0563048bd1c6366e56103e9d5705807ca887e1db32ffc2ee71093581596"
+    },
+    {
       "path": "packages/sim_runtime/info_catalog.py",
       "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
@@ -473,7 +477,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "07840e3efa0e6b0ffc72cbb689a195977a0d1e5a982efdc00fcbde715dc71a04"
+      "sha256": "31b894427e4e639fa12bde6cd3226547437789aea89121fbd34171c27b2eab8d"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -523,10 +527,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "5cf8c6d5d791f4ab66830becad7db1df830e731632e609982eb7978a30ce8d13",
-    "catalog.json": "98f57e79a38f345b37e0723adefe4ebb3418df987628da59bad3e1f8beba4b0b",
-    "state.json": "2dc12e18f77dd8ce4974239d19db8d2012767607f6666337af89da994a425bd1",
-    "snapshot.bin": "3db8fdb3a373c1096a9138ed029fd6bd12b1df4066a419f158f20ace2629280e",
+    "manifest.json": "c54b224f385a4632d7b06648960663642bc1a20a97f1df3b3a9f38851cd15b08",
+    "catalog.json": "b033670380dc3183e93b25c2641e160811d8fc9584f567c7b0fa633ea3f03b60",
+    "state.json": "5ef8ea6ee8a5f49e43ad492b39f40cd805b61fb3d7817fb7e48c3d032dd5e7ea",
+    "snapshot.bin": "a623f69df0e3e72ab6fb3495cdeb95865b15142737242552f8e5b98a6539b621",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",

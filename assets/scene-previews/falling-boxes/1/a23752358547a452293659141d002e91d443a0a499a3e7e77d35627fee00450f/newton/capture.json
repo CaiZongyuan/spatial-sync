@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T14:30:41.102470+00:00",
+  "capturedAt": "2026-11-20T15:13:20.567100+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -161,7 +161,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "7529253b8691375c0f7df062448d9081c674f8c16f8984aaa3dc2390fff9bde1"
+      "sha256": "521ae77be24cec9cdc20e2da229d1aa255c92631a070d0ff64570b429215b2d6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -288,6 +288,10 @@
       "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
     },
     {
+      "path": "packages/sim_runtime/control_clock.py",
+      "sha256": "f09ad0563048bd1c6366e56103e9d5705807ca887e1db32ffc2ee71093581596"
+    },
+    {
       "path": "packages/sim_runtime/info_catalog.py",
       "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
@@ -329,7 +333,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "07840e3efa0e6b0ffc72cbb689a195977a0d1e5a982efdc00fcbde715dc71a04"
+      "sha256": "31b894427e4e639fa12bde6cd3226547437789aea89121fbd34171c27b2eab8d"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -379,10 +383,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "9353814f885601c8f1d51c818cab0576cb71342deddd3c04948f8d4cd561a8f8",
-    "catalog.json": "31f1c1a1ede751e8140cecc90d731a22755e3550811a560edf3cefbdce25c8c9",
-    "state.json": "b400f0e43437ddca3804d03a75ff67a9aa9cabd95cf93e59f866746d01577955",
-    "snapshot.bin": "d8ee57e77d173b8d5613445af5f4b300153aeee21e87260dd7c79dd3c8c89fee"
+    "manifest.json": "7e43a6f5658a9010ee79c2cf8110f674507a015061b7f630706eea647b93e1ed",
+    "catalog.json": "9f011d55e4df212f2c4904bc789553d620972973b92d1cb2d50c0339bca790e6",
+    "state.json": "0e3697eb97e3d46a38498a2c561020055f9503c9267897b7e47613d8094bb317",
+    "snapshot.bin": "4bc5deb718acaf9b0bbbe9f8fb799f4590c2dc77b3b728c69f3b3010f5e8beba"
   },
   "counts": {
     "physicalEntities": 3,
