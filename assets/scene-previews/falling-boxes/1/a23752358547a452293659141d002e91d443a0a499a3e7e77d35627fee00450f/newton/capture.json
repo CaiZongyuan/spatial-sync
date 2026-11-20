@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T13:10:52.753244+00:00",
+  "capturedAt": "2026-11-20T14:30:41.102470+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -109,7 +109,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "d8f64d624f61a14bebe610a1fd551af995372e4cc0771f88c696f004c590b68b"
+      "sha256": "0685adf9589fae8ede7e3bd9861c38adaac04672cce47b5f1cb5dfe4bc2538de"
     },
     {
       "path": "packages/library/scenes.py",
@@ -161,7 +161,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "02d59febd5508dad01b1ed61e91fbd98748f8e4375fec1f9b114d86d745a3029"
+      "sha256": "7529253b8691375c0f7df062448d9081c674f8c16f8984aaa3dc2390fff9bde1"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "8211e1012216d6504c3aef8b93dff119af99b8cbce980cda6a8e72578aaa2c44"
+      "sha256": "a5ea37f72769f62f83b53443fce24bcb6b7c0ac0be55eb8e31fb64a42c14075b"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -379,10 +379,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "c21de9ed29a507de8c9ba4de96d8646e8d3e9d0e331ef6a238012eebd2f21e61",
-    "catalog.json": "be4f129140d37a536081b0b84f4e3cc0c58a73c17ff0994274005912fd109c0c",
-    "state.json": "b613e11cfb438eecc320ee84fbf90b08a2d5f29548af02d6ed567d6b61e6724c",
-    "snapshot.bin": "5034dd48d1bac5be34fb2d1724ff2662c89bb3701b759227752e994e36adedcf"
+    "manifest.json": "9353814f885601c8f1d51c818cab0576cb71342deddd3c04948f8d4cd561a8f8",
+    "catalog.json": "31f1c1a1ede751e8140cecc90d731a22755e3550811a560edf3cefbdce25c8c9",
+    "state.json": "b400f0e43437ddca3804d03a75ff67a9aa9cabd95cf93e59f866746d01577955",
+    "snapshot.bin": "d8ee57e77d173b8d5613445af5f4b300153aeee21e87260dd7c79dd3c8c89fee"
   },
   "counts": {
     "physicalEntities": 3,

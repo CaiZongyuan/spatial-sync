@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T13:13:45.604781+00:00",
+  "capturedAt": "2026-11-20T14:33:11.345069+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -125,7 +125,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "d8f64d624f61a14bebe610a1fd551af995372e4cc0771f88c696f004c590b68b"
+      "sha256": "0685adf9589fae8ede7e3bd9861c38adaac04672cce47b5f1cb5dfe4bc2538de"
     },
     {
       "path": "packages/library/scenes.py",
@@ -177,7 +177,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "02d59febd5508dad01b1ed61e91fbd98748f8e4375fec1f9b114d86d745a3029"
+      "sha256": "7529253b8691375c0f7df062448d9081c674f8c16f8984aaa3dc2390fff9bde1"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -205,7 +205,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "8211e1012216d6504c3aef8b93dff119af99b8cbce980cda6a8e72578aaa2c44"
+      "sha256": "a5ea37f72769f62f83b53443fce24bcb6b7c0ac0be55eb8e31fb64a42c14075b"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -407,10 +407,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "8a0e4dec95a58568b652bc04cf3a6cb90ed10c95b6ca2a8457df3f76e1bda2ba",
-    "catalog.json": "fdd67b47f5e0ec8670fb2e6ac9c3508148a9ab3f451674a2e18989a2c27fc48f",
-    "state.json": "445f9ab02adbbb620333df90fd6d6bf15d445fc3212defc4bc83f989ec7729de",
-    "snapshot.bin": "eb4a8ecc48ec642ddc3e90e96aeb1263111667c4e7d5a6a57b0a08f06a31a146",
+    "manifest.json": "e0cc612b1e6b3a1cae5b9cd7194480023fc6a57c13a4814208245dff56bd331a",
+    "catalog.json": "b69970d0e505e90e148504de4b183acbae84a1676ebfec20de6d2905f8588828",
+    "state.json": "46235cfb263fd57f427e62db49af91185092e7d877e403b7cdaad8c729591e97",
+    "snapshot.bin": "19c6b04dafc521c690ecf598bb08d7b1abc0c422302869dd18c3f95e60ef90ba",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
