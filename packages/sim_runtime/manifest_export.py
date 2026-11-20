@@ -223,7 +223,7 @@ def export_manifest(
             "source": {
                 "kind": "newton",
                 "newtonVersion": version("newton"),
-                "solver": type(sim.solver).__name__,
+                "solver": "SolverMuJoCo" if sim.solver_kind == "mujoco" else type(sim.solver).__name__,
                 "physicsDt": sim.physics_dt,
                 "basePublishHz": publish_hz,
                 "realtimeFactor": realtime_factor,

@@ -23,6 +23,7 @@ QuatWXYZ = tuple[float, float, float, float]
 Vec3 = tuple[float, float, float]
 JOINT_ARMATURE_ATTR = "newton:armature"
 JOINT_PASSIVE_DAMPING_ATTR = "newton:damping"
+JOINT_TARGET_RANGE_ATTR = "newton:positionTargetRange"
 DEFAULT_FRICTION = (1., .005, .0001)  # Newton 1.7 ModelBuilder.ShapeConfig
 
 _AXIS_VECTORS: dict[str, Vec3] = {
@@ -58,6 +59,7 @@ class DerivedJoint:
     actuated: bool
     initial_position: float | None = None
     passive_damping: float = 0.
+    target_range: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -611,6 +613,18 @@ def _custom_float(prim: Usd.Prim, names: Sequence[str], default: float = 0.0) ->
 
 def joint_armature(prim, default=0.):
     return _custom_float(prim, (JOINT_ARMATURE_ATTR, "mjc:armature", "physxJoint:armature"), default)
+
+
+def joint_target_range(prim):
+    """Position targets in canonical solver units (radians or meters)."""
+    attribute = prim.GetAttribute(JOINT_TARGET_RANGE_ATTR)
+    if not attribute or not attribute.HasAuthoredValue():
+        return None
+    bounds = attribute.Get()
+    if (attribute.GetTypeName() != Sdf.ValueTypeNames.Double2 or bounds is None
+            or not all(math.isfinite(value) for value in bounds) or not bounds[0] < bounds[1]):
+        raise UnsupportedUsdPhysics(prim.GetPath(), "Invalid joint position control range")
+    return tuple(bounds)
 
 
 def bound_contact_material(prim):
@@ -1616,6 +1630,11 @@ def derive_usd_mjcf(
             default=0.0,
         )
         actuated = has_drive and (stiffness > 0.0 or damping > 0.0)
+        target_range = joint_target_range(j_prim)
+        if target_range is not None and stiffness <= 0.0:
+            raise UnsupportedUsdPhysics(
+                j_prim.GetPath(), "Position control range requires positive stiffness",
+            )
         j_name = _unique_name(j_prim.GetName(), used_joint_names)
         return DerivedJoint(
             name=j_name,
@@ -1637,6 +1656,7 @@ def derive_usd_mjcf(
             passive_damping=_custom_float(j_prim, (JOINT_PASSIVE_DAMPING_ATTR,)) * (
                 180.0 / math.pi if kind == "hinge" else 1.0
             ),
+            target_range=target_range,
         )
 
     def _add_body_geoms_and_sites(
@@ -2006,6 +2026,8 @@ def derive_usd_mjcf(
                         "ctrllimited": "false",
                         "inheritrange": "0",
                     }
+                    if j_spec.target_range is not None:
+                        act_attrs.update(ctrllimited="true", ctrlrange=_fmt(j_spec.target_range))
                     if j_spec.max_force is not None:
                         act_attrs["forcelimited"] = "true"
                         act_attrs["forcerange"] = _fmt((-j_spec.max_force, j_spec.max_force))

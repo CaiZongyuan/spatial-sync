@@ -115,7 +115,16 @@ def from_model(model, entry, *, standing_key, usd_colliders):
             if lower != -upper:
                 raise invalid("Actuator force limits must be symmetric", path=path)
             force = float(upper)
-        actuators[joint] = gain, float(-velocity), force
+        target_range = None
+        clamp_enabled = not model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CLAMPCTRL
+        if model.actuator_ctrllimited[index] and clamp_enabled:
+            lower, upper = model.actuator_ctrlrange[index]
+            if not np.isfinite([lower, upper]).all() or not lower < upper:
+                raise invalid("Position control range must have two ordered finite bounds", path=path)
+            if gain <= 0:
+                raise invalid("Position control range requires positive stiffness", path=path)
+            target_range = (float(lower), float(upper))
+        actuators[joint] = gain, float(-velocity), force, target_range
 
     bodies, joints, colliders = {}, [], {}
     fixed = True
@@ -167,7 +176,7 @@ def from_model(model, entry, *, standing_key, usd_colliders):
             if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_LIMIT:
                 raise invalid("MJCF disables its authored hard limits", path=joint_name)
             joint.limits = tuple(model.jnt_range[joint_id])
-        gain, damping, force = actuators.get(joint_id, (0., 0., None))
+        gain, damping, force, target_range = actuators.get(joint_id, (0., 0., None, None))
         passive_damping = float(model.dof_damping[dof])
         if not np.isfinite(passive_damping) or passive_damping < 0 or np.any(model.dof_dampingpoly[dof]):
             raise invalid("Joint requires finite nonnegative linear passive damping", path=joint_name)
@@ -182,6 +191,7 @@ def from_model(model, entry, *, standing_key, usd_colliders):
                 # the same effort. USD DriveAPI can express their intersection.
                 force = float(upper) if force is None else min(force, float(upper))
         joint.kp, joint.kv, joint.force = gain, damping, force
+        joint.target_range = target_range
         joint.passive_damping = passive_damping
         joint.armature = float(model.dof_armature[dof])
         joint.frictionloss = float(model.dof_frictionloss[dof])

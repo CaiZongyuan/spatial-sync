@@ -116,6 +116,19 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     limits_lo, limits_hi = reference.joint_limit_lower.numpy(), reference.joint_limit_upper.numpy()
     armature = reference.joint_armature.numpy()
     passive_damping = reference.joint_damping.numpy()
+    effort_limits = reference.joint_effort_limit.numpy()
+    derived_joints = {joint.prim_path: joint for joint in derived.joints}
+    live_position_actuators = {}
+    if mujoco_solver is not None and mujoco_solver.mjc_actuator_ctrl_source is not None:
+        from newton.solvers import SolverMuJoCo
+
+        live_position_actuators = {
+            int(dof): index for index, (source, dof) in enumerate(zip(
+                mujoco_solver.mjc_actuator_ctrl_source.numpy(),
+                mujoco_solver.mjc_actuator_to_newton_idx.numpy(),
+                strict=True,
+            )) if source == int(SolverMuJoCo.CtrlSource.JOINT_TARGET) and dof >= 0
+        }
     for path, idx in joint_ids.items():
         if path not in newton_joints or idx < 0:
             continue
@@ -142,6 +155,17 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
         kv = -model.actuator_biasprm[actuator, 2] if actuator is not None else 0.
         close("Joint stiffness", ke[dof], kp, path)
         close("Joint damping", kd[dof], kv, path)
+        specification = derived_joints[path]
+        if specification.max_force is not None:
+            close("Joint effort limit", effort_limits[dof], model.jnt_actfrcrange[idx, 1], path)
+        if specification.target_range is not None and mujoco_solver is not None:
+            live = mujoco_solver.mj_model
+            live_index = live_position_actuators.get(dof)
+            effective_range = ()
+            if (live_index is not None and live.actuator_ctrllimited[live_index]
+                    and not live.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_CLAMPCTRL):
+                effective_range = live.actuator_ctrlrange[live_index]
+            close("Joint position control range", specification.target_range, effective_range, path)
 
     geom_ids = ids(derived.collider_names_by_path, mujoco.mjtObj.mjOBJ_GEOM)
     flags = reference.shape_flags.numpy()

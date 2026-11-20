@@ -184,6 +184,101 @@ def test_gzip_robot_upload_deduplicates_against_bare_tar(client, monkeypatch):
     assert "Package exceeds 2 entries" in response.text
 
 
+def test_urdf_passive_damping_survives_calibrated_drive_and_effort_limit(client, tmp_path):
+    import mujoco
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    raw = URDF.replace(b'effort="20" velocity="1"/>', b'effort="3" velocity="5"/><dynamics damping="4"/>')
+    source = mujoco.MjModel.from_xml_string(raw.decode())
+    data = mujoco.MjData(source)
+    data.qvel[0] = 2.
+    mujoco.mj_forward(source, data)
+    assert data.qfrc_passive[0] == pytest.approx(-8.)
+    assert upload(client, files(model=raw)).status_code == 200
+
+    path = "/api/v1/library/assets/robot/calibration-probe"
+    reply = client.post(path + "/1/calibrate", json={
+        "fixedBase": True, "joints": {"motor-a": {"kp": 10., "kv": 0.}},
+    })
+    assert reply.status_code == 200, reply.text
+    item = client.get(path + "/2").json()
+    stage = tmp_path / "baked.usda"
+    stage.write_bytes(client.get(item["files"]["asset.usda"]).content)
+    model = derive_usd_mjcf(stage).to_mjmodel()
+    state = mujoco.MjData(model)
+    state.qvel[0] = -2.
+    state.ctrl[0] = -.4
+    mujoco.mj_forward(model, state)
+    assert state.qfrc_passive[0] == pytest.approx(8.)
+    assert state.qfrc_actuator[0] == pytest.approx(-3.)
+
+
+def test_mjcf_position_control_range_survives_negative_axis_and_zero_offset(client, tmp_path):
+    import mujoco
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    raw = b"""<mujoco><compiler angle="radian"/><worldbody><body name="base">
+    <geom type="box" size=".1 .1 .1" mass="2"/><body name="tip" pos=".4 0 0">
+    <joint name="motor-a" axis="-1 0 0" range="-1 1"/><geom size=".05" mass=".25"/>
+    </body></body></worldbody><actuator>
+    <position name="drive" joint="motor-a" kp="10" ctrlrange="-.1 .2" forcerange="-15 15"/>
+    </actuator></mujoco>"""
+    original = mujoco.MjModel.from_xml_string(raw.decode())
+    source_data = mujoco.MjData(original)
+    source_data.ctrl[0] = .8
+    mujoco.mj_forward(original, source_data)
+    assert source_data.qfrc_actuator[0] == pytest.approx(2.)
+
+    reply = upload(client, files("probe.xml", raw))
+    assert reply.status_code == 200, reply.text
+    detail = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    stage = tmp_path / "baked.usda"
+    stage.write_bytes(client.get(detail["files"]["asset.usda"]).content)
+    model = derive_usd_mjcf(stage).to_mjmodel()
+    assert model.actuator_ctrllimited.tolist() == [True]
+    assert model.actuator_ctrlrange[0] == pytest.approx([.05, .35])
+    data = mujoco.MjData(model)
+    data.qpos[0] = .25
+    data.ctrl[0] = -.8 + .25
+    mujoco.mj_forward(model, data)
+    assert data.qfrc_actuator[0] == pytest.approx(-2.)
+    assert client.get(detail["files"]["visual.glb"]).content.startswith(b"glTF")
+
+
+def test_fixed_mjcf_keeps_world_welded_parent_contact_eligibility(tmp_path, monkeypatch):
+    pytest.importorskip("newton")
+    import mujoco
+
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setenv("SPATIAL_STATE_ROOT", str(tmp_path / "state"))
+    raw = b"""<mujoco><compiler angle="radian"/><worldbody><body name="base" pos="0 0 .3">
+    <geom name="base-box" type="box" size=".15 .12 .1" mass="2"/><body name="tip" pos=".31 0 0">
+    <joint name="motor-a" range="-1 1"/><geom name="tip-ball" size=".05" mass=".25"/>
+    </body></body></worldbody></mujoco>"""
+    source = mujoco.MjModel.from_xml_string(raw.decode())
+    assert source.body_weldid[source.body("base").id] == 0
+    assert source.body_weldid[source.body("tip").id] != 0
+    # Move only the collider in a native probe to witness that the separated
+    # source pair is eligible even with the default parent filter on.
+    source.geom("tip-ball").pos[0] = -.14
+    mujoco.mj_setConst(source, mujoco.MjData(source))
+    state = mujoco.MjData(source)
+    mujoco.mj_forward(source, state)
+    assert state.ncon == 1
+
+    with TestClient(create_app()) as test_client:
+        result = upload(test_client, files("probe.xml", raw))
+    assert result.status_code == 200, result.text
+    report = result.json()["validation"]
+    checks = {row["id"]: row for row in report["checks"]}
+    assert report["launchable"], checks
+    assert checks["P7"]["status"] == "pass"
+    assert checks["P7"]["measurements"]["collidableGeometryPairCount"] == 1
+    assert checks["P8"]["status"] == "pass"
+
+
 @pytest.mark.parametrize(("joint_limit", "damping"), [(True, 0), (True, 4), (False, 4)])
 def test_mjcf_actuator_force_limit_preserves_applied_torque(client, tmp_path, joint_limit, damping):
     import mujoco

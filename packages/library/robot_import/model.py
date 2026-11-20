@@ -68,6 +68,7 @@ class Joint:
     force: float | None = None
     frictionloss: float = 0.
     passive_damping: float = 0.
+    target_range: tuple[float, float] | None = None
 
 
 @dataclass

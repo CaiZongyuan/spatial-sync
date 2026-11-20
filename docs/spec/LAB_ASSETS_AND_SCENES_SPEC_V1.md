@@ -182,7 +182,10 @@ dressing: false                          # true：整个素材只作布景
   基本体及受支持的 STL、OBJ、PLY 网格生成可浏览的 GLB。OBJ 附带 MTL、需要纹理的机器人视觉、
   闭链、球关节、mimic 和无法用连杆对表达的混合碰撞掩码会得到结构化诊断。
   对单个单位传动位置驱动，MJCF 的执行器与关节对称力范围交集写入 USD `maxForce`。
-  线性关节被动阻尼写入 Newton 识别的 `newton:damping`，与 USD DriveAPI 的阻尼分开施加。
+  生效的 MJCF 位置控制范围按同一关节符号及零位映射，写入 `newton:positionTargetRange`，
+  旋转关节用 rad，移动关节用 m。该范围要求正的驱动刚度，由两侧 MuJoCo 位置执行器夹紧。
+  URDF 和 MJCF 的线性关节被动阻尼写入 Newton 识别的 `newton:damping`，
+  与 USD DriveAPI 的阻尼分开施加。
 - `rpyDegrees` 是绕固定 X、Y、Z 轴的旋转，`translationM` 是规范平移。
   `metersPerUnit` 用于纠正源长度单位，`scale` 修正机器人几何尺寸并以恒定密度缩放质量和惯量。
   移动关节的源行程和零位以换算后的米表示。可用 `fixedBase` 声明固定安装，

@@ -117,7 +117,9 @@ def load(source, entry):
                 if (effort := float(limit.get("effort", "0"))) > 0:
                     joint.force = effort
             if (dynamics := node.find("dynamics")) is not None:
-                joint.kv = float(dynamics.get("damping", "0"))
+                joint.passive_damping = float(dynamics.get("damping", "0"))
+                if not np.isfinite(joint.passive_damping) or joint.passive_damping < 0:
+                    raise ValueError("URDF passive damping must be finite and nonnegative")
                 joint.frictionloss = float(dynamics.get("friction", "0"))
         except (ValueError, KeyError, AttributeError) as exc:
             raise invalid(str(exc), path=name) from exc

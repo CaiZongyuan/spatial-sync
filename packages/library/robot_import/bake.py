@@ -11,6 +11,7 @@ from trimesh import transformations as tf
 from apps.node.usd_mjcf import (
     JOINT_ARMATURE_ATTR,
     JOINT_PASSIVE_DAMPING_ATTR,
+    JOINT_TARGET_RANGE_ATTR,
     check_training_structure,
     has_solid_components,
 )
@@ -267,6 +268,11 @@ def bake(robot, recipe, output):
             authored = write_joint(stage, joint_path, joint, body_path, local @ child_frame, child_frame)
             if joint.kind != "fixed":
                 write_drive(authored, joint, limits, initial, parameters)
+                if joint.target_range is not None:
+                    lower, upper = sorted(sign * value * unit_scale + offset for value in joint.target_range)
+                    authored.GetPrim().CreateAttribute(
+                        JOINT_TARGET_RANGE_ATTR, Sdf.ValueTypeNames.Double2, custom=True,
+                    ).Set(Gf.Vec2d(lower, upper))
         elif fixed_base:
             fixed = UsdPhysics.FixedJoint.Define(stage, "/Asset/joints/" + world_anchor)
             fixed.CreateBody1Rel().SetTargets([path])
@@ -381,6 +387,8 @@ def write_drive(authored, joint, limits, initial, calibration):
     drive.CreateTargetPositionAttr(initial * ratio)
     kp = calibration.kp if calibration and calibration.kp is not None else joint.kp
     kv = calibration.kv if calibration and calibration.kv is not None else joint.kv
+    if joint.target_range is not None and kp <= 0:
+        raise invalid("Position control range requires positive stiffness", path=joint.name)
     drive.CreateStiffnessAttr(kp / ratio)
     drive.CreateDampingAttr(kv / ratio)
     force = calibration.maxForce if calibration and calibration.maxForce is not None else joint.force

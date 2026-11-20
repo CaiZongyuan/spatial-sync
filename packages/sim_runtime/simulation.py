@@ -11,6 +11,15 @@ from .scenes import get_scene_config
 from .sites import add_joint_anchor_sites
 
 
+class _UsdContactSolver(SolverMuJoCo):
+    def _convert_to_mjc(self, model, *, disableflags, **kwargs):
+        from mujoco import mjtDisableBit
+
+        # Newton has already encoded the authored USD joint and shape filters.
+        disableflags |= mjtDisableBit.mjDSBL_FILTERPARENT
+        return super()._convert_to_mjc(model, disableflags=disableflags, **kwargs)
+
+
 class NewtonSimulation:
     def __init__(self, scene_id="falling-boxes", *, device="cpu", physics_dt=None, solver=None, config=None):
         self.config = config if config is not None else get_scene_config(scene_id)
@@ -37,7 +46,11 @@ class NewtonSimulation:
                 noslip = settings.pop("noslip_iterations", 0)
                 if noslip and not self.model.device.is_cpu:
                     raise ValueError("Authored MuJoCo noslip_iterations requires the native CPU solver")
-                self.solver = SolverMuJoCo(
+                solver_type = (
+                    _UsdContactSolver if getattr(self.builder, "spatial_authored_parent_contacts", False)
+                    else SolverMuJoCo
+                )
+                self.solver = solver_type(
                     self.model,
                     use_mujoco_cpu=self.model.device.is_cpu,
                     use_mujoco_contacts=True,
