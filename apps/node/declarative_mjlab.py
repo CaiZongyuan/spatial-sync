@@ -5,10 +5,9 @@ import re
 from dataclasses import dataclass, field
 
 import torch
-from mjlab.actuator import XmlActuatorCfg
-from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.envs import ManagerBasedRlEnv, ManagerBasedRlEnvCfg, mdp
 from mjlab.envs.mdp.actions import JointPositionAction, JointPositionActionCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
@@ -20,12 +19,16 @@ from mjlab.terrains import TerrainEntityCfg
 
 if __package__:
     from apps.node import usd_mjcf as usd
+    from apps.node.declarative_scene import baked_collision_layout, episode_layout
     from packages.policies.action_contract import action_delta_limit, command_endpoints
     from packages.policies.motion import motion_observations
+    from packages.training.reward_state import compile_expression, evaluate, validate_scene_references
 else:
     import lw_usd_mjcf as usd
     from lw_action_contract import action_delta_limit, command_endpoints
+    from lw_declarative_scene import baked_collision_layout, episode_layout
     from lw_motion import motion_observations
+    from lw_reward_state import compile_expression, evaluate, validate_scene_references
 
 
 def _inverse_rotate(quaternion, vector):
@@ -76,12 +79,32 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
         self.contract = cfg.contract
         self._indices = {}
         self._motion_tables = {}
+        self.validate_reward_state = False
+        self.level = torch.zeros(cfg.scene.num_envs, device=device, dtype=torch.long)
+        self.target = torch.zeros((cfg.scene.num_envs, 3), device=device)
         self._random = torch.Generator(device=device).manual_seed(cfg.seed or 0)
         self.command = torch.zeros((cfg.scene.num_envs, 3), device=device, dtype=torch.float32)
         command = cfg.contract["declarative"]["command"]
         if command:
             self.command_bounds = self.command.new_tensor(command_endpoints(command))
         super().__init__(cfg, device, **kwargs)
+
+    def enable_reward_validation(self):
+        self.validate_reward_state = True
+        omitted = tuple(
+            term.params["expression"] for term in self.cfg.rewards.values()
+            if term.func is expression_term and term.weight == 0.0
+        )
+        if omitted:
+            compute = self.reward_manager.compute
+
+            def validate_and_compute(dt):
+                # Use the same post-step state as the reward terms, before auto-reset.
+                for expression in omitted:
+                    expression_term(self, expression)
+                return compute(dt)
+
+            self.reward_manager.compute = validate_and_compute
 
     def indices(self, kind, keys):
         cache_key = (kind, tuple(keys))
@@ -109,6 +132,40 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
             self._motion_tables[source] = torch.tensor(rows, device=self.device)
         table = self._motion_tables[source]
         return table[self.episode_length_buf.clamp(max=len(table) - 1)]
+
+    def episode_command(self):
+        layout = self.contract["layout"]
+        if self.contract["declarative"]["command"] and (layout["targets"] or layout["levels"]):
+            position, rotation = self.pose(self.contract["declarative"]["baseBody"])
+            displacement = _inverse_rotate(rotation, self.target - position)
+            heading = torch.atan2(displacement[:, 1], displacement[:, 0])
+            target = torch.cat((displacement[:, :2], heading[:, None]), dim=1)
+            low, high = self.command_bounds.T
+            return target.clamp(low, high)
+        return self.command
+
+    def reward_state(self, name, key):
+        if name == "command":
+            return self.episode_command()
+        if name == "episode_time":
+            return self.episode_length_buf.to(self.target.dtype) * self.step_dt
+        if name == "target_position_world":
+            return self.target
+        if name.startswith("prop_"):
+            entity = self.scene[self.contract["layout"]["props"][key][0]]
+            if name == "prop_position_world":
+                return entity.data.root_link_pos_w - self.scene.env_origins
+            return entity.data.root_link_quat_w[:, [1, 2, 3, 0]]
+        base = self.contract["declarative"]["baseBody"]
+        (index,) = self.indices("body", [base])
+        data = self.scene["robot"].data
+        position, quaternion = self.pose(base)
+        if name == "base_position_world":
+            return position
+        if name == "base_orientation_world":
+            return quaternion[:, [1, 2, 3, 0]]
+        velocity = (data.body_link_lin_vel_w if "linear" in name else data.body_link_ang_vel_w)[:, index]
+        return _inverse_rotate(quaternion, velocity) if name.endswith("_body") else velocity
 
     def lw_policy_observation_state(self, indices):
         """Read physical state directly at the observer's step, independent of actor tensor assembly."""
@@ -146,7 +203,9 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
         if self.contract["motion"] is not None:
             for row, steps in zip(states, read(self.episode_length_buf), strict=True):
                 row.update(motionStep=steps, motionElapsed=steps * self.step_dt)
-        commands = read(self.command) if self.contract["declarative"]["command"] else [None] * len(indices)
+        commands = (
+            read(self.episode_command()) if self.contract["declarative"]["command"] else [None] * len(indices)
+        )
         return [
             {"state": state, **({"command": command} if command is not None else {})}
             for state, command in zip(states, commands, strict=True)
@@ -159,7 +218,7 @@ def observe(env, item):
     if source == "previous_action":
         value = env.action_manager.action
     elif source == "command":
-        value = env.command
+        value = env.episode_command()
     elif source.startswith("joint_"):
         columns = env.indices("joint", item["keys"])
         value = (data.joint_pos if source == "joint_position" else data.joint_vel)[:, columns]
@@ -211,7 +270,7 @@ def reward(env, term):
         linear = _inverse_rotate(q, data.body_link_lin_vel_w[:, index])
         angular = _inverse_rotate(q, data.body_link_ang_vel_w[:, index])
         actual = torch.cat((linear[:, :2], angular[:, 2:3]), dim=1)
-        return -(actual - env.command).square().sum(dim=1)
+        return -(actual - env.episode_command()).square().sum(dim=1)
     if kind == "action_rate":
         return -(env.action_manager.action - env.action_manager.prev_action).square().sum(dim=1)
     raise ValueError("Unknown Layer A reward")
@@ -225,10 +284,62 @@ def terminate(env, term):
     raise ValueError("Unknown Layer A termination")
 
 
+def expression_term(env, expression):
+    return evaluate(
+        expression, env.reward_state, env.target[:, 0], reject_nonfinite=env.validate_reward_state
+    )
+
+
+def _add_yaw(state, yaw):
+    w, x, y, z = state[:, 3:7].unbind(dim=-1)
+    c, s = (yaw / 2).cos(), (yaw / 2).sin()
+    state[:, 3:7] = torch.stack((c * w - s * z, c * x - s * y, c * y + s * x, c * z + s * w), dim=-1)
+
+
+def _reset_layout(env, env_ids, levels):
+    layout = env.contract["layout"]
+    if levels:
+        robot = env.scene["robot"]
+        choices = env.level[env_ids]
+        positions = env.target.new_tensor([entry[0][0] for entry in levels])
+        angles = env.target.new_tensor([entry[0][1] for entry in levels])
+        state = robot.data.default_root_state[env_ids].clone()
+        state[:, :2] = positions[choices, :2] + env.scene.env_origins[env_ids, :2]
+        state[:, 2] += positions[choices, 2] + env.scene.env_origins[env_ids, 2]
+        _add_yaw(state, angles[choices])
+        robot.write_root_state_to_sim(state, env_ids=env_ids)
+        env.target[env_ids] = env.target.new_tensor([entry[1] for entry in levels])[choices]
+    elif targets := layout["targets"]:
+        draws = torch.randint(len(targets), (len(env_ids),), device=env.device, generator=env._random)
+        env.target[env_ids] = env.target.new_tensor(targets)[draws]
+    for key, bounds in layout["resets"].items():
+        entity = env.scene[layout["props"][key][0]]
+        low, high = env.target.new_tensor([*bounds["translation"], bounds["yaw"]]).T
+        samples = torch.rand((len(env_ids), 4), device=env.device, generator=env._random)
+        delta = torch.lerp(low, high, samples)
+        state = entity.data.default_root_state[env_ids].clone()
+        state[:, :3] += delta[:, :3] + env.scene.env_origins[env_ids]
+        _add_yaw(state, delta[:, 3])
+        entity.write_root_state_to_sim(state, env_ids=env_ids)
+
+
+def advance_terrain_level(env, env_ids):
+    levels = env.contract["layout"]["levels"]
+    settings = env.contract["declarative"]["curriculum"]
+    previous = env.episode_length_buf[env_ids] > 0
+    position = env.scene["robot"].data.root_link_pos_w[env_ids] - env.scene.env_origins[env_ids]
+    distance = torch.linalg.vector_norm(position - env.target[env_ids], dim=-1)
+    move = (distance <= settings["successDistance"]).long() - (distance > settings["demoteDistance"]).long()
+    env.level[env_ids] = (env.level[env_ids] + previous * move).clamp(0, len(levels) - 1)
+    return env.level.float().mean()
+
+
 def reset(env, env_ids):
-    mdp.reset_scene_to_default(env, env_ids)
     declaration = env.contract["declarative"]
-    if declaration["command"]:
+    levels = env.contract["layout"]["levels"]
+    mdp.reset_scene_to_default(env, env_ids)
+    _reset_layout(env, env_ids, levels)
+    if declaration["command"] and not (levels or env.contract["layout"]["targets"]):
         low, high = env.command_bounds.T
         weight = torch.rand((len(env_ids), 3), device=env.device, generator=env._random)
         env.command[env_ids] = torch.lerp(low.double(), high.double(), weight.double()).to(env.command.dtype)
@@ -286,27 +397,21 @@ def compile_environment(task, spec, stage_path):
         if str(item.get("frame")).startswith("/"):
             bodies.add(item["frame"])
     by_body = {key: derived.body_names_by_path[key] for key in bodies}
-    prim_spec = derived.to_mjspec()
-    # Entity placement owns the initial root transform.
-    root_body = prim_spec.body(derived.root_body)
-    root_body.pos = (0.0, 0.0, 0.0)
-    root_body.quat = (1.0, 0.0, 0.0, 0.0)
-    robot_cfg = EntityCfg(
-        init_state=EntityCfg.InitialStateCfg(
-            pos=derived.root_pos,
-            rot=derived.root_quat,
-            joint_pos={
-                re.escape(joint.name): (
-                    joint.initial_position if joint.initial_position is not None else joint.default_position
-                )
-                for joint in derived.joints
-            },
-            joint_vel={".*": 0.0},
-        ),
-        spec_fn=lambda: prim_spec.copy(),
-        articulation=EntityArticulationInfoCfg(actuators=(XmlActuatorCfg(target_names_expr=(r".*",)),)),
-        collisions=(),
-    )
+    entities, compose, props = baked_collision_layout(stage, robot, derived)
+    layout = episode_layout(stage, settings, props)
+    if layout["levels"] and derived.fixed_base:
+        raise ValueError("curriculum requires a floating robot")
+    layer_b = settings.get("layerB") or {}
+    expressions = [
+        compile_expression(row["expression"], path=f"layerB.rewards[{index}].expression")
+        for index, row in enumerate(layer_b.get("rewards", ()))
+    ]
+    stop_expressions = [
+        compile_expression(row, "boolean", f"layerB.terminations[{index}]")
+        for index, row in enumerate(layer_b.get("terminations", ()))
+    ]
+    for expression in (*expressions, *stop_expressions):
+        validate_scene_references(expression, props)
     group = ObservationGroupCfg(
         terms={
             item["name"]: ObservationTermCfg(func=observe, params={"item": item})
@@ -327,8 +432,14 @@ def compile_environment(task, spec, stage_path):
             "site": sites,
             "joint": {key: value.name for key, value in by_joint.items()},
             "robot": robot,
+            "layout": layout,
+            "bakedLayout": compose is not None,
         },
-        scene=SceneCfg(terrain=TerrainEntityCfg(terrain_type="plane"), entities={"robot": robot_cfg}),
+        scene=SceneCfg(
+            terrain=TerrainEntityCfg(terrain_type="plane") if compose is None else None,
+            entities=entities,
+            spec_fn=compose,
+        ),
         observations={"actor": group, "critic": group},
         actions={
             "joint_pos": ActionConfig(
@@ -341,19 +452,37 @@ def compile_environment(task, spec, stage_path):
             )
         },
         rewards={
-            f"{term['kind']}-{index}": RewardTermCfg(
-                func=reward, weight=term["weight"], params={"term": term}
-            )
-            for index, term in enumerate(settings["rewards"])
+            **{
+                f"{term['kind']}-{index}": RewardTermCfg(
+                    func=reward, weight=term["weight"], params={"term": term}
+                )
+                for index, term in enumerate(settings["rewards"])
+            },
+            **{
+                f"expression-{index}": RewardTermCfg(
+                    func=expression_term,
+                    weight=layer_b["rewards"][index]["weight"],
+                    params={"expression": expression},
+                )
+                for index, expression in enumerate(expressions)
+            },
         },
         terminations={
             "timeout": TerminationTermCfg(func=mdp.time_out, time_out=True),
+            **{
+                f"expression-{index}": TerminationTermCfg(
+                    func=expression_term,
+                    params={"expression": expression},
+                )
+                for index, expression in enumerate(stop_expressions)
+            },
             **{
                 f"{term['kind']}-{index}": TerminationTermCfg(func=terminate, params={"term": term})
                 for index, term in enumerate(settings["terminations"])
             },
         },
         events={"reset": EventTermCfg(func=reset, mode="reset")},
+        curriculum={"terrain": CurriculumTermCfg(func=advance_terrain_level)} if layout["levels"] else {},
         decimation=backend["decimation"],
         episode_length_s=settings["episodeSeconds"],
         sim=SimulationCfg(mujoco=MujocoCfg(timestep=backend["physics_dt"], integrator="implicitfast")),

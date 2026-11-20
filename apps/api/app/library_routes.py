@@ -4,6 +4,7 @@ import base64
 import functools
 import json
 import math
+import re
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -23,6 +24,7 @@ from packages.library.entity_types import EntityTypes, RobotEntityType
 from packages.library.imports import LibraryImports
 from packages.library.read_cache import stamps, tree_paths
 from packages.library.removals import RemovalRequest
+from packages.library.scene_drafts import SceneDraft, SceneDrafts
 from packages.library.thumbnails import MAX_PNG_BYTES
 from packages.library.validation import StructuralValidator
 
@@ -34,6 +36,34 @@ def install_library_routes(
     catalog = catalog if catalog is not None else AssetCatalog(None)
 
     entity_types = EntityTypes(assets.roots["user"])
+
+    def scene_drafts():
+        return SceneDrafts(manager.settings.state_root, LibraryImports(assets, scenes(), validator))
+
+    @app.post("/api/v1/library/scene-drafts", status_code=201)
+    async def submit_scene_draft(body: SceneDraft, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        return await anyio.to_thread.run_sync(scene_drafts().submit, body)
+
+    @app.get("/api/v1/library/scene-drafts/{identity}")
+    async def show_scene_draft(identity: str):
+        if not re.fullmatch(r"draft-[0-9a-f]{64}", identity):
+            raise HTTPException(404, {"code": "unknown_scene_draft"})
+        return await anyio.to_thread.run_sync(scene_drafts().show, identity)
+
+    @app.post("/api/v1/library/scene-drafts/{identity}/publish")
+    async def publish_scene_draft(identity: str, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        if not re.fullmatch(r"draft-[0-9a-f]{64}", identity):
+            raise HTTPException(404, {"code": "unknown_scene_draft"})
+        result = await anyio.to_thread.run_sync(scene_drafts().publish, identity)
+        if not result.get("deduplicated"):
+            version = await anyio.to_thread.run_sync(scenes().resolve, result["sceneVersion"])
+            if version.launchable:
+                manager.preview_capturer.schedule(version, "newton")
+        return result
 
     @app.get("/api/v1/library/entity-types")
     async def list_entity_types():

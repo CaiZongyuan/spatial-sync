@@ -164,3 +164,60 @@ methods. The bridge rejects that known native-MJWarp CPU pair before environment
 It preserves the approved environment count and GPU configuration. This is a
 runtime compatibility limit; CPU process fixtures and zero-argument CLI parsing
 are separate verification evidence.
+
+## Baked training layouts and Layer B
+
+Store and publish a Scene Draft with the same HTTP API used by CLI and MCP.
+
+```sh
+lw scene draft submit layout.yaml --json
+lw scene draft show "$DRAFT_ID" --json
+lw scene draft publish "$DRAFT_ID" --json
+```
+
+A `lw.scene-draft/1` layout supplies exact `asset` and `contentHash` pins,
+placements, box/sphere/plane primitives and Sites. Positions and full box
+sizes are metres, masses are kilograms, and orientations are unit xyzw
+quaternions. A row of independent boxes makes the collision surface of stairs.
+A rotated box supplies a slope. A sphere or box with a mass is a dynamic rigid
+body. Waypoints and Teach Locations use the ordinary Scene location schema.
+Publication runs the Scene validator and queues a Newton preview for a
+launchable version. Repeating a publication preserves the original version.
+
+In a declarative mjlab Task, `rigidReset` rows specify a canonical rigid body
+`key`, three ordered `[lower, upper]` translation ranges and an optional
+`yaw` range in radians. `targetSites` samples a baked Site at episode reset.
+A Task with command bounds uses the selected Site to derive body-local planar
+and yaw commands, clamped to those bounds. A `curriculum` supplies an ordered
+list of levels with `spawn` Waypoints and `target` Sites, and metre thresholds
+`successDistance` and `demoteDistance`. Each previously stepped environment
+promotes within the former distance and demotes beyond the latter at reset.
+
+A Task's optional `layerB` field declares `state: lw.reward-state/1`.
+Reward expressions return a scalar and termination expressions return a
+boolean. Constants, `{"state":"episode_time"}` and
+`{"op":"sub","args":[1,{"state":"episode_time"}]}` show the expression
+forms. `prop_position_world` and `prop_orientation_world` also require a
+canonical Scene body `key`. The state uses local scene world coordinates with
+Z up, right-handed body coordinates, SI linear/angular velocities, xyzw
+quaternions and seconds. The compiler checks arity, fixed shapes and expression
+paths, including a limit of 128 nodes and depth 12 per expression. Runtime
+arithmetic clamps to ±10,000 and replaces NaN with zero. The preflight reports
+the original non-finite node and fails before the training approval.
+
+```sh
+lw task push task-directory --json
+lw plan submit plan.yaml --json
+lw job start "$PLAN_ID" --kind plan_validation --node "$NODE_ID" --json
+lw job show "$JOB_ID" --json
+```
+
+The vector3 fields are `base_position_world`, `base_linear_velocity_world`,
+`base_angular_velocity_world`, `base_linear_velocity_body`,
+`base_angular_velocity_body`, `prop_position_world`, `target_position_world`
+and `command`. A command is ordered vx, vy, yaw rate. The quaternion fields
+are `base_orientation_world` and `prop_orientation_world`. The scalar field
+is `episode_time`. Operators include `add`, `sub`, `mul`, `div`, `neg`,
+`abs`, `norm`, `dot`, `component`, `clamp`, `gaussian`, comparisons,
+boolean operations and `where`. `component` takes a zero-based literal index
+into vector3 or xyzw quaternion state.

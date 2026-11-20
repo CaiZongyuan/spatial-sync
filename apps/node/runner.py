@@ -555,7 +555,18 @@ class OwnedRun:
                         if validation:
                             iterations = str(job["validationLimits"]["iterations"])
                             args.extend(["--validation-iterations", iterations])
-                        self._command([python, *entry, *args], env, stdout, stderr)
+                        try:
+                            self._command([python, *entry, *args], env, stdout, stderr)
+                        except RuntimeError as error:
+                            diagnostic = output / "validation-error.json"
+                            message = None
+                            if validation and diagnostic.is_file() and diagnostic.stat().st_size < 32_768:
+                                with contextlib.suppress(OSError, ValueError):
+                                    report = json.loads(diagnostic.read_bytes())
+                                    message = report.get("message") if isinstance(report, dict) else None
+                                if isinstance(message, str) and message:
+                                    raise ValueError(message[:3500]) from error
+                            raise
                     else:
                         args = trainer_arguments(inputs, "lw_training_bridge.install")
                         self._command([python, *entry, *args], env, stdout, stderr)

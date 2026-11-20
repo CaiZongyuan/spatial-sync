@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import math
 import secrets
 import time
 import uuid
@@ -32,6 +33,10 @@ from packages.training.runtime import profile_key as profile_key
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 GPU_HOUR_TOLERANCE = 1e-12
+
+
+def _valid_peak_memory(value):
+    return type(value) in (int, float) and 0 < value < math.inf
 
 
 def _secret_digest(secret):
@@ -106,6 +111,7 @@ class TrainingJobs:
                 self.manager.approvals.set_status(approval.approvalId, "unavailable")
         self.manager.training_plans.job_in_use = self.plan_in_use
         self.manager.training_plans.validation_estimate = self.validation_estimate
+        self.manager.training_plans.require_layer_b_validation = self.require_layer_b_validation
         self._started = True
         self.node.start()
         for job in self.records.values():
@@ -245,7 +251,7 @@ class TrainingJobs:
 
     def document(self, job):
         internal = ("plan", "lastNodeReport", "costLedger", "logTail", "checkpointSource",
-                    "resumeTarget", "artifactLeaseId", "deniedProfileKey")
+                    "resumeTarget", "artifactLeaseId", "deniedProfileKey", "validationCompilerHash")
         value = deepcopy(
             {key: value for key, value in job.items() if key not in internal}
         ) | {
@@ -412,10 +418,45 @@ class TrainingJobs:
     def validation_estimate(self, approval_id):
         if approval_id is None:
             return {}
+        approval = self.manager.approvals.records.get(approval_id)
+        if approval and approval.status == "approved" and "validationJobId" in approval.details:
+            return {
+                key: approval.details[key] for key in (
+                    "validationJobId", "profileKey", "estimatedWallSeconds", "estimatedGpuHours",
+                )
+            }
         for job in reversed(self.records.values()):
             if job["planApprovalId"] == approval_id and job.get("validationEstimate"):
                 return deepcopy(job["validationEstimate"])
         return {}
+
+    def require_layer_b_validation(self, record, task):
+        from apps.node.mjlab_launcher import compiler_hash
+
+        self._require_available()
+        estimate = self.validation_estimate(record.approvalId)
+        job = self.records.get(estimate.get("validationJobId"))
+        plan = record.plan.model_dump(mode="json", by_alias=True)
+        timing = job["metrics"].get("validation", {}) if job else {}
+        if job and (
+            job["status"] == "succeeded" and job["kind"] == "plan_validation"
+            and job["planApprovalId"] == record.approvalId
+            and job["planId"] == record.plan.id and job["planRevision"] == record.plan.revision
+            and job["taskContentHash"] == task["contentHash"]
+            and job["sceneContentHash"] == task["sceneContentHash"]
+            and job["plan"]["hyperparameters"] == plan["hyperparameters"]
+            and job["plan"]["evaluation"] == plan["evaluation"]
+            and job["plan"].get("goalSuite") == record.goalSuite
+            and job["metrics"].get("iteration") == VALIDATION_ITERATIONS
+            and timing.get("numEnvs") == plan["hyperparameters"].get("num_envs")
+            and (job["executionDevice"] != "cuda" or _valid_peak_memory(timing.get("peakMemoryMb")))
+            and job.get("validationCompilerHash") == compiler_hash()
+        ):
+            return estimate
+        raise PlanError(
+            "plan_validation_required",
+            "Complete a successful bounded Layer B preflight for this Training Plan revision",
+        )
 
     def _remaining_gpu_hours(self, job):
         peers = [
@@ -852,6 +893,14 @@ class TrainingJobs:
                 "invalid_validation", "Timing does not cover the assigned bounded validation", status=422
             )
 
+        if job["executionDevice"] == "cuda" and not _valid_peak_memory(timing.peakMemoryMb):
+            task = self.manager.tasks.show(job["task"])["task"]
+            if (task.get("declarative") or {}).get("layerB"):
+                raise PlanError(
+                    "invalid_validation", "CUDA Layer B validation requires positive peak memory in MiB",
+                    status=422,
+                )
+
     def _record_validation(self, job, node, timing, elapsed, now):
         iteration = max(timing.samplesSeconds)
         measured_training = timing.setupSeconds + timing.warmupSeconds + sum(timing.samplesSeconds)
@@ -863,6 +912,8 @@ class TrainingJobs:
             "measuredAt": now, "evidence": job["jobId"],
         }
         estimate = self._estimate(job, profile)
+        if node.get("compilerHash"):
+            job["validationCompilerHash"] = node["compilerHash"]
         job.update(estimate, profile=profile, validationEstimate={
             **estimate, "validationJobId": job["jobId"], "profileKey": profile["key"],
         })
