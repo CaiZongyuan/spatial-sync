@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T08:55:59.974952+00:00",
+  "capturedAt": "2026-11-20T12:02:33.090414+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -25,7 +25,7 @@
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
-      "sha256": "fa79ae0d250ccd5d54fc038d2fcc347231ebd06a2e0a94a74ecb2f6c402f20ab"
+      "sha256": "00e0f9f4e4e7c4ab51a5a4831ff87f11685a40d9a1fbfe8729f77e325ccf3a3f"
     },
     {
       "path": "apps/node/usd_mjcf.py",
@@ -177,7 +177,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "8c86e5dac2b541efbabcf34a582dd6af7935be8b2d7f1aa785e12a360166b391"
+      "sha256": "106fc6d1bb28e3e4947240f64912a87a4677cadb8db78260f1c7903f47b02a6f"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -205,7 +205,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "f725515643bcae604da77dd4db87dd1d49a5deb6ba8148335faf346d0bc10401"
+      "sha256": "b0d6c794431540a374c020359aa7c9e8f4239d173fe66e35bd171091508c94eb"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -341,7 +341,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "95b2c8a8b99747ae2cd1dc1f00fc6d308fd1b8323077a47e15924d34d104e385"
+      "sha256": "b1ffc49ba291c8efde2d0d348d4dcbbd8c5f7d618378884bcd1ef93a0d39ed68"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -377,7 +377,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "fe5ef8d1ce488d1439345459afcf822cba3c1766e2e53fd7b74d06b0d46c8025"
+      "sha256": "008eeec39e7ee5aed81f73be185a8ecf21f27b8e8655022c3548ed7a61fa72fd"
     },
     {
       "path": "packages/training/reward_state.py",
@@ -407,10 +407,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "8429f5d6e15f1beb777ea90e52dc0e759ec917c9c34b4bcc6c6b78fd9c4c7ba4",
-    "catalog.json": "be91264c8133022475aac85dc7bccb7958a3cd304aa7e955e28d1c836e59fcd3",
-    "state.json": "a82ec8ff1268c8a9b8ae196a1e2056bd134e0e1ea0c19b04e610d65c65709c5e",
-    "snapshot.bin": "d8e1d386a20fa87afe70d821f088f4d46896ce3d1e4909ac68af2c18e365e83b",
+    "manifest.json": "58baeb2f282b9c91ed0b26c5bfbf44e0415d81030fc8dd7dff75c1d64a6181bb",
+    "catalog.json": "b1da5462b0bb69266d2bc791577c0e43926865070bf4de52b24dfbe49aec2fe0",
+    "state.json": "df4626e6df81b3986cba3c70dfb8259332cb69cc828176b16b4bb94a404b5b6a",
+    "snapshot.bin": "1782c76b9095e2cec3e43f98bd14156aa9e8246f99361fb7a69dee17b70e6bc8",
     "assets/sha256-6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe.glb": "6ff942e5a70a351b563ce1496fd7622645dd9827129b6410840c00b8b996dbfe",
     "assets/sha256-4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83.glb": "4be3fae66588f88fa8cb7b8f3ffbcd99cb677e3280756979a3361ea0f0c4bd83",
     "assets/sha256-620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb.glb": "620924f3122e830dae5b2193029615595b07c60b7a366ab16e87d4be537467eb"
