@@ -10,6 +10,7 @@ from pathlib import Path
 import onnx
 
 from packages.info.plans import PlanError
+from packages.library.archive import relative_path
 from packages.library.common import BUILTIN_ROOT, REPO_ROOT, LibraryError, content_hash, document
 from packages.library.structural import USDGraph
 from packages.policies.calibration import JointCalibration
@@ -91,17 +92,35 @@ def _retained_source_matches(directory, record):
     if "source" in record:
         source = directory / record["source"]
         return source.is_file() and digest(source) == record["sourceSha256"]
-    # This immutable asset retained the upstream digest in its provenance.
+    # The frozen package attests to the original bytes under its historical path.
     provenance_path = directory / "provenance.json"
     if not provenance_path.is_file():
         return False
     provenance = read_json(provenance_path)
-    entrypoint = record["sourceEntrypoint"]
+    entrypoint = record["assetSourceEntrypoint"]
     return (
-        provenance.get("revision") == record["sourceRevision"]
-        and provenance.get("sourceEntrypoint") == entrypoint
+        provenance.get("sourceEntrypoint") == entrypoint
         and provenance.get("sourceFiles", {}).get(entrypoint, {}).get("sha256") == record["sourceSha256"]
     )
+
+
+def _archive_retained_source(path, record, files):
+    licenses = []
+    for license_entry in record["sourceLicenses"]:
+        name = relative_path(license_entry["document"])
+        data = (path.with_suffix("") / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != license_entry["sha256"]:
+            raise ValueError("Retained source license document changed")
+        document_path = f"provenance/{path.stem}/source/{name.as_posix()}"
+        files[document_path] = data
+        licenses.append(license_entry | {"document": document_path})
+    return {
+        "repository": record["sourceRepository"],
+        "revision": record["sourceRevision"],
+        "entrypoint": record["sourceEntrypoint"],
+        "sha256": record["sourceSha256"],
+        "licenses": licenses,
+    }
 
 
 def _retained_calibration(manager, scene, asset, task):
@@ -134,13 +153,14 @@ def _retained_calibration(manager, scene, asset, task):
             continue
         if not _retained_source_matches(directory, record):
             continue
-        return asset, JointCalibration.model_validate(record["mapping"]), path, namespace
+        return asset, record, path, namespace
     return None
 
 
 def _source_calibration(manager, scene, asset, task, action, files):
     unavailable = {"status": "unavailable", "joints": [], "baseTransform": None}
     explicit = asset and "joint-calibration.json" in asset["files"]
+    record = {}
     if explicit:
         path = Path(asset["files"]["joint-calibration.json"])
         calibration = JointCalibration.model_validate_json(path.read_bytes())
@@ -149,7 +169,8 @@ def _source_calibration(manager, scene, asset, task, action, files):
         retained = _retained_calibration(manager, scene, asset, task)
         if retained is None:
             return unavailable | {"reason": "No frozen source-joint calibration was recorded"}, None
-        asset, calibration, path, namespace = retained
+        asset, record, path, namespace = retained
+        calibration = JointCalibration.model_validate(record["mapping"])
     joints = {row.jointKey: row for row in calibration.joints}
     prefix = task["robot"] + "/" + namespace
     keys = ["/Asset/" + key.removeprefix(prefix) for key in action.jointKeys]
@@ -162,6 +183,8 @@ def _source_calibration(manager, scene, asset, task, action, files):
     mapping_path = "source-calibration.json"
     mapping_bytes = path.read_bytes()
     files[mapping_path] = mapping_bytes
+    if "sourceLicenses" in record:
+        asset = asset | {"retainedSource": _archive_retained_source(path, record, files)}
     return {
         "status": "verified",
         "asset": asset["id"],
@@ -209,6 +232,11 @@ def _provenance(manager, policy, scene, motion, files, calibration_asset):
         entry = {"id": identity, "contentHash": sha, "documents": declarations}
         if metadata is not None:
             entry["assetKind"] = metadata.get("kind")
+        if calibration_asset and identity == calibration_asset["id"]:
+            source = calibration_asset.get("retainedSource")
+            if source:
+                entry["source"] = source
+                declarations.extend(license_entry["document"] for license_entry in source["licenses"])
         licenses.append(entry)
     if motion:
         licenses.append({"id": "reference-motion.json", "license": motion["license"]})
@@ -232,8 +260,6 @@ def policy_export(manager, identifier):
         model_name = f"model/{model_relative.as_posix()}"
         files = {model_name: model_path.read_bytes()}
         for entry in job_export["externalData"]:
-            from packages.library.archive import relative_path
-
             name = relative_path(entry["path"]).as_posix()
             path = package / "artifacts" / name
             if digest(path) != entry["sha256"]:

@@ -2,9 +2,27 @@
   "asset": "robot/microduck@1",
   "assetContentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b",
   "sceneContentHash": "9af821e9b1d687a48c7cf65f879fd24497d09b62212a418e02a8cb7d3e0cf75a",
-  "sourceEntrypoint": "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
-  "sourceRevision": "5984efb770855432b03dafd3d879e9929981e45b",
+  "assetSourceEntrypoint": "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
+  "sourceRepository": "https://github.com/pollen-robotics/microduck_rl",
+  "sourceRevision": "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07",
+  "sourceEntrypoint": "src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
   "sourceSha256": "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
+  "sourceLicenses": [
+    {
+      "scope": "project",
+      "license": "Apache-2.0",
+      "sourcePath": "LICENSE",
+      "document": "LICENSE",
+      "sha256": "2d3fd9ffffa70a4307498ec630b14a6b4731e010f8ddda92686eaf65733c2dfe"
+    },
+    {
+      "scope": "3D model files",
+      "license": "Creative Commons BY-SA-NC",
+      "sourcePath": "README.md",
+      "document": "README-LICENSE.md",
+      "sha256": "3b4dca96574e3b7ffc3e132f4a9d7a088334722faf62c4c1dfd88971ab5a5155"
+    }
+  ],
   "mapping": {
     "schema": "lw.joint-calibration/1",
     "baseTransform": [

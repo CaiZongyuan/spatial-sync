@@ -53,13 +53,43 @@ def test_builtin_microduck_export_matches_pinned_mjcf_calibration(tmp_path, name
     assert hashlib.sha256(mapping_bytes).hexdigest() == calibration["mappingSha256"]
     mapping = json.loads(mapping_bytes)
     assert mapping["sourceSha256"] == "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15"
+    repository = "https://github.com/pollen-robotics/microduck_rl"
+    revision = "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07"
+    entrypoint = "src/mjlab_microduck/robot/microduck/robot_groundcontact.xml"
+    assert (mapping.get("sourceRepository"), mapping["sourceRevision"], mapping["sourceEntrypoint"]) == (
+        repository, revision, entrypoint,
+    )
     asset = next(row for row in manifest["provenance"] if row["id"] == calibration["asset"])
     assert asset["contentHash"] == asset_hash
     provenance_path = next(path for path in asset["documents"] if path.endswith("/provenance.json"))
-    source = json.loads((tmp_path / provenance_path).read_bytes())
-    assert mapping["sourceEntrypoint"] == source["sourceEntrypoint"]
-    assert mapping["sourceRevision"] == source["revision"]
-    assert mapping["sourceSha256"] == source["sourceFiles"][source["sourceEntrypoint"]]["sha256"]
+    frozen = json.loads((tmp_path / provenance_path).read_bytes())
+    assert mapping["sourceSha256"] == frozen["sourceFiles"][f"microduck_rl/{entrypoint}"]["sha256"]
+    source = asset["source"]
+    assert (source["repository"], source["revision"], source["entrypoint"], source["sha256"]) == (
+        repository, revision, entrypoint, mapping["sourceSha256"],
+    )
+    project, models = source["licenses"]
+    assert (project["scope"], project["license"], project["sourcePath"]) == (
+        "project", "Apache-2.0", "LICENSE",
+    )
+    assert (models["scope"], models["license"], models["sourcePath"]) == (
+        "3D model files", "Creative Commons BY-SA-NC", "README.md",
+    )
+    for license_entry in source["licenses"]:
+        assert license_entry["document"] in asset["documents"]
+        data = (tmp_path / license_entry["document"]).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == license_entry["sha256"]
+    project_bytes = (tmp_path / project["document"]).read_bytes()
+    assert hashlib.sha256(project_bytes).hexdigest() == (
+        "2d3fd9ffffa70a4307498ec630b14a6b4731e010f8ddda92686eaf65733c2dfe"
+    )
+    assert (tmp_path / models["document"]).read_text() == (
+        "## License\n\n"
+        "This project is licensed under the Apache 2.0 License. "
+        "See the [LICENSE](LICENSE) file for details.\n"
+        "3D model files are licensed under Creative Commons BY-SA-NC.\n"
+    )
+    assert "referenceMotion" not in manifest
     # MuJoCo actuator order, verified against the pinned USD joint frames at zero and both signs.
     source_names = (
         "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
@@ -249,6 +279,7 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
     else:
         assert calibration["status"] == "unavailable"
     assert manifest["qualification"]["status"] == "unverified"
+    assert {"id": "reference-motion.json", "license": "CC0-1.0"} in manifest["provenance"]
     assert (root / "model/weights.bin").is_file()
     assert (root / "infer.py").is_file()
     state = {

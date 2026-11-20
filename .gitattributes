@@ -1,5 +1,6 @@
 # Preserve the exact upstream bytes recorded in the offline robot provenance ledger.
 assets/robots/franka_emika_panda/** -text
+library/retained-calibrations/microduck-1/** -text
 tools/package_fr3_asset.py text eol=lf
 tools/package_microduck_asset.py text eol=lf
 tools/package_binding_references.py text eol=lf
