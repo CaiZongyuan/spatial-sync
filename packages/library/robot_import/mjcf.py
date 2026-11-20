@@ -107,6 +107,8 @@ def from_model(model, entry, *, standing_key, usd_colliders):
         offset, position, velocity = model.actuator_biasprm[index, :3]
         if offset != 0. or not np.isclose(gain, -position) or min(gain, -velocity) < 0:
             raise invalid("Actuator is not a standard position drive", path=path)
+        if model.actuator_damping[index] != 0 or np.any(model.actuator_dampingpoly[index]):
+            raise invalid("Passive actuator transmission damping is unsupported", path=path)
         force = None
         if model.actuator_forcelimited[index]:
             lower, upper = model.actuator_forcerange[index]
@@ -166,6 +168,9 @@ def from_model(model, entry, *, standing_key, usd_colliders):
                 raise invalid("MJCF disables its authored hard limits", path=joint_name)
             joint.limits = tuple(model.jnt_range[joint_id])
         gain, damping, force = actuators.get(joint_id, (0., 0., None))
+        passive_damping = float(model.dof_damping[dof])
+        if not np.isfinite(passive_damping) or passive_damping < 0 or np.any(model.dof_dampingpoly[dof]):
+            raise invalid("Joint requires finite nonnegative linear passive damping", path=joint_name)
         if model.jnt_actfrclimited[joint_id]:
             lower, upper = model.jnt_actfrcrange[joint_id]
             if not np.isfinite([lower, upper]).all() or lower != -upper or upper <= 0:
@@ -173,12 +178,11 @@ def from_model(model, entry, *, standing_key, usd_colliders):
             if model.jnt_actgravcomp[joint_id]:
                 raise invalid("Joint actuator force limit includes gravity compensation", path=joint_name)
             if joint_id in actuators:
-                if model.dof_damping[dof] != 0:
-                    raise invalid("Joint force limit with passive damping is unsupported", path=joint_name)
                 # With one unit-gear position drive, both constraints bound
                 # the same effort. USD DriveAPI can express their intersection.
                 force = float(upper) if force is None else min(force, float(upper))
-        joint.kp, joint.kv, joint.force = gain, damping + float(model.dof_damping[dof]), force
+        joint.kp, joint.kv, joint.force = gain, damping, force
+        joint.passive_damping = passive_damping
         joint.armature = float(model.dof_armature[dof])
         joint.frictionloss = float(model.dof_frictionloss[dof])
         joints.append(joint)

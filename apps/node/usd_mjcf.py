@@ -22,6 +22,7 @@ from pxr import Ar, Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, UsdUtils
 QuatWXYZ = tuple[float, float, float, float]
 Vec3 = tuple[float, float, float]
 JOINT_ARMATURE_ATTR = "newton:armature"
+JOINT_PASSIVE_DAMPING_ATTR = "newton:damping"
 DEFAULT_FRICTION = (1., .005, .0001)  # Newton 1.7 ModelBuilder.ShapeConfig
 
 _AXIS_VECTORS: dict[str, Vec3] = {
@@ -56,6 +57,7 @@ class DerivedJoint:
     frictionloss: float
     actuated: bool
     initial_position: float | None = None
+    passive_damping: float = 0.
 
 
 @dataclass(frozen=True)
@@ -1632,6 +1634,9 @@ def derive_usd_mjcf(
             frictionloss=frictionloss,
             actuated=actuated,
             initial_position=state_pos * pos_scale if math.isfinite(state_pos) else None,
+            passive_damping=_custom_float(j_prim, (JOINT_PASSIVE_DAMPING_ATTR,)) * (
+                180.0 / math.pi if kind == "hinge" else 1.0
+            ),
         )
 
     def _add_body_geoms_and_sites(
@@ -1985,8 +1990,11 @@ def derive_usd_mjcf(
                 if j_spec.max_force is not None:
                     j_attrs["actuatorfrclimited"] = "true"
                     j_attrs["actuatorfrcrange"] = _fmt((-j_spec.max_force, j_spec.max_force))
-                if not j_spec.actuated and j_spec.damping > 0.0:
-                    j_attrs["damping"] = _fmt_scalar(j_spec.damping)
+                passive_damping = j_spec.passive_damping
+                if not j_spec.actuated:
+                    passive_damping += j_spec.damping
+                if passive_damping > 0.0:
+                    j_attrs["damping"] = _fmt_scalar(passive_damping)
                 ET.SubElement(body_elem, "joint", j_attrs)
 
                 if j_spec.actuated:

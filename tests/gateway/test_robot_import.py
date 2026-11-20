@@ -184,24 +184,31 @@ def test_gzip_robot_upload_deduplicates_against_bare_tar(client, monkeypatch):
     assert "Package exceeds 2 entries" in response.text
 
 
-def test_mjcf_joint_actuator_force_limit_preserves_applied_torque(client, tmp_path):
+@pytest.mark.parametrize(("joint_limit", "damping"), [(True, 0), (True, 4), (False, 4)])
+def test_mjcf_actuator_force_limit_preserves_applied_torque(client, tmp_path, joint_limit, damping):
     import mujoco
     from pxr import Usd, UsdPhysics
 
     from apps.node.usd_mjcf import derive_usd_mjcf
 
-    model = b"""<mujoco><compiler angle="degree"/><worldbody>
+    joint_force = 'actuatorfrcrange="-3 3"' if joint_limit else ""
+    actuator_force = 'forcerange="-5 5"' if joint_limit else 'forcerange="-3 3"'
+    model = f"""<mujoco><compiler angle="degree"/><worldbody>
       <body name="base" pos="0 0 .5"><geom type="box" size=".15 .12 .10" mass="2"/>
         <body name="tip" pos=".2 0 0">
-          <joint name="motor-a" axis="0 0 -1" range="-30 70" ref="10" actuatorfrcrange="-3 3"/>
+          <joint name="motor-a" axis="0 0 -1" range="-30 70" ref="10" damping="{damping}" {joint_force}/>
           <geom type="sphere" size=".05" mass=".25"/>
         </body>
-      </body></worldbody><actuator><position joint="motor-a" kp="10" kv="1"/></actuator></mujoco>"""
+      </body></worldbody>
+      <actuator><position name="drive-a" joint="motor-a" kp="10" kv="1" {actuator_force}/></actuator>
+    </mujoco>""".encode()
     source = mujoco.MjModel.from_xml_string(model.decode())
     source_data = mujoco.MjData(source)
+    source_data.qvel[0] = .5
     source_data.ctrl[0] = .9
     mujoco.mj_forward(source, source_data)
     assert source_data.qfrc_actuator[0] == pytest.approx(3.)
+    assert source_data.qfrc_passive[0] == pytest.approx(-damping * .5)
 
     reply = upload(client, files("probe.xml", model))
     assert reply.status_code == 200, reply.text
@@ -211,37 +218,48 @@ def test_mjcf_joint_actuator_force_limit_preserves_applied_torque(client, tmp_pa
     stage = Usd.Stage.Open(str(path))
     drive = UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Asset/joints/motor_a"), "angular")
     assert drive.GetMaxForceAttr().Get() == pytest.approx(3.)
+    assert drive.GetDampingAttr().Get() == pytest.approx(math.pi / 180.)
     result = derive_usd_mjcf(stage)
     derived = result.to_mjmodel()
     data = mujoco.MjData(derived)
     data.qpos[0] = result.joints[0].initial_position
+    data.qvel[0] = -source_data.qvel[0]
     data.ctrl[0] = -.9 + .25
     mujoco.mj_forward(derived, data)
     assert data.qfrc_actuator[0] == pytest.approx(-3.)
+    assert data.qfrc_passive[0] == pytest.approx(damping * .5)
+    assert data.qfrc_actuator[0] + data.qfrc_passive[0] == pytest.approx(
+        -source_data.qfrc_actuator[0] - source_data.qfrc_passive[0]
+    )
 
-    for changed, expected in (
-        (model.replace(b'="-3 3"', b'="-3 4"'), "symmetric"),
-        (model.replace(b'ref="10"', b'ref="10" damping="1"'), "passive damping"),
-    ):
-        reply = upload(client, files("probe.xml", changed))
+    reply = upload(client, files("probe.xml", model.replace(b'="-3 3"', b'="-3 4"')))
+    assert reply.status_code == 422, reply.text
+    problem = reply.json()["detail"]["problems"][0]
+    assert problem["path"] == ("motor-a" if joint_limit else "drive-a")
+    assert "symmetric" in problem["message"]
+    if damping:
+        reply = upload(client, files("probe.xml", model.replace(b'damping="4"', b'damping="4 1"')))
         assert reply.status_code == 422, reply.text
-        problem = reply.json()["detail"]["problems"][0]
-        assert problem["path"] == "motor-a"
-        assert expected in problem["message"]
+        assert reply.json()["detail"]["problems"] == [
+            {"path": "motor-a", "message": "Joint requires finite nonnegative linear passive damping"},
+        ]
 
 
-def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_path):
+@pytest.mark.parametrize(("prefix", "meshdir"), [("", "meshes"), ("model/", "../meshes")])
+def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_path, prefix, meshdir):
     import mujoco
 
     from apps.node.usd_mjcf import derive_usd_mjcf
 
-    source = files("probe.xml", b'<mujoco><include file="setup/settings.xml"/>'
+    entry = prefix + "probe.xml"
+    source = files(entry, b'<mujoco><include file="setup/settings.xml"/>'
                    b'<include file="assembly/body.xml"/></mujoco>')
-    source["setup/settings.xml"] = (
-        b'<mujocoinclude><compiler angle="radian" meshdir="meshes"/></mujocoinclude>'
-    )
+    settings = prefix + "setup/settings.xml"
+    source[settings] = (
+        f'<mujocoinclude><compiler angle="radian" meshdir="{meshdir}"/></mujocoinclude>'
+    ).encode()
     source["meshes/shape.stl"] = trimesh.creation.box(extents=(.1, .1, .1)).export(file_type="stl")
-    source["assembly/body.xml"] = b"""
+    source[prefix + "assembly/body.xml"] = b"""
 <mujocoinclude><asset><mesh file="shape.stl"/></asset><worldbody><body name="base" pos="0 0 .3">
   <geom type="box" size=".1 .2 .3" mass="3"/>
   <body name="tip" pos=".2 0 0">
@@ -254,11 +272,13 @@ def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_p
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(value)
-    native = mujoco.MjModel.from_xml_path(str(tmp_path / "probe.xml"))
+    native = mujoco.MjModel.from_xml_path(str(tmp_path / entry))
     assert native.nmesh == 1
-    first = upload(client, source)
+    first = client.post("/api/v1/library/imports", content=gzip.compress(archive(source)),
+                        headers={"Content-Type": "application/gzip"})
     assert first.status_code == 200, first.text
     item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    assert client.get(item["files"]["source/" + settings]).content == source[settings]
     baked = client.get(item["files"]["asset.usda"]).content
     path = tmp_path / "generated.usda"
     path.write_bytes(baked)
@@ -289,3 +309,9 @@ def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_p
     reply = upload(client, no_mesh)
     assert reply.status_code == 422
     assert "meshes/shape.stl" in reply.text
+    escaped = source | {settings: source[settings].replace(meshdir.encode(), b"../../meshes")}
+    reply = upload(client, escaped)
+    assert reply.status_code == 422
+    assert reply.json()["detail"]["problems"] == [
+        {"path": settings, "message": "Invalid compiler directory: Resource escapes the archive"},
+    ]

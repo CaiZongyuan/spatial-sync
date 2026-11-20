@@ -115,6 +115,7 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
     child_poses, axes = reference.joint_X_c.numpy(), reference.joint_axis.numpy()
     limits_lo, limits_hi = reference.joint_limit_lower.numpy(), reference.joint_limit_upper.numpy()
     armature = reference.joint_armature.numpy()
+    passive_damping = reference.joint_damping.numpy()
     for path, idx in joint_ids.items():
         if path not in newton_joints or idx < 0:
             continue
@@ -135,6 +136,7 @@ def compare_models(newton_model, derived, *, newton_state=None, newton_origin_z=
                 close("Joint limit", expected, actual, path)
         address = model.jnt_dofadr[idx]
         close("Joint armature", armature[dof], model.dof_armature[address], path)
+        close("Joint passive damping", passive_damping[dof], model.dof_damping[address], path)
         actuator = actuator_by_joint.get(idx)
         kp = model.actuator_gainprm[actuator, 0] if actuator is not None else 0.
         kv = -model.actuator_biasprm[actuator, 2] if actuator is not None else 0.

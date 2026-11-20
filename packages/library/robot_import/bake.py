@@ -8,7 +8,12 @@ import trimesh
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdShade
 from trimesh import transformations as tf
 
-from apps.node.usd_mjcf import JOINT_ARMATURE_ATTR, check_training_structure, has_solid_components
+from apps.node.usd_mjcf import (
+    JOINT_ARMATURE_ATTR,
+    JOINT_PASSIVE_DAMPING_ATTR,
+    check_training_structure,
+    has_solid_components,
+)
 from packages.library.archive import invalid
 from packages.library.visuals import glb_budget
 
@@ -369,6 +374,8 @@ def write_drive(authored, joint, limits, initial, calibration):
     armature = calibration.armature if calibration and calibration.armature is not None else joint.armature
     custom(prim, JOINT_ARMATURE_ATTR, armature)
     custom(prim, "newton:friction", joint.frictionloss)
+    if joint.passive_damping:
+        custom(prim, JOINT_PASSIVE_DAMPING_ATTR, joint.passive_damping / ratio)
     drive = UsdPhysics.DriveAPI.Apply(prim, channel)
     drive.CreateTypeAttr("force")
     drive.CreateTargetPositionAttr(initial * ratio)

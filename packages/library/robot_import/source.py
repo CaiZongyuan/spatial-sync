@@ -13,6 +13,21 @@ MESH_SUFFIXES = {".stl", ".obj", ".ply"}
 TEXTURE_SUFFIXES = {".png", ".jpeg", ".jpg"}
 
 
+def _archive_path(directory, value):
+    """Normalize a relative resource path against an indexed directory."""
+    if not value or value.startswith("/") or any(char in value for char in ":\\%?#"):
+        raise ValueError("Resource must be an archive-local path")
+    parts = [] if directory == "." else directory.split("/")
+    for part in value.split("/"):
+        if part == "..":
+            if not parts:
+                raise ValueError("Resource escapes the archive")
+            parts.pop()
+        elif part != ".":
+            parts.extend(relative_path(part).parts)
+    return "/".join(parts) or "."
+
+
 class Source:
     def __init__(self, root, packages):
         self.root = root
@@ -35,19 +50,11 @@ class Source:
             fallback = None
         elif directory is None:
             directory = str(PurePosixPath(owner).parent)
-        if not value or value.startswith("/") or any(char in value for char in ":\\%?#"):
-            raise invalid("Resource must be an archive-local path", path=owner)
         def normalized(base):
-            parts = [] if base == "." else base.split("/")
-            for part in value.split("/"):
-                if part == ".." and parts:
-                    parts.pop()
-                elif part != ".":
-                    try:
-                        parts.extend(relative_path(part).parts)
-                    except ValueError as exc:
-                        raise invalid("Resource escapes the archive or is ambiguous", path=owner) from exc
-            return "/".join(parts)
+            try:
+                return _archive_path(base, value)
+            except ValueError as exc:
+                raise invalid(str(exc), path=owner) from exc
 
         target = normalized(directory)
         if PurePosixPath(target).suffix.lower() in suffixes:
@@ -136,10 +143,9 @@ class Source:
                     suffix = declared.rstrip("/")
                     if declared and not suffix:
                         raise ValueError("Absolute directory")
-                    suffix = "." if suffix in ("", ".") else relative_path(suffix)
-                    directories[kind] = str(PurePosixPath(entry_dir) / suffix)
+                    directories[kind] = _archive_path(entry_dir, suffix or ".")
                 except ValueError as exc:
-                    raise invalid("Compiler directory must be archive-local", path=owners[compiler]) from exc
+                    raise invalid(f"Invalid compiler directory: {exc}", path=owners[compiler]) from exc
             for attribute in ("strippath", "fusestatic", "discardvisual"):
                 compiler.attrib.pop(attribute, None)
 

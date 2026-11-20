@@ -67,6 +67,7 @@ class Joint:
     armature: float = 0.
     force: float | None = None
     frictionloss: float = 0.
+    passive_damping: float = 0.
 
 
 @dataclass
