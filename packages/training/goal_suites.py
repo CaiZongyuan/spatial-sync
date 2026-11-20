@@ -15,10 +15,10 @@ from packages.info.plans import PlanError
 from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent
 from packages.library.common import LibraryError, content_hash, document
+from packages.library.robot_asset import scene_robot_asset
 from packages.library.structural import USDGraph
 from packages.library.suites import load_suite
 from packages.library.transactions import sync_directory
-from packages.policies.export import scene_robot_asset
 from packages.policies.observations import ObservationSpec
 from packages.protocol.schema import MAX_SESSION_SEED
 from packages.sim_runtime.trial import BUCKETS
@@ -141,6 +141,7 @@ class GoalSuites:
             "baseParameters": base_params, "parameterCoverage": overrides,
             "perturbation": trial,
             "timeoutSeconds": task["declarative"]["episodeSeconds"],
+            **({"referenceMotionRef": task["referenceMotionRef"]} if task.get("referenceMotionRef") else {}),
         }
 
     def seal(self, approval, review, task_record):

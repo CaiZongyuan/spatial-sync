@@ -22,10 +22,11 @@ import psutil
 from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
-from packages.library.archive import extract_package, import_lock, package_files, relative_path
+from packages.library.archive import extract_package, import_lock, relative_path
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
 from packages.motion.contract import MAX_VIDEO_BYTES, MODEL_SHA256, POSE_RUNTIME, SDK_VERSION
+from packages.motion.snapshot import declarative_files
 from packages.training import checkpoint_format
 from packages.training import runtime as training_runtime
 from packages.training.checkpoints import identity as checkpoint_identity
@@ -425,9 +426,8 @@ class OwnedRun:
                 if declarative:
                     declared = TaskMetadata.model_validate(inputs["task"])
                     task_root = Path(task_package["directory"])
-                    if set(package_files(task_root)) != {"task.yaml", declared.observation}:
-                        raise ValueError("Declarative task input contains unapproved files")
                     inputs["task"] = declared.model_dump(mode="json")
+                    declarative_files(inputs["task"], task_root)
                 demonstration_inputs = []
                 for reference in job.get("demonstrationSets", []):
                     dataset = next(item for item in inputs["packages"]

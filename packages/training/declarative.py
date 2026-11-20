@@ -17,11 +17,25 @@ Positive = Annotated[float, Field(gt=0)]
 Hash = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 
+class ReferencePin(Data):
+    id: str = Field(pattern=r"^reference-motion/[a-f0-9]{64}@1$")
+    sha256: Hash
+
+    @model_validator(mode="after")
+    def content_address(self):
+        if self.id != f"reference-motion/{self.sha256}@1":
+            raise ValueError("Reference Motion identity must match its content digest")
+        return self
+
+
 class MotionFrame(Data):
     time: float = Field(ge=0)
     position: list[float] = Field(min_length=3, max_length=3)
     orientation: list[float] = Field(min_length=4, max_length=4)
     joints: list[float] = Field(max_length=64)
+    bodyLocal: dict[str, list[float]] | None = Field(
+        default=None, max_length=6, exclude_if=lambda value: value is None,
+    )
 
 
 class ReferenceMotion(Data):
@@ -45,11 +59,26 @@ class ReferenceMotion(Data):
             )
         ):
             raise ValueError("Motion needs increasing timestamps and canonical unit-quaternion frames")
+        fields = self.frames[0].bodyLocal
+        for frame in self.frames:
+            if (frame.bodyLocal is None) != (fields is None) or (
+                frame.bodyLocal is not None and (
+                    fields.keys() != frame.bodyLocal.keys()
+                    or any(
+                        not key.startswith("/Asset/") or len(point) != 3
+                        for key, point in frame.bodyLocal.items()
+                    )
+                )
+            ):
+                raise ValueError("Motion body coordinates need the same canonical XYZ channels in each frame")
         return self
 
 
 class Reward(Data):
-    kind: Literal["upright", "height", "velocity_tracking", "joint_tracking", "action_rate"]
+    kind: Literal[
+        "upright", "height", "velocity_tracking", "joint_tracking", "action_rate",
+        "root_pose_tracking", "root_velocity_tracking", "body_local_tracking",
+    ]
     weight: float
     target: float | None = None
 

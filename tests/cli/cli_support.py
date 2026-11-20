@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 LW = Path(sys.executable).parent / ("lw.exe" if os.name == "nt" else "lw")
 TOOLS = {
     "motion_video_list", "motion_start", "motion_clip_list", "motion_clip_show",
+    "motion_reference_create", "motion_reference_list", "motion_reference_show",
+    "motion_reference_preview", "motion_task_create",
     "library_deletion_list", "library_deletion_show", "library_deletion_restore",
     "suite_push", "agent_rsi", "agent_harness", "agent_baseline", "agent_candidate", "agent_tool_trace",
     "agent_round_start", "agent_round_settle", "agent_contamination", "agent_promotion_request",

@@ -9,8 +9,10 @@ from pathlib import Path
 
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, import_lock
+from packages.library.common import content_hash
 from packages.library.transactions import durable_bytes, durable_json, sync_directory
 from packages.motion.contract import MAX_CLIP_BYTES, VIDEO_REF, PoseArtifact, build_clip
+from packages.motion.snapshot import MAX_REFERENCE_BYTES
 from packages.motion.video import inspect_video
 
 
@@ -132,3 +134,67 @@ class MotionLibrary:
         if hashlib.sha256(raw).hexdigest() != descriptor["sha256"]:
             raise PlanError("motion_clip_changed", "Motion clip bytes changed", status=409)
         return descriptor | json.loads(raw)
+
+    def publish_reference(self, assets, request):
+        from packages.motion.retarget import build_reference
+
+        clip = self.clip(request.clip.id) if request.clip else None
+        if clip and clip["sha256"] != request.clip.sha256:
+            raise PlanError("reference_clip_changed", "Select the exact Motion Clip digest", status=422)
+        asset = assets.resolve(request.asset)
+        try:
+            document = build_reference(asset, request, clip)
+        except ImportError as exc:
+            raise PlanError(
+                "reference_runtime_unavailable", "The gateway needs the motion CPU extra", status=503
+            ) from exc
+        except (ValueError, OSError) as exc:
+            raise PlanError(
+                "reference_geometry_invalid", "Cannot solve the calibrated Asset", status=422
+            ) from exc
+        raw = _canonical(document)
+        if len(raw) > MAX_REFERENCE_BYTES:
+            raise PlanError("reference_too_large", "Reference Motion exceeds the package limit", status=422)
+        digest = hashlib.sha256(raw).hexdigest()
+        identity = f"reference-motion/{digest}@1"
+        self.root.mkdir(parents=True, exist_ok=True)
+        with assets._lock, import_lock(self.root):
+            if content_hash(assets.resolve(asset.id).path) != request.assetContentHash:
+                raise PlanError("reference_asset_changed", "Target Asset bytes changed", status=409)
+            parent = destination_parent(self.root, ("reference-motions",), create=True)
+            path = parent / (digest + ".json")
+            if path.exists() or path.is_symlink() or path.is_junction():
+                self.reference_bytes(identity)
+            else:
+                durable_bytes(path, raw)
+        return self.reference(identity)
+
+    def reference_bytes(self, identity):
+
+        if not re.fullmatch(r"reference-motion/[a-f0-9]{64}@1", identity):
+            raise PlanError("unknown_reference_motion", "Select an exact Reference Motion", status=404)
+        digest = identity.removeprefix("reference-motion/").removesuffix("@1")
+        path = destination_parent(self.root, ("reference-motions",)) / (digest + ".json")
+        if path.is_symlink() or path.is_junction():
+            raise PlanError("reference_motion_changed", "Reference Motion bytes changed", status=409)
+        try:
+            with path.open("rb") as stream:
+                raw = stream.read(MAX_REFERENCE_BYTES + 1)
+        except FileNotFoundError as exc:
+            raise PlanError("unknown_reference_motion", "Unknown Reference Motion", status=404) from exc
+        if len(raw) > MAX_REFERENCE_BYTES or hashlib.sha256(raw).hexdigest() != digest:
+            raise PlanError("reference_motion_changed", "Reference Motion bytes changed", status=409)
+        return raw
+
+    def reference(self, identity):
+        raw = self.reference_bytes(identity)
+        return json.loads(raw) | {"id": identity, "sha256": hashlib.sha256(raw).hexdigest()}
+
+    def references(self):
+        parent = destination_parent(self.root, ("reference-motions",))
+        for path in sorted(parent.glob("*.json")):
+            ref = self.reference(f"reference-motion/{path.stem}@1")
+            yield {
+                "id": ref["id"], "sha256": ref["sha256"],
+                "asset": ref["motion"]["asset"], "assetContentHash": ref["motion"]["assetContentHash"],
+            }

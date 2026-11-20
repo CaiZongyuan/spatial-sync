@@ -12,6 +12,7 @@ from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
 from packages.motion.contract import MAX_CLIP_BYTES, MAX_VIDEO_BYTES, VideoLicense
 from packages.motion.library import MotionLibrary
+from packages.motion.reference_contract import ReferenceRequest
 from packages.training import checkpoints
 from packages.training.checkpoint_format import MAX_BYTES
 from packages.training.finalization import finalization_profile
@@ -30,6 +31,8 @@ from packages.training.jobs import TERMINAL
 def install_job_routes(app, manager, role_for, views=None):
     jobs = manager.jobs
     motion = manager.motion = MotionLibrary(manager.library_assets.roots["user"], jobs)
+    manager.tasks.motion = motion
+    manager.library_deletions.inspection.reference_motions = motion.references
     app.state.jobs = jobs
 
     def operator(request):
@@ -104,6 +107,29 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.get("/api/v1/library/motion-clips/{digest}/{revision}")
     async def motion_clip(digest: str, revision: str):
         return await anyio.to_thread.run_sync(motion.clip, f"motion-clip/{digest}@{revision}")
+
+    @app.post("/api/v1/library/reference-motions", status_code=201)
+    async def publish_reference(body: ReferenceRequest, request: Request):
+        operator(request)
+        return await anyio.to_thread.run_sync(motion.publish_reference, manager.library_assets, body)
+
+    @app.get("/api/v1/library/reference-motions")
+    async def reference_list():
+        return {"referenceMotions": await anyio.to_thread.run_sync(lambda: list(motion.references()))}
+
+    @app.get("/api/v1/library/reference-motions/{digest}/{revision}")
+    async def reference_show(digest: str, revision: str):
+        return await anyio.to_thread.run_sync(motion.reference, f"reference-motion/{digest}@{revision}")
+
+    @app.get("/api/v1/library/reference-motions/{digest}/{revision}/preview")
+    async def reference_preview(digest: str, revision: str):
+        ref = await anyio.to_thread.run_sync(motion.reference, f"reference-motion/{digest}@{revision}")
+        return {
+            "id": ref["id"], "sha256": ref["sha256"], "asset": ref["motion"]["asset"],
+            "assetContentHash": ref["motion"]["assetContentHash"], "loop": ref["motion"]["loop"],
+            "jointKeys": ref["motion"]["jointKeys"], "frames": ref["motion"]["frames"],
+            "points": ref["preview"], "ghost": ref["ghost"],
+        }
 
     @app.get("/api/v1/jobs")
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):

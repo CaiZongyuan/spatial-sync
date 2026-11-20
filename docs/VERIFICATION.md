@@ -951,3 +951,42 @@ source timeline. It records global root translation as unobserved.
 ```sh
 .venv/bin/python -m pytest -q tests/unit/test_motion_contract.py tests/gateway/test_motion_jobs.py
 ```
+
+### Video imitation and Reference Motion
+
+A gateway that publishes Reference Motions needs the locked `motion` CPU extra.
+The separate Node pose runtime owns video decoding and landmark extraction. Its
+video and model bytes are identified by the Motion Clip. Publication takes either
+an exact Clip identity and digest or Asset-local keyframes with source attribution.
+The request names the exact robot Asset version and digest, semantic body or site
+paths, and signed hinge gains for dominant moving limbs. Source directions use the
+declared XYZW basis rotation. An in-place Clip uses a fixed horizontal root because
+monocular landmarks do not measure world translation. Keyframe input can supply
+world-relative translation in the canonical Asset frame.
+
+```sh
+lw motion show "motion-clip/<sha256>@1" --json
+lw motion retarget reference-request.json --json
+lw motion preview "reference-motion/<sha256>@1" --json
+lw motion task-create imitation-task.json --json
+lw task show task/microduck-imitate@1 --json
+lw plan submit training-plan.yaml --json
+```
+
+Inspect the immutable motion's feasibility report and the playback on its exact
+Asset page. The current feasibility check uses two planted feet with authored
+collision support, sampled joint and root speeds, and a static support polygon.
+The report records the applied thresholds. A one-shot appends a bounded terminal
+hold. The managed compiler uses the shared phase and quaternion sampler for
+reference observations and adds `root_pose_tracking`, `root_velocity_tracking`
+and `body_local_tracking` to the existing `joint_tracking` reward. Task assembly
+takes `reference: {id, sha256}`, a declarative Task document, and an observation
+document. The lease transfers the exact snapshot as a Task file, and Policy
+Export archives it under `provenance/reference-motion.json`.
+
+`tests/gateway/test_motion_jobs.py` exercises the video lease, unmapped limb,
+fitted support, Task assembly, and license archive. The actual managed compiler
+and isolated native observation replay are distinct from training a Policy and
+measuring its held-out evaluation. Submit a fresh Goal when the reference identity
+changes. The first human approval fixes that identity together with the Goal
+Suite's evaluation conditions and sealed trials.

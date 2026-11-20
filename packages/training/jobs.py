@@ -468,7 +468,9 @@ class TrainingJobs:
                 )
             }
         for job in reversed(self.records.values()):
-            if job["planApprovalId"] == approval_id and job.get("validationEstimate"):
+            if job["kind"] == "plan_validation" and job["planApprovalId"] == approval_id and job.get(
+                "validationEstimate"
+            ):
                 return deepcopy(job["validationEstimate"])
         return {}
 

@@ -1,5 +1,6 @@
 """Confined Task source snapshots. Pushing a package never imports or executes it."""
 
+import io
 import json
 import os
 import re
@@ -20,8 +21,11 @@ from packages.library.archive import (
     relative_path,
 )
 from packages.library.common import NAME, LibraryError, content_hash, document, load_entity_types
+from packages.library.robot_asset import asset_coordinates_match, scene_robot_asset
+from packages.library.structural import USDGraph
 from packages.library.templates import resolve
 from packages.library.transactions import durable_json
+from packages.motion.snapshot import REFERENCE_FILE, declarative_files
 from packages.policies.observations import ObservationSpec
 from packages.training.inputs import pack_package
 from packages.training.schema import TaskMetadata
@@ -32,6 +36,7 @@ class TaskLibrary:
         self.assets, self.roots, self.scenes = assets, assets.roots, scenes
         self.user_root = self.roots["user"]
         self.demonstrations = None
+        self.motion = None
 
     def _versions(self):
         values = {}
@@ -55,6 +60,12 @@ class TaskLibrary:
             package = destination_parent(path, ("package",))
             if record["id"] != identifier or content_hash(package) != record["contentHash"]:
                 raise ValueError("Task package changed")
+            if record["task"].get("referenceMotionRef"):
+                metadata = TaskMetadata.model_validate(document(package / "task.yaml"))
+                declared = metadata.model_dump(mode="json")
+                if declared != record["task"]:
+                    raise ValueError("Task metadata differs from the pinned Reference Motion package")
+                declarative_files(declared, package)
             scene = self.scenes().resolve(record["task"]["scene"])
             if scene.content_hash != record["sceneContentHash"]:
                 raise ValueError("Pinned Task scene changed")
@@ -148,8 +159,11 @@ class TaskLibrary:
                 elif task.episode.commandEnvelope is not None:
                     raise ValueError("commandEnvelope requires a command observation in obs_spec")
             if task.declarative is not None:
-                if set(files) != {"task.yaml", observation}:
-                    raise ValueError("Declarative Task contains only task.yaml and its observation data")
+                snapshot = declarative_files(task.model_dump(mode="json"), package)
+                if snapshot is not None and (
+                    self.motion is None or snapshot != self.motion.reference_bytes(task.referenceMotionRef.id)
+                ):
+                    raise ValueError("Task must use a published Reference Motion snapshot")
                 if spec.schema_version != "lw.obs-spec/2":
                     raise ValueError("Declarative Task requires lw.obs-spec/2")
                 motion = task.referenceMotion
@@ -199,6 +213,8 @@ class TaskLibrary:
                 assets = scene.asset_dependencies() + scene.template_dependencies()
                 if {"id": motion.asset, "contentHash": motion.assetContentHash} not in assets:
                     raise ValueError("Reference motion must pin an actual Scene Asset dependency")
+                if task.referenceMotionRef:
+                    self._validate_reference_target(scene, task, spec, json.loads(snapshot)["mapping"])
             if task.robot not in {item.get("key") for item in scene.bindings["entities"]}:
                 raise ValueError("robot must identify an entity in the pinned scene")
             resolved = resolve(scene.bindings, scene.metadata["sources"][0], scene.template_assets)
@@ -226,6 +242,43 @@ class TaskLibrary:
             return task.model_dump(mode="json"), scene
         except (OSError, ValueError, KeyError, ValidationError) as exc:
             raise invalid(str(exc), path="task.yaml") from exc
+
+    @staticmethod
+    def _validate_reference_target(scene, task, spec, mapping):
+        payload = scene.runtime_payload()
+        graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
+        stage = graph.compose(scene.metadata["stage"])
+        asset = scene_robot_asset(scene, task.robot, stage, graph) if stage and not graph.errors else None
+        if (not asset or asset["id"] != task.referenceMotion.asset
+                or asset["contentHash"] != task.referenceMotion.assetContentHash
+                or not asset_coordinates_match(stage, task.robot, graph, asset)):
+            raise ValueError("Reference Motion must pin the selected robot's calibrated Asset coordinates")
+        if task.declarative.baseBody != task.robot + mapping["pelvis"].removeprefix("/Asset"):
+            raise ValueError("Reference Motion pelvis must match the Task base body")
+        motion = task.referenceMotion
+        actions = set(spec.action.jointKeys)
+        for index, key in enumerate(motion.jointKeys):
+            if task.robot + key.removeprefix("/Asset") not in actions and any(
+                abs(frame.joints[index] - motion.frames[0].joints[index]) > 1e-6 for frame in motion.frames
+            ):
+                raise ValueError("Each moving Reference Motion joint requires an action channel")
+
+    def assemble_reference(self, pin, task, observation):
+        raw = self.motion.reference_bytes(pin.id)
+        if task.get("referenceMotion") is not None or task.get("referenceMotionRef") is not None:
+            raise invalid("Assembly requires one library Reference Motion")
+        if task.get("declarative") is None:
+            raise invalid("Reference Motion assembly requires a declarative Task")
+        with tempfile.TemporaryDirectory(prefix=".motion-task-", dir=self.user_root) as temporary:
+            path = Path(temporary)
+            durable_json(path / "task.yaml", task | {
+                "referenceMotion": json.loads(raw)["motion"],
+                "referenceMotionRef": pin.model_dump(),
+                "observation": "obs_spec.yaml",
+            })
+            durable_json(path / "obs_spec.yaml", observation)
+            (path / REFERENCE_FILE).write_bytes(raw)
+            return self.push(io.BytesIO(pack_package(path)))
 
     def push(self, stream):
         root = self.user_root

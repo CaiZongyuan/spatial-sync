@@ -21,13 +21,13 @@ if __package__:
     from apps.node import usd_mjcf as usd
     from apps.node.declarative_scene import baked_collision_layout, episode_layout
     from packages.policies.action_contract import action_delta_limit, command_endpoints
-    from packages.policies.motion import motion_observations
+    from packages.policies.motion import motion_observations, reference_tracking
     from packages.training.reward_state import compile_expression, evaluate, validate_scene_references
 else:
     import lw_usd_mjcf as usd
     from lw_action_contract import action_delta_limit, command_endpoints
     from lw_declarative_scene import baked_collision_layout, episode_layout
-    from lw_motion import motion_observations
+    from lw_motion import motion_observations, reference_tracking
     from lw_reward_state import compile_expression, evaluate, validate_scene_references
 
 
@@ -126,9 +126,13 @@ class DeclarativeEnvironment(ManagerBasedRlEnv):
     def motion_values(self, source):
         if source not in self._motion_tables:
             count = math.ceil(self.contract["declarative"]["episodeSeconds"] / self.step_dt) + 1
-            rows = [
-                motion_observations(self.contract["motion"], i * self.step_dt)[source] for i in range(count)
-            ]
+            motion = self.contract["motion"]
+            if source in {"motion_phase", "reference_motion_frame"}:
+                rows = [motion_observations(motion, i * self.step_dt)[source] for i in range(count)]
+            else:
+                rows = [reference_tracking(motion, i * self.step_dt)[source] for i in range(count)]
+                if source == "bodyLocal":
+                    rows = [list(row.values()) for row in rows]
             self._motion_tables[source] = torch.tensor(rows, device=self.device)
         table = self._motion_tables[source]
         return table[self.episode_length_buf.clamp(max=len(table) - 1)]
@@ -250,6 +254,36 @@ def _upright(env):
     return 1 - 2 * (q[:, 1].square() + q[:, 2].square())
 
 
+def _motion_tracking(env, kind):
+    key = env.contract["declarative"]["baseBody"]
+    position, quaternion = env.pose(key)
+    if kind == "body_local_tracking":
+        points = []
+        for path in env.contract["motionPoints"]:
+            point, _ = env.pose(path, site=path in env.contract["site"])
+            points.append(_inverse_rotate(quaternion, point - position))
+        measured = torch.stack(points, dim=1)
+        return -(measured - env.motion_values("bodyLocal")).square().sum(dim=(1, 2))
+    origin, basis = env.contract["motionPlacement"]
+    basis = position.new_tensor(basis).expand_as(quaternion)
+    if kind == "root_pose_tracking":
+        relative = _inverse_rotate(basis, position - position.new_tensor(origin))
+        qp = env.motion_values("rootQuaternion")[:, [3, 0, 1, 2]]
+        # Compare in the Asset frame using the scalar part of the relative quaternion.
+        w, v = basis[:, :1], -basis[:, 1:]
+        a, b = quaternion[:, :1], quaternion[:, 1:]
+        local = torch.cat((w*a - (v*b).sum(dim=1, keepdim=True), w*b + a*v + torch.linalg.cross(v, b)), dim=1)
+        similarity = (local * qp).sum(dim=1).abs().clamp(max=1)
+        return -(relative - env.motion_values("rootPosition")).square().sum(dim=1) - (1 - similarity.square())
+    (index,) = env.indices("body", [key])
+    data = env.scene["robot"].data
+    linear = _inverse_rotate(basis, data.body_link_lin_vel_w[:, index])
+    angular = _inverse_rotate(basis, data.body_link_ang_vel_w[:, index])
+    return -(linear - env.motion_values("rootLinearVelocity")).square().sum(dim=1) - (
+        angular - env.motion_values("rootAngularVelocity")
+    ).square().sum(dim=1)
+
+
 def reward(env, term):
     kind = term["kind"]
     if kind == "upright":
@@ -262,6 +296,8 @@ def reward(env, term):
         keys = [prefix + path.removeprefix("/Asset") for path in motion["jointKeys"]]
         positions = env.scene["robot"].data.joint_pos[:, env.indices("joint", keys)]
         return -(positions - env.motion_values("reference_motion_frame")[:, 7:]).square().sum(dim=1)
+    if kind in {"root_pose_tracking", "root_velocity_tracking", "body_local_tracking"}:
+        return _motion_tracking(env, kind)
     if kind == "velocity_tracking":
         key = env.contract["declarative"]["baseBody"]
         (index,) = env.indices("body", [key])
@@ -372,17 +408,39 @@ def compile_environment(task, spec, stage_path):
     physical = [(joint.lower, joint.upper) if joint.limited else (-math.inf, math.inf) for joint in joints]
     motion = task.get("referenceMotion")
     if motion:
+        pinned = bool(task.get("referenceMotionRef"))
+        tolerance = 1e-7 if pinned else 0.
         for index, key in enumerate(motion["jointKeys"]):
             joint = by_joint[robot + key.removeprefix("/Asset")]
-            if joint.limited and any(
-                not joint.lower <= row["joints"][index] <= joint.upper for row in motion["frames"]
+            lower, upper = (joint.lower, joint.upper) if joint.limited else (-math.inf, math.inf)
+            if pinned and joint.target_range:
+                lower, upper = max(lower, joint.target_range[0]), min(upper, joint.target_range[1])
+            if any(
+                not lower - tolerance <= row["joints"][index] <= upper + tolerance
+                for row in motion["frames"]
             ):
-                raise ValueError("Reference Motion joint target exceeds actual physical limits")
+                raise ValueError("Reference Motion joint target exceeds actual physical or actuator limits")
 
-    from pxr import Usd
+    from pxr import Usd, UsdGeom
 
     declared_sites = {item["key"] for item in spec["observations"] if item["source"].startswith("site_")}
-    prims = list(Usd.PrimRange(stage.GetPrimAtPath(robot), Usd.TraverseInstanceProxies()))
+    motion_points = []
+    motion_placement = None
+    robot_prim = stage.GetPrimAtPath(robot)
+    if task.get("referenceMotionRef"):
+        motion_points = [
+            robot + key.removeprefix("/Asset") for key in sorted(motion["frames"][0].get("bodyLocal", {}))
+        ]
+        placement = UsdGeom.XformCache().GetLocalToWorldTransform(robot_prim)
+        rotation = placement.ExtractRotationQuat()
+        motion_placement = (
+            [float(value) * UsdGeom.GetStageMetersPerUnit(stage) for value in placement.ExtractTranslation()],
+            [float(rotation.GetReal()), *map(float, rotation.GetImaginary())],
+        )
+        for path in motion_points:
+            if path not in derived.body_names_by_path:
+                declared_sites.add(path)
+    prims = list(Usd.PrimRange(robot_prim, Usd.TraverseInstanceProxies()))
     sites = {}
     for path in declared_sites:
         prim = stage.GetPrimAtPath(path)
@@ -390,7 +448,7 @@ def compile_environment(task, spec, stage_path):
         if name not in derived.sites or sum(p.GetName() == name for p in prims) != 1:
             raise ValueError(f"Site {path} has no unique derived identity")
         sites[path] = name
-    bodies = {settings["baseBody"]}
+    bodies = {settings["baseBody"]} | (set(motion_points) - declared_sites)
     for item in spec["observations"]:
         if item["source"].startswith("body_") or item["source"] == "projected_gravity":
             bodies.add(item["key"])
@@ -428,6 +486,8 @@ def compile_environment(task, spec, stage_path):
             "declarative": settings,
             "action": action,
             "motion": motion,
+            "motionPoints": motion_points,
+            "motionPlacement": motion_placement,
             "body": by_body,
             "site": sites,
             "joint": {key: value.name for key, value in by_joint.items()},

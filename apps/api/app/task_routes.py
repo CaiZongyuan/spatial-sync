@@ -4,8 +4,16 @@ import tempfile
 
 import anyio
 from fastapi import HTTPException, Request
+from pydantic import JsonValue
 
 from packages.library.archive import MAX_UPLOAD_BYTES, invalid
+from packages.training.declarative import Data, ReferencePin
+
+
+class AssembleReference(Data):
+    reference: ReferencePin
+    task: dict[str, JsonValue]
+    observation: dict[str, JsonValue]
 
 
 def install_task_routes(app, tasks, role_for):
@@ -16,6 +24,14 @@ def install_task_routes(app, tasks, role_for):
     @app.get("/api/v1/tasks/{name}/{rev}")
     async def task_show(name: str, rev: str):
         return await anyio.to_thread.run_sync(tasks.show, f"task/{name}@{rev}")
+
+    @app.post("/api/v1/tasks/reference-motion", status_code=201)
+    async def assemble_reference(body: AssembleReference, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        return await anyio.to_thread.run_sync(
+            tasks.assemble_reference, body.reference, body.task, body.observation
+        )
 
     @app.post("/api/v1/tasks", status_code=201)
     async def task_push(request: Request):

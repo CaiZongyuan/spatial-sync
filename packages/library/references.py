@@ -3,6 +3,7 @@
 import json
 import re
 
+from packages.info.plans import PlanError
 from packages.info.recording import SCENE_VERSION, recording_metadata
 from packages.library.common import LibraryError
 from packages.library.reports import HASH, parse_report
@@ -49,6 +50,7 @@ class ReferenceInspection:
         self._inspected = {}
         self.live = live or (lambda: None)
         self.retained = lambda: []
+        self.reference_motions = lambda: ()
 
     @property
     def scenes(self):
@@ -127,6 +129,14 @@ class ReferenceInspection:
                 if target.id in retained["dependencies"]:
                     reference("recovery", retained["id"],
                               "Retained " + retained["versionId"] + " needs this exact version for recovery")
+
+        if kind == "asset":
+            try:
+                for motion in self.reference_motions():
+                    if motion["asset"] == target.id:
+                        reference("reference-motion", motion["id"], "Pinned Reference Motion Asset version")
+            except (OSError, ValueError, KeyError, LibraryError, PlanError) as exc:
+                problem("reference-motion", "library", exc)
 
         try:
             resources = RobotResources(self.assets.roots, self.assets, self.scenes, programs={})

@@ -93,7 +93,7 @@ def test_motion_upload_enforces_byte_limit_before_probing():
         assert response.status_code == 413 and response.json()["detail"]["code"] == "motion_video_too_large"
 
 
-def test_motion_job_round_trip_uses_pose_lease_and_publishes_immutable_clip(video):
+def test_motion_job_round_trip_uses_pose_lease_and_publishes_immutable_clip(video, tmp_path):
     settings = remote_settings()
     with TestClient(create_app(settings)) as client:
         uploaded = client.post(VIDEO_URL, params=RIGHTS, content=video, headers=OPERATOR)
@@ -129,10 +129,20 @@ def test_motion_job_round_trip_uses_pose_lease_and_publishes_immutable_clip(vide
         points = [
             {"position": [i / 100, 0, 0.1], "inFrame": True, "visibility": 0.9} for i in range(len(JOINTS))
         ]
+        def pose(index):
+            # Same deterministic body, with variable flexion at both knees.
+            result = [point.copy() for point in points]
+            for label, coordinates in {
+                "leftHip": [0., .1, .8], "leftKnee": [0., .1, .4], "leftAnkle": [.08 * index, .1, .05],
+                "rightHip": [0., -.1, .8], "rightKnee": [0., -.1, .4], "rightAnkle": [.08 * index, -.1, .05],
+            }.items():
+                result[JOINTS.index(label)]["position"] = coordinates
+            return result
+
         wire = {
             "sourceSha256": source["sha256"],
             "modelSha256": MODEL_SHA256,
-            "frames": [{"timeSeconds": t, "poses": [points]} for t in source["frameTimes"]],
+            "frames": [{"timeSeconds": t, "poses": [pose(i)]} for i, t in enumerate(source["frameTimes"])],
         }
         for poses, code in (
             ([], "motion_no_person"),
@@ -163,7 +173,8 @@ def test_motion_job_round_trip_uses_pose_lease_and_publishes_immutable_clip(vide
         )
         assert client.get(base + "/inputs", headers=lease).status_code == 403
 
-    with TestClient(create_app(settings)) as client:
+    app = create_app(settings)
+    with TestClient(app) as client:
         assert client.get(CLIP_URL, headers=VIEWER).json() == {"clips": [descriptor]}
         digest = descriptor["sha256"]
         clip = client.get(f"{CLIP_URL}/{digest}/1", headers=VIEWER).json()
@@ -171,3 +182,50 @@ def test_motion_job_round_trip_uses_pose_lease_and_publishes_immutable_clip(vide
         assert clip["source"]["license"] == RIGHTS and clip["model"]["landmarkLicense"] == "Apache-2.0"
         assert [frame["timeSeconds"] for frame in clip["frames"]] == source["frameTimes"]
         assert clip["frames"][0]["joints"]["leftShoulder"]["position"] == [0, 0, 0.1]
+
+        from tests.fixtures.training_task import training_plan
+        from tests.gateway.test_reference_motion import MAPPING, assert_policy_archive, imitation_request
+
+        asset = app.state.manager.library_assets.resolve("robot/microduck@1")
+        url = "/api/v1/library/reference-motions"
+        request = {
+            "asset": asset.id, "assetContentHash": asset.content_hash,
+            "clip": {"id": clip["id"], "sha256": clip["sha256"]}, "mapping": MAPPING,
+        }
+        rejected = client.post(url, headers=OPERATOR, json=request)
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["code"] == "reference_unmapped_active_limb"
+        request["mapping"] = MAPPING | {
+            "bends": {
+                "leftLeg": {"joint": "/Asset/joints/left_knee", "gain": .1},
+                "rightLeg": {"joint": "/Asset/joints/right_knee", "gain": -.1},
+            },
+            "auxiliaryJoints": [
+                f"/Asset/joints/{side}_{joint}" for side in ("left", "right")
+                for joint in ("hip_yaw", "hip_roll", "hip_pitch", "ankle")
+            ],
+        }
+        response = client.post(url, headers=OPERATOR, json=request)
+        assert response.status_code == 201, response.text
+        reference = response.json()
+        assert reference["source"]["clip"] == request["clip"]
+        assert reference["source"]["video"]["license"] == RIGHTS
+        assert reference["source"]["model"]["landmarkLicense"] == "Apache-2.0"
+        assert reference["report"]["minSupportMarginM"] > .005
+        assert reference["report"]["maxFootSlipM"] < .002
+        assembled = client.post(
+            "/api/v1/tasks/reference-motion", headers=OPERATOR, json=imitation_request(reference)
+        )
+        assert assembled.status_code == 201, assembled.text
+        plan = training_plan(
+            assembled.json()["id"], algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
+            evaluation={"scene": "microduck-arena@1", "episodes": 30, "threshold": 24},
+        )
+        submitted = client.post("/api/v1/plans", headers=OPERATOR, json=plan)
+        assert submitted.status_code == 201, submitted.text
+        assert submitted.json()["goalSuite"]["referenceMotionRef"] == {
+            "id": reference["id"], "sha256": reference["sha256"],
+        }
+        assert_policy_archive(
+            client, app.state.manager, assembled.json(), reference, tmp_path / "reference-policy",
+        )
