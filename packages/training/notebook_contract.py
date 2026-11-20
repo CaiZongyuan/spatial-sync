@@ -109,7 +109,7 @@ class NotebookEntry(Schema):
     score: RecordedScore | None
     partialEpisodes: list[RecordedEpisode]
     attemptedEpisodes: int | None = Field(ge=0)
-    reportedDecision: Literal["baseline", "accepted", "rejected"] | None
+    reportedDecision: Literal["baseline_candidate", "baseline", "accepted", "rejected"] | None
     acceptanceRule: Literal["wilson95-lower>reference-point/1"] = "wilson95-lower>reference-point/1"
     comparison: Comparison
     deployment: Deployment

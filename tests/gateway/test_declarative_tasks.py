@@ -112,7 +112,7 @@ def test_managed_dispatch_selects_compiler_profile_and_rejects_forged_witnesses(
                 task_id,
                 algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
                 hyperparameters={"num_envs": 1, "max_iterations": 10, "device": "cpu"},
-                evaluation={"scene": task["scene"], "episodes": 1, "threshold": 1},
+                evaluation={"scene": task["scene"], "episodes": 30, "threshold": 1},
             ),
         )
         assert response.status_code == 201, response.text

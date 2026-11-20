@@ -19,6 +19,15 @@ def durable_json(path, value):
     durable_bytes(path, json_bytes(value))
 
 
+def sync_directory(path):
+    if os.name != "nt":
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
 def durable_bytes(path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink() or path.is_junction():
@@ -31,12 +40,7 @@ def durable_bytes(path, content):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-        if os.name != "nt":
-            descriptor = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+        sync_directory(path.parent)
     finally:
         if temporary is not None:
             Path(temporary).unlink(missing_ok=True)

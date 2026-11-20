@@ -34,7 +34,7 @@ export interface NotebookEntry {
   status: 'completed' | 'failed' | 'cancelled'; at: string; endedAt: string | null;
   score: { successes: number; episodes: number; score: number; ci95: number[] } | null;
   attemptedEpisodes: number | null;
-  reportedDecision: 'baseline' | 'accepted' | 'rejected' | null;
+  reportedDecision: 'baseline_candidate' | 'baseline' | 'accepted' | 'rejected' | null;
   comparison: { state: 'baseline' | 'comparable' | 'unknown' | 'different' | 'changed_during_execution';
     reason: string | null; conditionsGroup: string; referenceEvaluationId: string | null;
     referenceScore: number | null; remainingGapReduction: number | null; gapReason: string | null };

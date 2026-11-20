@@ -60,7 +60,7 @@ def install_robot_resource_routes(app, assets, scenes, manager, role_for):
             pass  # The measured historical result remains readable; reusability stays unknown.
         return {"status": "measured", "evaluationId": row["evaluationId"], "suite": row["suite"],
                 "successes": successes, "episodes": episodes, "score": row["score"],
-                "decision": row["decision"], "currentEvidence": current,
+                "decision": store.score_decision(row), "currentEvidence": current,
                 "evidenceMode": record.get("evidenceMode", "measured"),
                 "url": "/api/v1/evaluations/" + row["evaluationId"]}
 

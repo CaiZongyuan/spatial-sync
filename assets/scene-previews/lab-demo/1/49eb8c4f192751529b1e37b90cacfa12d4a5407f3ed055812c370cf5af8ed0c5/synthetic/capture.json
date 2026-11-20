@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "synthetic",
-  "capturedAt": "2026-11-19T18:04:22.925660+00:00",
+  "capturedAt": "2026-11-20T02:22:26.635209+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -145,7 +145,7 @@
     },
     {
       "path": "packages/library/transactions.py",
-      "sha256": "f9e182145dfa95bc7610cb228bc336ef10c304a95e5ade722b088ed7f3be7d92"
+      "sha256": "4df38458e255329199f68363f18d2e10319aba38d65cb6da57fddf9afb137cbb"
     },
     {
       "path": "packages/programs/biosafety_cabinet/virtual.py",
@@ -231,10 +231,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "eae40c8d5b96c1023e21a2be67cb8680c3a8f249da53f93a44a51f3cb463cf92",
-    "catalog.json": "1bff3e5348acc71daf5789f4831ece886cd1679a4ea08f20a69d82118133159d",
-    "state.json": "172e8f94d04160e7d73cbe3d63683dea707ab0a5bb412ae1ce64a093baf64a8f",
-    "snapshot.bin": "08dbcc26ddbba47539e05e7b0d4d81b21532307dc277baabd888b46af2ed0ac8"
+    "manifest.json": "cb0893e81877b548ba0cce59405f0790c37ded0e8d75bac0507d9e2c41edb1ff",
+    "catalog.json": "507d152ad4d195a7f08fbbe2f6da22feee8f57e956f53d016ce2f4c62688beae",
+    "state.json": "795a89f74eedff85e243f876b260c952d8a639c5d7bcdf44a2cb46030d405403",
+    "snapshot.bin": "9a8ec39afa0afc919f22388cff910a054be0b72c3afb8d369c8015575f772518"
   },
   "counts": {
     "physicalEntities": 30,

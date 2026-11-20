@@ -35,7 +35,7 @@ from packages.training.deployment_publication import DeploymentPlan, DeploymentP
 @dataclass(frozen=True)
 class TrainEvidence:
     current_accepted: dict
-    prior_reference: dict
+    prior_reference: dict | None
     interval: list[float]
     decision: str = "accepted"
 
@@ -76,7 +76,7 @@ def _complete_train(store, row):
     return interval
 
 
-def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None):
+def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None, initial=False):
     """Freeze current accepted Candidate, its prior comparator and their unchanged relation."""
     matching = [
         row for row in store.rows
@@ -87,6 +87,12 @@ def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None):
         and (evaluation_id is None or row.get("evaluationId") == evaluation_id)
     ]
     accepted = [row for row in matching if row.get("decision") == "accepted"]
+    if initial and not accepted:
+        first = [row for row in matching if row.get("decision") == "baseline_candidate"
+                 and not store.reference(row["key"])]
+        if len(first) == 1:
+            row = first[0]
+            return TrainEvidence(deepcopy(row), None, _complete_train(store, row), "baseline_candidate")
     if not accepted:
         label = matching[-1].get("decision", "reported") if matching else "reported"
         _refuse("candidate_not_accepted", label=label)
@@ -101,8 +107,13 @@ def accepted_train_evidence(store, candidate, scene, *, evaluation_id=None):
     reference = next(
         (value for value in store.rows if value.get("evaluationId") == row.get("reference")), None
     )
-    if (reference is None or reference is row or reference.get("decision") not in ("baseline", "accepted")
-            or not comparable(row, reference) or store.rows.index(reference) >= store.rows.index(row)):
+    if reference is None or reference is row:
+        _refuse("comparison_reference_unavailable")
+    baseline = reference.get("decision") == "baseline_candidate" and store.is_initial_reference(reference)
+    if (
+        (reference.get("decision") not in ("baseline", "accepted") and not baseline)
+        or not comparable(row, reference) or store.rows.index(reference) >= store.rows.index(row)
+    ):
         _refuse("comparison_reference_unavailable")
     _complete_train(store, reference)
     decision = evaluation_decision(row["successes"], row["episodes"], reference["score"])
@@ -126,6 +137,16 @@ class ControllerPromotions:
             validate_context=self._publication_context, commit_context=self._commit_context,
             after_effect=after_effect,
         )
+
+    def is_initial_reference(self, row):
+        for path in self.root.glob("promotion-*.json"):
+            value = self.get(path.stem)
+            context = value.get("context", {})
+            if (context.get("priorReference") is None
+                    and context.get("currentAccepted") == row
+                    and self.publication.committed(value["id"])):
+                return True
+        return False
 
     def _path(self, identifier):
         if not isinstance(identifier, str) or not NAME.fullmatch(identifier):
@@ -380,6 +401,13 @@ class ControllerPromotions:
             for path in self.root.glob("promotion-*.json"):
                 previous = self.get(path.stem)
                 if previous["requestId"] == body.requestId:
+                    if (
+                        previous["context"]["suite"]["id"].startswith("suite/goal-bound-")
+                        and actor.kind != "user"
+                    ):
+                        raise PlanError(
+                            "human_review_required", "A human operator starts the sealed test", status=403
+                        )
                     if previous["inputs"] != inputs:
                         raise PlanError("idempotency_conflict", "Request ID belongs to another promotion")
                     return previous
@@ -389,19 +417,36 @@ class ControllerPromotions:
                     and row.get("candidateIdentity", {}).get("id") == body.subject
                     and row.get("key", {}).get("scene") == scene.id
                     and (body.evaluationId is None or row["evaluationId"] == body.evaluationId)]
-            current = [row for row in rows if row.get("decision") == "accepted"
-                       and (store.reference(row["key"]) or {}).get("evaluationId") == row["evaluationId"]]
+            current = [row for row in rows if (
+                row.get("decision") == "accepted"
+                and (store.reference(row["key"]) or {}).get("evaluationId") == row["evaluationId"]
+            ) or (
+                row["suite"].startswith("suite/goal-bound-") and row.get("decision") == "baseline_candidate"
+                and store.reference(row["key"]) is None
+            )]
             if len(current) != 1:
                 _refuse("candidate_not_accepted" if not rows else "train_reference_changed")
             train = accepted_train_evidence(store, current[0]["candidateIdentity"], scene,
-                                            evaluation_id=current[0]["evaluationId"])
+                                            evaluation_id=current[0]["evaluationId"],
+                                            initial=current[0]["suite"].startswith("suite/goal-bound-"))
             for row in (train.current_accepted, train.prior_reference):
-                self._current_identity(store.records[row["evaluationId"]])
+                if row is not None:
+                    self._current_identity(store.records[row["evaluationId"]])
             template = store.records[train.current_accepted["evaluationId"]]
             subject = admitted_subject(template)
             if subject is None:
                 _refuse("promotion_subject_unavailable")
             suite = self.manager.evaluations.suites.resolve(template["suite"])
+            goal_suite = suite.metadata.get("goalSuite")
+            if goal_suite and actor.kind != "user":
+                raise PlanError(
+                    "human_review_required", "A human operator starts the sealed test", status=403
+                )
+            threshold = goal_suite["threshold"] if goal_suite else None
+            if train.prior_reference is None and threshold is not None and (
+                train.current_accepted["successes"] < threshold
+            ):
+                _refuse("goal_suite_threshold_not_met")
             verify_simulation_subject(self.manager, subject, suite, scene)
             if (subject.document()["candidateIdentity"] != train.current_accepted["candidateIdentity"]
                     or subject.candidateIdentity.id != body.subject):
@@ -475,6 +520,8 @@ class ControllerPromotions:
             value["evaluationContextHash"] = value["contextHash"]
             value["evaluationRecords"] = []
             for side, row in (("reference", train.prior_reference), ("candidate", train.current_accepted)):
+                if row is None:
+                    continue
                 source = store.records[row["evaluationId"]]
                 evaluation_id = "eval-" + fingerprint({"promotion": identifier, "side": side})[:32]
                 record = {key: deepcopy(source[key]) for key in (
@@ -526,9 +573,12 @@ class ControllerPromotions:
         suite = self.manager.evaluations.suites.resolve(context["suite"]["id"])
         current = accepted_train_evidence(self.manager.evaluations.store,
             subject.document()["candidateIdentity"], scene,
-            evaluation_id=context["currentAccepted"]["evaluationId"])
+            evaluation_id=context["currentAccepted"]["evaluationId"],
+            initial=context["priorReference"] is None,
+        )
         for row in (current.current_accepted, current.prior_reference):
-            self._current_identity(self.manager.evaluations.store.records[row["evaluationId"]])
+            if row is not None:
+                self._current_identity(self.manager.evaluations.store.records[row["evaluationId"]])
         if (current.current_accepted != context["currentAccepted"]
                 or current.prior_reference != context["priorReference"]
                 or suite.content_hash != context["suite"]["contentHash"]
@@ -591,6 +641,10 @@ class ControllerPromotions:
                     or row.get("score") != row["successes"] / len(expected)):
                 _refuse("promotion_test_incomplete")
             evidence[side] = {"recordHash": fingerprint(record), "result": deepcopy(row)}
+        if value["context"]["priorReference"] is None:
+            threshold = suite.metadata["goalSuite"]["threshold"]
+            if threshold is not None and evidence["candidate"]["result"]["successes"] < threshold:
+                _refuse("goal_suite_threshold_not_met")
         return evidence
 
     def refresh(self, identifier):
@@ -659,12 +713,17 @@ class ControllerPromotions:
                     result["error"] = {"code": error.detail["code"]}
         evidence = value["context"].get("testEvidence")
         if evidence:
-            result["train"] = {key: deepcopy(value["context"][field])
-                               for key, field in (("candidate", "currentAccepted"),
-                                                  ("reference", "priorReference"))}
+            decision = self.manager.evaluations.store.score_decision
+            result["train"] = {}
+            for side, field in (("candidate", "currentAccepted"), ("reference", "priorReference")):
+                row = deepcopy(value["context"][field])
+                if row is not None:
+                    row["decision"] = decision(row)
+                result["train"][side] = row
             result["test"] = {side: item["result"] for side, item in evidence.items()}
-            result["candidateBelowReference"] = evidence["candidate"]["result"]["score"] < (
-                evidence["reference"]["result"]["score"])
+            result["candidateBelowReference"] = "reference" in evidence and (
+                evidence["candidate"]["result"]["score"] < evidence["reference"]["result"]["score"]
+            )
             result["qualification"] = deepcopy(value["context"]["qualification"])
         return result
 
@@ -722,7 +781,9 @@ class ControllerPromotions:
                                 content_hash=context["baseScene"]["contentHash"])
         proof = accepted_train_evidence(self.manager.evaluations.store,
             subject.document()["candidateIdentity"], scene,
-            evaluation_id=context["currentAccepted"]["evaluationId"])
+            evaluation_id=context["currentAccepted"]["evaluationId"],
+            initial=context["priorReference"] is None,
+        )
         funding = context["funding"]
         if (proof.current_accepted != context["currentAccepted"]
                 or proof.prior_reference != context["priorReference"]):
@@ -773,7 +834,13 @@ class ControllerPromotions:
                 value["deployment"] = {"scene": result["scene"], "controller": result["controller"]}
             else:
                 value["error"] = result.get("error", {"code": "publication_incomplete"})
-            return self._save(value)
+            saved = self._save(value)
+            if result["phase"] == "committed" and value["context"]["priorReference"] is None:
+                evaluation = value["context"]["currentAccepted"]["evaluationId"]
+                record = self.manager.evaluations.store.records.get(evaluation)
+                if record is not None:
+                    self.manager.notebooks.observe(record)
+            return saved
         except (PlanError, LibraryError) as error:
             value.update(status="blocked", error={"code": error.detail["code"]})
             return self._save(value)

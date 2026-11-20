@@ -6,13 +6,19 @@ import type { LoopBudget } from './notebooks';
 
 export type ApprovalActor = { kind: 'user' | 'cli' | 'agent'; name: string };
 export type ApprovalDecision = 'approve' | 'deny' | 'revoke';
+type GoalSuiteReview = {
+  id: string; contentHash?: string; goalId: string; implements: string; episodes: number; threshold: number | null;
+  asset: { id: string; contentHash: string; calibrationSha256?: string };
+  success: Record<string, unknown>; parameterCoverage: Record<string, unknown[]>;
+  perturbation: { jointKey: string; unit: 'rad' | 'm'; amplitude: number };
+};
 export interface ApprovalRecord {
   approvalId: string;
   subject: 'invocation' | 'plan' | 'policy' | 'job' | 'deletion';
   subjectId: string;
   sessionId: string | null;
   title: string;
-  details: { controllerPromotionId?: string; agentPromotionId?: string; agentId?: string; entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number; loopBudget?: LoopBudget } & Partial<DeletionDetails>;
+  details: { controllerPromotionId?: string; agentPromotionId?: string; agentId?: string; entityKey?: string; params?: Record<string, unknown>; plan?: Record<string, unknown>; revision?: number; changes?: TrainingPlanChange[]; estimatedGpuHours?: number; remainingGpuHours?: number; planId?: string; planRevision?: number; loopBudget?: LoopBudget; goalSuite?: GoalSuiteReview } & Partial<DeletionDetails>;
   requestedBy: ApprovalActor;
   createdAtMs: number;
   status: 'pending' | 'approved' | 'denied' | 'revoked' | 'expired' | 'unavailable';

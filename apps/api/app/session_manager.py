@@ -94,11 +94,13 @@ class Session:
         simulation_subject=None,
         deployment_permit=None,
         on_closed=None,
+        trial=None,
     ):
         self.session_id = "session-" + uuid.uuid4().hex[:12]
         self.scene_id, self.kind = scene_id, kind
         self.scene_version = scene_version
         self.evaluation_id = evaluation_id
+        self.trial = trial
         from packages.programs.simulation import select_subject
 
         subject = select_subject(simulation_subject=simulation_subject, policy_subject=policy_subject)
@@ -164,6 +166,8 @@ class Session:
             self._starting_source = candidate
             if self.scene_version and (configure := getattr(candidate, "configure_scene", None)):
                 configure(self.scene_version)
+            if self.trial is not None:
+                candidate.configure_trial(self.trial)
             if self.simulation_subject is not None:
                 configure = getattr(candidate, "configure_evaluation", None)
                 if configure is None:
@@ -1186,6 +1190,7 @@ class SessionManager:
     async def create(
         self, scene_id, source, options, *, scene_version=None, evaluation_id=None,
         policy_subject=None, simulation_subject=None, private_evaluation=False,
+        trial=None,
     ):
         from packages.programs.simulation import admitted_subject, select_subject
 
@@ -1304,6 +1309,7 @@ class SessionManager:
                             simulation_subject=simulation_subject,
                             deployment_permit=deployment_permit,
                             on_closed=lambda: self.evaluations and self.evaluations.wake(),
+                            trial=trial,
                         )
                         if evaluation_id:
                             self.recordings.pin(session.session_id)

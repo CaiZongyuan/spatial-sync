@@ -97,7 +97,7 @@ def until(read, predicate, seconds=10):
 
 
 def controlled_receipt(
-    app, plan, *, successes=2, reference=None, split="train", identifier=None, legacy=False
+    app, plan, *, successes=2, reference=None, split="train", identifier=None, legacy=False, decision=None,
 ):
     """Owned fixture adapter; actual stores/decision function/projection, no physics claim."""
     service = app.state.manager.evaluations
@@ -132,7 +132,9 @@ def controlled_receipt(
         "episodes": 2,
         "score": score,
         "ci95": wilson_interval(successes, 2),
-        "decision": evaluation_decision(successes, 2, reference["score"] if reference else None, split=split),
+        "decision": decision or evaluation_decision(
+            successes, 2, reference["score"] if reference else None, split=split
+        ),
         "reference": reference["evaluationId"] if reference else None,
         "phases": {},
         "recordings": [],
@@ -174,6 +176,24 @@ def controlled_receipt(
     app.state.notebooks.complete_evaluation(record)
     service.store.save(record)
     return record
+
+
+def test_provisional_initial_score_is_archived_and_reopened_without_a_reference(tmp_path):
+    app = create_app()
+    goal = "goal/notebook-probe"
+    with TestClient(app) as client:
+        plan = prepare(client, tmp_path / "task")
+        record = controlled_receipt(app, plan, decision="baseline_candidate")
+        notebook = client.get(f"/api/v1/notebooks/{goal}")
+        assert notebook.status_code == 200
+        entry, = notebook.json()["entries"]
+        assert entry["reportedDecision"] == "baseline_candidate"
+        assert entry["comparison"]["state"] == "unknown"
+        assert app.state.manager.evaluations.store.reference(record["key"]) is None
+    with TestClient(create_app()) as client:
+        result = client.get(f"/api/v1/loops/{goal}")
+        assert result.status_code == 200
+        assert result.json()["candidate"]["reportedDecision"] == "baseline_candidate"
 
 
 def test_legacy_receipt_keeps_its_decision_but_cannot_establish_a_current_reference(tmp_path):

@@ -312,6 +312,9 @@ class EvaluationService:
                 422, {"code": "unsupported_subject", "message": "Script adapter is unavailable"}
             )
         suite = self.suites.resolve(body.suite)
+        goal_suite = suite.metadata.get("goalSuite")
+        if goal_suite and not body.subject.startswith(("policy/", "checkpoint/", "job-")):
+            raise HTTPException(422, {"code": "goal_suite_requires_policy"})
         if suite.metadata["layer"] != "embodied":
             raise HTTPException(
                 422, {"code": "agent_runner_unavailable", "message": "Agent SDK execution is not available"}
@@ -356,12 +359,15 @@ class EvaluationService:
             "runtimeHash": self._runtime_hash,
         }
         candidate = None
+        implicit_funding_job = None
         if simulation_subject is not None:
             policy = simulation_subject.candidateIdentity.kind == "policy"
             record["policySubject" if policy else "simulationSubject"] = simulation_subject.document()
             candidate = simulation_subject.candidateIdentity.model_dump(mode="json")
             if policy:
                 job = self.manager.jobs.get(simulation_subject.candidateIdentity.jobId)
+                if goal_suite and body.planId is None and body.planRevision is None:
+                    implicit_funding_job = job
                 rate = job.get("metrics", {}).get("trainSuccess")
                 record["trainingSuccess"] = rate if type(rate) in (int, float) and 0 <= rate <= 1 else None
         record["identitySnapshot"] = await self.freeze_identity(
@@ -378,10 +384,10 @@ class EvaluationService:
             if notebooks
             else None
         )
-        await self.admit(record, context)
+        await self.admit(record, context, implicit_funding_job=implicit_funding_job)
         return deepcopy(record)
 
-    async def admit(self, record, notebook_context=None):
+    async def admit(self, record, notebook_context=None, *, implicit_funding_job=None):
         """Persist one intent on the shared queue, including a disconnected submitter."""
         identifier = record["evaluationId"]
         async with self._admission:
@@ -395,6 +401,10 @@ class EvaluationService:
             if record.get("agentRound") is not None or record.get("agentPromotion") is not None:
                 self.manager.agent_rsi.require_admission(record)
             if notebooks is not None:
+                if implicit_funding_job is not None:
+                    notebook_context = await asyncio.to_thread(
+                        notebooks.prepare_goal_evaluation, implicit_funding_job, suite, scene
+                    )
                 record.update(notebooks.admit_evaluation(notebook_context))
             self._admitting[identifier] = record
             try:
@@ -642,6 +652,8 @@ class EvaluationService:
                     scene_version=selected.id,
                     evaluation_id=identifier,
                     **({"private_evaluation": True} if split == "test" else {}),
+                    **({"trial": suite.metadata["goalSuite"]["perturbation"]}
+                       if "goalSuite" in suite.metadata else {}),
                     **execution_context,
                 )
                 if attempt is not None:
@@ -707,6 +719,8 @@ class EvaluationService:
                 None if reference is None else reference["score"],
                 split=split,
             )
+            if decision == "baseline" and suite.metadata.get("goalSuite"):
+                decision = "baseline_candidate"
             if not record.get("comparisonIdentity"):
                 decision = "reported"
             row = {
@@ -1039,7 +1053,9 @@ def install_evaluation_routes(app, service, role_for):
             raise HTTPException(
                 422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
             )
-        result = {"rows": [public_score(row, rows) for row in rows]}
+        result = {"rows": [
+            public_score(row, rows, score_decision=service.store.score_decision) for row in rows
+        ]}
         if compare is not None:
             selected = [
                 next((row for row in rows if row["evaluationId"] == identifier), None)
@@ -1062,13 +1078,16 @@ def install_evaluation_routes(app, service, role_for):
     @app.post("/api/v1/evaluations", status_code=202)
     async def create_evaluation(body: EvaluationRequest, request: Request):
         operator(request)
-        return public_evaluation(await service.submit(body), service.store.rows)
+        return evaluation_document(await service.submit(body))
+
+    def evaluation_document(record):
+        return public_evaluation(record, service.store.rows, score_decision=service.store.score_decision)
 
     @app.get("/api/v1/evaluations")
     async def evaluations():
         return {
             "evaluations": [
-                public_evaluation(value, service.store.rows)
+                evaluation_document(value)
                 for value in service.store.records.values()
                 if value["split"] == "train"
             ]
@@ -1079,7 +1098,7 @@ def install_evaluation_routes(app, service, role_for):
         record = service.store.records.get(identifier)
         if record is None or record["split"] != "train":
             raise HTTPException(404, {"code": "unknown_evaluation"})
-        return public_evaluation(record, service.store.rows)
+        return evaluation_document(record)
 
     @app.post("/api/v1/evaluations/{identifier}/cancel")
     async def cancel(identifier: str, request: Request):
@@ -1097,7 +1116,7 @@ def install_evaluation_routes(app, service, role_for):
             service._capture_completion(cancelled)
             await persist(service.store.save, cancelled)
         service.wake()
-        return public_evaluation(service.store.records[identifier], service.store.rows)
+        return evaluation_document(service.store.records[identifier])
 
     @app.post("/api/v1/evaluations/{identifier}/cleanup")
     async def cleanup(identifier: str, request: Request):

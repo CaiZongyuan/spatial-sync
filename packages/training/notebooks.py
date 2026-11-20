@@ -17,10 +17,11 @@ from packages.training.notebook_contract import Override, parse_notebook_entry
 
 
 class LabNotebooks:
-    def __init__(self, state_root, library_root):
+    def __init__(self, state_root, library_root, *, publication_projection=None):
         self.path = Path(state_root) / "notebook-records.json"
         self.library_root = Path(library_root).resolve()
         self.entries = {}
+        self.publication_projection = publication_projection
         self._lock = threading.RLock()
 
     def startup(self):
@@ -112,6 +113,8 @@ class LabNotebooks:
 
     def _publish(self, identity):
         entry = self.document(identity)
+        if self.publication_projection is not None:
+            entry = self.publication_projection(entry)
         directory = destination_parent(
             self.library_root, ("notebooks", entry["goalId"].removeprefix("goal/")), create=True
         )

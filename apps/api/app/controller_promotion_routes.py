@@ -36,6 +36,7 @@ def install_controller_promotion_routes(
     )
     service = ControllerPromotions(manager, resources, importer, qualification=qualification)
     manager.controller_promotions = app.state.controller_promotions = service
+    manager.evaluations.store.is_initial_reference = service.is_initial_reference
 
     def operator(request, *, human=False):
         actor = actor_from_headers(request.headers)

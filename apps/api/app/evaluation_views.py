@@ -169,7 +169,7 @@ def public_episode(value):
     return result
 
 
-def public_score(value, rows=()):
+def public_score(value, rows=(), *, score_decision=None):
     result = fields(
         value,
         (
@@ -188,6 +188,8 @@ def public_score(value, rows=()):
         ),
         (str,),
     )
+    if score_decision is not None and "decision" in result:
+        result["decision"] = score_decision(value)
     result["comparisonState"] = "known" if comparison_identity(value) else "unknown"
     candidate = public_candidate(value.get("candidateIdentity"))
     if candidate:
@@ -236,7 +238,7 @@ def public_score(value, rows=()):
     return result
 
 
-def public_evaluation(value, rows=()):
+def public_evaluation(value, rows=(), *, score_decision=None):
     if value.get("layer") == "agent":
         return public_agent_run(value, rows)
     result = fields(
@@ -268,7 +270,7 @@ def public_evaluation(value, rows=()):
     if isinstance(value.get("key"), dict):
         result["key"] = public_conditions(value["key"])
     if isinstance(value.get("result"), dict):
-        result["result"] = public_score(value["result"], rows)
+        result["result"] = public_score(value["result"], rows, score_decision=score_decision)
     if isinstance(value.get("error"), dict):
         result["error"] = fields(value["error"], ("code",), (str,))
     return result

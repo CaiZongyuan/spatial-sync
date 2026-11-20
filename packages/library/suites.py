@@ -58,6 +58,7 @@ class SuiteVersion:
             "episodes": cases,
             "coverage": coverage,
             "milestones": [stage["id"] for stage in self.task["milestones"]],
+            **({"goalId": self.metadata["goalSuite"]["goalId"]} if "goalSuite" in self.metadata else {}),
         }
 
     def verify(self):
@@ -74,7 +75,13 @@ def load_suite(path, identifier, root):
         data = document(path / "suite.yaml")
         if data.get("layer") == "agent":
             return load_agent_suite(path, identifier, root, data)
-        if set(data) != {"id", "title", "layer", "scene", "sceneContentHash", "source", "episodes"}:
+        fields = {"id", "title", "layer", "scene", "sceneContentHash", "source", "episodes"}
+        if set(data) - {"goalSuite"} != fields:
+            raise ValueError
+        if "goalSuite" in data and (
+            not identifier.startswith("suite/goal-bound-") or data["goalSuite"]["id"] != identifier
+            or data["source"] != "newton"
+        ):
             raise ValueError
         if (
             data["id"] != "suite/" + match[1]
@@ -139,6 +146,7 @@ class SuiteLibrary:
     def __init__(self, roots):
         self.roots = roots
         self.versions = {}
+        self.goal_suites = None
 
     def refresh(self):
         versions = {}
@@ -160,6 +168,8 @@ class SuiteLibrary:
         self.versions = versions
 
     def resolve(self, identifier):
+        if self.goal_suites and (frozen := self.goal_suites.matching(identifier)):
+            return self.goal_suites.load(*frozen)
         version = self.versions.get(identifier)
         if version is None:
             raise LibraryError("unknown_suite", "Select an exact suite/name@revision", 404)
@@ -167,7 +177,13 @@ class SuiteLibrary:
         return version
 
     def list(self):
-        return [version.public() for version in self.versions.values()]
+        return [version.public() for version in self.all_versions()]
+
+    def all_versions(self):
+        yield from self.versions.values()
+        if self.goal_suites:
+            for frozen in self.goal_suites.approved():
+                yield self.goal_suites.load(*frozen)
 
     def push_agent(self, data, scenes, agents):
         """Builder publishes selected package bytes; public reads keep private files hidden."""
@@ -187,7 +203,10 @@ class SuiteLibrary:
                 extract_package(io.BytesIO(data), package)
                 metadata = document(package / "suite.yaml")
                 name = metadata["id"].removeprefix("suite/")
-                if metadata.get("layer") != "agent" or not NAME.fullmatch(name):
+                if (
+                    metadata.get("layer") != "agent" or not NAME.fullmatch(name)
+                    or name.startswith("goal-bound-")
+                ):
                     raise ValueError
                 self.refresh()
                 prefix = "suite/" + name + "@"

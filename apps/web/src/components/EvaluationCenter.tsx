@@ -10,7 +10,7 @@ import { AgentEvaluations } from './AgentEvaluations';
 import { ProgramEvidence } from './ProgramEvidence';
 import '../evaluations.css';
 
-const decisionLabels = { baseline: '正式基线', accepted: '已接受', rejected: '未接受', reported: '已报告' };
+const decisionLabels = { baseline_candidate: '首轮候选', baseline: '正式基线', accepted: '已接受', rejected: '未接受', reported: '已报告' };
 const statusLabels: Record<string, string> = { queued: '排队中', running: '评估中', completed: '已完成', failed: '失败', cancelled: '已取消' };
 const roles = [
   { name: 'Builder', task: '构建评估集', reads: '本地包内的全部题目、评分条件与被测对象。', hidden: '由 Builder 直接编辑本地包；公共 API 不提供私有内容。' },
@@ -31,7 +31,7 @@ function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
   return <section className="eval-panel eval-rules"><span className="eyebrow">ACCEPTANCE</span><h2>接受规则</h2>
     {layer !== 'agent' && <p>具身 Candidate 的 Wilson 95% 置信区间下界，必须严格高于同条件 Reference 的成功率点估计。</p>}
     {layer !== 'embodied' && <p>Agent Candidate 的 train 均分必须严格高于同条件 Reference，且每题至少运行 3 次。可比较条件包括评估集版本、模型与思考等级。</p>}
-    <p>{layer === 'agent' ? '完整有效的 train 评估追加为已报告结果。Reference、接受与提升保持独立。' : '首次完整评估成为正式基线。后续已接受版本成为新的参照；未接受的候选仍保留在计分板。'}</p>
+    <p>{layer === 'agent' ? '完整有效的 train 评估追加为已报告结果。Reference、接受与提升保持独立。' : 'Goal 绑定的评估由首次 Controller 发布确立正式基线。后续已接受版本成为新的参照，计分板保留每次完整评估。'}</p>
     <div className="eval-rule-formula">{layer === 'agent' ? <>mean(Candidate) &gt; mean(Reference)</> : <>CI<sub>95%, lower</sub>(Candidate) &gt; score(Reference)</>}</div>
     <small>held-out test 由提升流程私有运行，结果仅供人工审查。本页只读取公开 train。</small>
   </section>;
@@ -40,7 +40,8 @@ function AcceptanceRules({ layer }: { layer?: EvaluationSuite['layer'] }) {
 function SuiteCard({ suite, rows }: { suite: EvaluationSuite; rows: EvaluationScore[] }) {
   const groups = scoreGroups(rows);
   const references = groups.map(currentReference).filter((row): row is EvaluationScore => Boolean(row));
-  const candidate = [...rows].reverse().find(row => row.decision === 'accepted' || row.decision === 'rejected');
+  const candidate = [...rows].reverse().find(row =>
+    row.decision === 'baseline_candidate' || row.decision === 'accepted' || row.decision === 'rejected');
   return <article className="eval-suite-card" data-suite-id={suite.id}>
     <div className="eval-card-top"><span className="eval-tag accent">{suite.layer === 'embodied' ? '具身 · EMBODIED' : 'Agent · AGENT'}</span><span className="eval-tag">train</span></div>
     <h2>{suite.title}</h2><code className="eval-suite-id">{suite.id}</code>

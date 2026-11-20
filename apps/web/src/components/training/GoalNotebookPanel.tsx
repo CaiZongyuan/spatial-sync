@@ -10,7 +10,7 @@ import './notebooks.css';
 
 const verdicts = { confirmed: '达成预测', refuted: '预测被反驳', inconclusive: '证据不足' };
 const percent = (value: number | null | undefined) => value == null ? '未知' : `${(value * 100).toFixed(1)}%`;
-const decisions = { baseline: '首轮参照', accepted: '平台记录接受', rejected: '平台记录拒绝' };
+const decisions = { baseline_candidate: '首轮候选', baseline: '首轮参照', accepted: '平台记录接受', rejected: '平台记录拒绝' };
 
 function ScoreChart({ entries }: { entries: NotebookEntry[] }) {
   const points = entries.filter(entry => entry.score != null);

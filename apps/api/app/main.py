@@ -206,6 +206,9 @@ def create_app(
         )
     evaluations = EvaluationService(manager)
     manager.evaluations = evaluations
+    from packages.training.goal_suites import GoalSuites
+
+    manager.training_plans.goal_suites = evaluations.suites.goal_suites = GoalSuites(manager)
     notebooks = NotebookService(manager)
     demonstrations = DemonstrationService(manager)
     manager.notebooks = notebooks

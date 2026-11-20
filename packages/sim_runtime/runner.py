@@ -28,7 +28,7 @@ def _body_targets(manifest):
 
 class _Runner:
     def __init__(self, transport, session_id, scene_id, options, scene_package=None, policy_subject=None,
-                 *, simulation_subject=None, deployment_permit=None, state_root=None):
+                 *, simulation_subject=None, deployment_permit=None, state_root=None, trial=None):
         # Only the spawned process reaches these imports or owns a Newton State.
         import newton
         import warp as wp
@@ -58,6 +58,10 @@ class _Runner:
             scene_id, device=options.device, physics_dt=options.physicsDt,
             solver=simulation.get("solver"), config=config,
         )
+        if trial is not None:
+            from .trial import apply_trial
+
+            apply_trial(self.sim, trial, options.seed)
         self.manifest = export_manifest(
             self.sim,
             session_id=session_id,
@@ -493,13 +497,14 @@ class _Runner:
 
 def run_runner(transport, session_id: str, scene_id: str, options: dict,
                scene_package=None, policy_subject=None, *, simulation_subject=None,
-               deployment_permit=None, state_root=None):
+               deployment_permit=None, state_root=None, trial=None):
     runner = None
     try:
         runner = _Runner(
             transport, session_id, scene_id, SessionOptions.model_validate(options),
             scene_package, policy_subject,
             simulation_subject=simulation_subject, deployment_permit=deployment_permit, state_root=state_root,
+            trial=trial,
         )
         runner.run()
     except BaseException as exc:

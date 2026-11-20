@@ -32,6 +32,7 @@ export function ApprovalCard({ record, canDecide, onDecision, onAttempt }: {
   const processed = record.status !== 'pending';
   const last = record.decisions.at(-1);
   const training = record.details.plan?.kind === 'training';
+  const goalSuite = record.details.goalSuite;
   const promotion = record.details.agentPromotionId || record.details.controllerPromotionId;
   const [promotionReady, setPromotionReady] = useState(false);
   const [promotionStatus, setPromotionStatus] = useState('');
@@ -63,6 +64,18 @@ export function ApprovalCard({ record, canDecide, onDecision, onAttempt }: {
     </dl>
     {record.details.params && Object.keys(record.details.params).length > 0 && <details className="approval-params"><summary>调用参数</summary><pre>{JSON.stringify(record.details.params, null, 2)}</pre></details>}
     {training && record.details.loopBudget && <LoopBudgetSummary budget={record.details.loopBudget} review />}
+    {goalSuite && <details className="approval-params" open>
+      <summary>{goalSuite.contentHash ? '已冻结的评估套件' : '批准后冻结的评估套件'}</summary>
+      <dl className="approval-facts">
+        <div><dt>Goal 与动作</dt><dd>{goalSuite.goalId} · {goalSuite.implements}</dd></div>
+        <div><dt>每个分集的回合数</dt><dd>{goalSuite.episodes}</dd></div>
+        {goalSuite.threshold !== null && <div><dt>首次晋升的最低成功次数</dt><dd>{goalSuite.threshold}</dd></div>}
+        <div><dt>机器人资产</dt><dd>{goalSuite.asset.id} <code>{goalSuite.asset.contentHash}</code></dd></div>
+        {goalSuite.asset.calibrationSha256 && <div><dt>标定摘要</dt><dd><code>{goalSuite.asset.calibrationSha256}</code></dd></div>}
+        <div><dt>初始关节扰动</dt><dd>{goalSuite.perturbation.jointKey} · ±{goalSuite.perturbation.amplitude} {goalSuite.perturbation.unit}</dd></div>
+      </dl>
+      <pre>{JSON.stringify({ success: goalSuite.success, parameters: goalSuite.parameterCoverage }, null, 2)}</pre>
+    </details>}
     {training ? isAgentPlan(record.details.plan) ? <AgentPlanDetails plan={record.details.plan} /> : <TrainingPlanDetails plan={record.details.plan as unknown as TrainingPlanDocument} changes={record.details.changes} /> :
       record.details.plan && <details className="approval-params" open><summary>计划修订 {record.details.revision} · 步骤与预期结果</summary><pre>{JSON.stringify(record.details.plan, null, 2)}</pre></details>}
     {record.subject === 'deletion' && record.details.inspection && <LibraryDeletionApproval details={record.details as DeletionDetails} />}

@@ -42,12 +42,13 @@ def install_policy_routes(app, manager, role_for, *, profiles=None):
         policy = await anyio.to_thread.run_sync(policies.show, identity)
         evaluations = []
         if manager.evaluations is not None:
-            rows = tuple(manager.evaluations.store.rows)
-            for record in tuple(manager.evaluations.store.records.values()):
+            store = manager.evaluations.store
+            rows = tuple(store.rows)
+            for record in tuple(store.records.values()):
                 candidate = record.get("candidateIdentity") or {}
                 if (record.get("split") == "train" and candidate.get("kind") == "policy"
                         and candidate.get("id") == identity):
-                    evaluations.append(public_evaluation(record, rows))
+                    evaluations.append(public_evaluation(record, rows, score_decision=store.score_decision))
         return policy | {
             "evidence": {"observationChecks": await anyio.to_thread.run_sync(evidence.list, identity),
                          "evaluations": evaluations}
