@@ -12,7 +12,9 @@ import onnx
 from packages.info.plans import PlanError
 from packages.library.archive import relative_path
 from packages.library.common import BUILTIN_ROOT, REPO_ROOT, LibraryError, content_hash, document
+from packages.library.robot_asset import asset_coordinates_match, scene_robot_asset
 from packages.library.structural import USDGraph
+from packages.motion.snapshot import reference_snapshot
 from packages.policies.calibration import JointCalibration
 from packages.policies.library import digest, read_json
 from packages.policies.observations import ObservationSpec
@@ -75,74 +77,8 @@ def _physical(scene, task, action):
     asset = scene_robot_asset(scene, task["robot"], stage, graph)
     coordinates_match = False
     if asset and controls_match:
-        coordinates_match = _asset_coordinates_match(stage, task["robot"], graph, asset)
+        coordinates_match = asset_coordinates_match(stage, task["robot"], graph, asset)
     return channels, dt, asset, coordinates_match
-
-
-def scene_robot_asset(scene, entity, stage, graph):
-    target = stage.GetPrimAtPath(entity)
-    authored = next((item for item in scene.bindings["entities"] if item.get("key") == entity), {})
-    template = authored.get("template")
-    referenced = []
-    # A direct USD reference must identify the robot actually used by this target.
-    for snapshot in scene.runtime_assets.values():
-        if not snapshot["id"].startswith("robot/") or (template and template != snapshot["id"]):
-            continue
-        layer = graph.layer(snapshot, snapshot["metadata"]["stage"])
-        if any(
-            spec.path.pathString == "/Asset" and spec.layer.identifier == layer.identifier
-            for spec in target.GetPrimStack()
-        ):
-            referenced.append(snapshot)
-    return referenced[0] if len(referenced) == 1 else None
-
-
-def _asset_coordinates_match(stage, robot, graph, asset):
-    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
-
-    source = Usd.Stage.Open(graph.layer(asset, asset["metadata"]["stage"]))
-    if not source or UsdGeom.GetStageMetersPerUnit(source) != UsdGeom.GetStageMetersPerUnit(stage):
-        return False
-    source_root, scene_root = Sdf.Path("/Asset"), Sdf.Path(robot)
-    source_prim = source.GetPrimAtPath(source_root)
-    if not source_prim:
-        return False
-    poses = UsdGeom.XformCache()
-    placement = poses.GetLocalToWorldTransform(stage.GetPrimAtPath(scene_root))
-    if placement.GetDeterminant3() <= 0 or not Gf.IsClose(placement, placement.RemoveScaleShear(), 1e-6):
-        return False
-    # Compare in the asset frame so the Scene may translate and rotate the robot.
-    scene_to_asset = placement.GetInverse()
-    source_to_asset = poses.GetLocalToWorldTransform(source_prim).GetInverse()
-    joint_coordinates = ("physics:axis", "physics:jointEnabled", "physics:localPos0", "physics:localPos1")
-    for expected in Usd.PrimRange(source_prim, Usd.TraverseInstanceProxies()):
-        if expected.IsA(UsdPhysics.Joint):
-            actual = stage.GetPrimAtPath(expected.GetPath().ReplacePrefix(source_root, scene_root))
-            if not actual or actual.GetTypeName() != expected.GetTypeName():
-                return False
-            if any(actual.GetAttribute(key).Get() != expected.GetAttribute(key).Get()
-                   for key in joint_coordinates if expected.HasAttribute(key)):
-                return False
-            for key in ("physics:localRot0", "physics:localRot1"):
-                rotation = expected.GetAttribute(key).Get()
-                options = (rotation, -rotation) if rotation is not None else (None,)
-                if actual.GetAttribute(key).Get() not in options:
-                    return False
-            for key in ("physics:body0", "physics:body1"):
-                targets = expected.GetRelationship(key).GetForwardedTargets()
-                mapped = [target.ReplacePrefix(source_root, scene_root) for target in targets]
-                if actual.GetRelationship(key).GetForwardedTargets() != mapped:
-                    return False
-        elif expected.HasAPI(UsdPhysics.RigidBodyAPI):
-            actual = stage.GetPrimAtPath(expected.GetPath().ReplacePrefix(source_root, scene_root))
-            if not actual or not actual.HasAPI(UsdPhysics.RigidBodyAPI):
-                return False
-            if not Gf.IsClose(
-                poses.GetLocalToWorldTransform(actual) * scene_to_asset,
-                poses.GetLocalToWorldTransform(expected) * source_to_asset, 1e-6,
-            ):
-                return False
-    return True
 
 
 def _retained_source_matches(directory, record):
@@ -334,6 +270,15 @@ def policy_export(manager, identifier):
         provenance = _provenance(
             manager, policy, scene, task.get("referenceMotion"), files, calibration_asset
         )
+        snapshot = reference_snapshot(task, package)
+        if snapshot is not None:
+            pin = task["referenceMotionRef"]
+            task_path = manager.tasks._versions()[policy["task"]] / "package"
+            if policy.get("referenceMotionRef") != pin or snapshot != reference_snapshot(task, task_path):
+                raise ValueError("Policy Reference Motion differs from the frozen Task")
+            source_file = "provenance/reference-motion.json"
+            files[source_file] = snapshot
+            provenance.append(pin | {"documents": [source_file], "source": json.loads(snapshot)["source"]})
         try:
             qualification = manager.policy_evidence.qualification(identifier)
             evidence = {"status": "verified", "scope": qualification["scope"]}
@@ -398,6 +343,8 @@ def policy_export(manager, identifier):
                 "orientationInterpolation": "shortest-arc-slerp",
             },
         }
+        if snapshot is not None:
+            manifest["referenceMotionRef"] = task["referenceMotionRef"]
         if task.get("referenceMotion"):
             manifest["referenceMotion"] = "reference-motion.json"
             files["reference-motion.json"] = json.dumps(task["referenceMotion"], allow_nan=False).encode()

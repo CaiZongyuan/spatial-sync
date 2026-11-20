@@ -47,6 +47,21 @@ their decision. Preserve sessions and files owned by other work.
    Reimporting unchanged bytes returns the existing version. Edit the authored
    package and import again to produce a new version; published versions are
    immutable.
+   For robot sources, supply root `robot.json` with its URDF, MJCF or USD entry,
+   package-local dependencies and original license. Use the returned exact ID
+   to inspect or calibrate the Asset:
+
+   ```text
+   lw asset import <robot-source-directory> --json
+   lw asset show <robot/name@rev> --json
+   lw asset calibrate <robot/name@rev> <recipe.json> --json
+   lw asset validate <robot/name@rev> --json
+   ```
+
+   Calibration applies the complete recipe to the retained source and returns
+   an immutable version. Read its `joint-calibration.json` and its report.
+   In P8, compare each solver's measured base height, tilt, self-penetration and
+   joint limits. If physics is skipped, report the missing runtime.
 3. Recheck an existing exact version when the task needs a current report:
 
    ```text
@@ -59,6 +74,26 @@ their decision. Preserve sessions and files owned by other work.
    Validation exits 3 when a check fails. Warnings remain visible; a physics
    check marked not run is not evidence of a physics pass. Correct failed
    checks rather than changing report files or launch flags.
+
+## Prepare a motion reference
+
+Upload a rights-cleared single-person MP4 or WebM. Queue CPU extraction using
+the returned video ID. Read the Job and wait for the immutable Clip result.
+
+```text
+lw motion video-upload <video.mp4> --license <license-id> --attribution <verified-source> --json
+lw motion start <video-id> --node <pose-node-id> --request-id <stable-request-id> --json
+lw job show <job-id> --json
+lw motion show <clip-id> --json
+lw motion retarget <reference-request.json> --json
+lw motion preview <reference-id> --json
+```
+
+The retarget request supplies the exact Clip ID and digest, robot Asset ID
+and content hash, and an explicit Asset-local semantic mapping. Check the
+feasibility report and preview on that Asset's detail page. Retain the exact
+Reference ID and digest, source rights, and pose model identity. [Motion and
+Task inputs](../lab-training-plan/SKILL.md)
 
 ## Remove or restore a version
 
@@ -94,7 +129,7 @@ approval decisions remain a separate boundary above.
    [lab-operate](../lab-operate/SKILL.md).
 
 The generic MCP equivalents are `library_search`, `library_describe`,
-`library_import`, `library_validate` and `scene_launch`. They share the CLI's
+`library_import`, `library_calibrate`, `library_validate` and `scene_launch`. They share the CLI's
 gateway behavior and human boundaries. Complete the task with the actual
 version, content hash and relevant checks, or the precise remaining blocker.
 

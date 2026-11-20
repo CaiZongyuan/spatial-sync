@@ -10,6 +10,9 @@ from fastapi.responses import Response
 
 from apps.api.app.info_routes import actor_from_headers
 from packages.info.plans import PlanError
+from packages.motion.contract import MAX_CLIP_BYTES, MAX_VIDEO_BYTES, VideoLicense
+from packages.motion.library import MotionLibrary
+from packages.motion.reference_contract import ReferenceRequest
 from packages.training import checkpoints
 from packages.training.checkpoint_format import MAX_BYTES
 from packages.training.finalization import finalization_profile
@@ -22,10 +25,14 @@ from packages.training.job_contract import (
     ResumeJob,
     StartJob,
 )
+from packages.training.jobs import TERMINAL
 
 
 def install_job_routes(app, manager, role_for, views=None):
     jobs = manager.jobs
+    motion = manager.motion = MotionLibrary(manager.library_assets.roots["user"], jobs)
+    manager.tasks.motion = motion
+    manager.library_deletions.inspection.reference_motions = motion.references
     app.state.jobs = jobs
 
     def operator(request):
@@ -58,7 +65,71 @@ def install_job_routes(app, manager, role_for, views=None):
         return jobs.request(
             body.planId, body.seed, actor, body.requestId or uuid.uuid4().hex, body.planRevision,
             kind=body.kind, target_node=body.targetNodeId, checkpoint=body.checkpoint,
+            motion_video=body.motionVideo,
         )
+
+    @app.post("/api/v1/library/motion-videos", status_code=201)
+    async def upload_motion_video(
+        request: Request, license: str, attribution: str, sourceUrl: str | None = None,
+    ):
+        from pathlib import Path
+
+        operator(request)
+        try:
+            rights = VideoLicense(license=license, attribution=attribution, sourceUrl=sourceUrl)
+        except ValueError as exc:
+            raise PlanError(
+                "motion_license_invalid", "Provide a video license and attribution", status=422
+            ) from exc
+        with tempfile.TemporaryDirectory(prefix="motion-upload-") as directory:
+            path = Path(directory) / "video"
+            size = 0
+            with path.open("wb") as stream:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_VIDEO_BYTES:
+                        raise PlanError("motion_video_too_large", "Video upload exceeds 16 MiB", status=413)
+                    stream.write(chunk)
+            return await anyio.to_thread.run_sync(motion.publish_video, path, rights)
+
+    @app.get("/api/v1/library/motion-videos")
+    async def motion_videos():
+        return {"videos": await anyio.to_thread.run_sync(motion.videos)}
+
+    @app.get("/api/v1/library/motion-videos/{digest}")
+    async def motion_video(digest: str):
+        return await anyio.to_thread.run_sync(motion.video, f"motion-video/{digest}")
+
+    @app.get("/api/v1/library/motion-clips")
+    async def motion_clips():
+        return {"clips": await anyio.to_thread.run_sync(motion.clips)}
+
+    @app.get("/api/v1/library/motion-clips/{digest}/{revision}")
+    async def motion_clip(digest: str, revision: str):
+        return await anyio.to_thread.run_sync(motion.clip, f"motion-clip/{digest}@{revision}")
+
+    @app.post("/api/v1/library/reference-motions", status_code=201)
+    async def publish_reference(body: ReferenceRequest, request: Request):
+        operator(request)
+        return await anyio.to_thread.run_sync(motion.publish_reference, manager.library_assets, body)
+
+    @app.get("/api/v1/library/reference-motions")
+    async def reference_list():
+        return {"referenceMotions": await anyio.to_thread.run_sync(lambda: list(motion.references()))}
+
+    @app.get("/api/v1/library/reference-motions/{digest}/{revision}")
+    async def reference_show(digest: str, revision: str):
+        return await anyio.to_thread.run_sync(motion.reference, f"reference-motion/{digest}@{revision}")
+
+    @app.get("/api/v1/library/reference-motions/{digest}/{revision}/preview")
+    async def reference_preview(digest: str, revision: str):
+        ref = await anyio.to_thread.run_sync(motion.reference, f"reference-motion/{digest}@{revision}")
+        return {
+            "id": ref["id"], "sha256": ref["sha256"], "asset": ref["motion"]["asset"],
+            "assetContentHash": ref["motion"]["assetContentHash"], "loop": ref["motion"]["loop"],
+            "jointKeys": ref["motion"]["jointKeys"], "frames": ref["motion"]["frames"],
+            "points": ref["preview"], "ghost": ref["ghost"],
+        }
 
     @app.get("/api/v1/jobs")
     async def listing(plan: str | None = None, status: str | None = None, kind: str | None = None):
@@ -132,6 +203,14 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):
         job = node(request, identity)
+        lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
+        if job["kind"] == "motion_preprocess":
+            source = await anyio.to_thread.run_sync(motion.video, job["motionVideo"])
+            node(request, identity)
+            return {
+                "schemaVersion": 1, "job": jobs.document(job), "poseRuntime": lease["poseRuntime"],
+                "video": source | {"url": f"/api/v1/jobs/{identity}/inputs/video"},
+            }
         task = manager.tasks.show(job["task"])
         manager.tasks.require_execution(task)
         lease = jobs.nodes[job["nodeId"]]["leases"][job["resourceId"]]
@@ -175,10 +254,22 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.get("/api/v1/jobs/{identity}/inputs/packages/{index}")
     async def package(identity: str, index: int, request: Request):
         job = node(request, identity)
+        if job["kind"] == "motion_preprocess":
+            raise PlanError("unknown_input_package", "Motion Job inputs contain a video", status=404)
         manager.tasks.require_execution(manager.tasks.show(job["task"]))
         data = await anyio.to_thread.run_sync(export_input, manager, job, index)
         node(request, identity)
         return Response(data, media_type="application/x-tar")
+
+    @app.get("/api/v1/jobs/{identity}/inputs/video")
+    async def job_video(identity: str, request: Request):
+        job = node(request, identity)
+        if job["kind"] != "motion_preprocess":
+            raise PlanError("unknown_motion_video", "This Job has no video input", status=404)
+        metadata = await anyio.to_thread.run_sync(motion.video, job["motionVideo"])
+        raw = await anyio.to_thread.run_sync(motion.video_bytes, metadata)
+        node(request, identity)
+        return Response(raw, media_type="application/octet-stream")
 
     @app.get("/api/v1/jobs/{identity}/inputs/checkpoint/{sha256}")
     async def checkpoint_input(identity: str, sha256: str, request: Request):
@@ -227,6 +318,8 @@ def install_job_routes(app, manager, role_for, views=None):
     @app.post("/api/v1/jobs/{identity}/artifacts")
     async def artifacts(identity: str, request: Request):
         job = node(request, identity)
+        if job["kind"] == "motion_preprocess":
+            return await motion_artifacts(identity, request, job)
         if job["kind"] not in ("training", "checkpoint_finalize"):
             raise PlanError(
                 "artifacts_unsupported", "Validation submits timing in its terminal report", status=422
@@ -254,6 +347,24 @@ def install_job_routes(app, manager, role_for, views=None):
             job.update(artifacts=records, versions=versions)
             jobs._save()
         return {"artifacts": records, "versions": versions}
+
+    async def motion_artifacts(identity, request, job):
+        lease_id = job["leaseId"]
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > MAX_CLIP_BYTES:
+                raise PlanError("motion_artifact_too_large", "Motion artifact exceeds 4 MiB", status=413)
+            raw.extend(chunk)
+        source = await anyio.to_thread.run_sync(motion.video, job["motionVideo"])
+        clip = await anyio.to_thread.run_sync(motion.prepare_clip, source, bytes(raw))
+        job = node(request, identity)
+        if job["leaseId"] != lease_id or job["cancelRequested"] or job["status"] in TERMINAL:
+            raise PlanError("lease_mismatch", "The motion dispatch cannot accept artifacts", status=403)
+        descriptor = motion.store_clip(clip, existing=job["motionClip"])
+        artifact = {"path": "motion-clip.json", "size": descriptor["bytes"], "sha256": descriptor["sha256"]}
+        job.update(motionClip=descriptor, artifacts=[artifact], artifactLeaseId=lease_id)
+        jobs._save()
+        return {"motionClip": descriptor}
 
     if views is not None:
         from apps.api.app.training_view_routes import install_training_view_routes

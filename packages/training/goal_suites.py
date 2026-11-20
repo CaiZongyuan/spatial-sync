@@ -15,13 +15,15 @@ from packages.info.plans import PlanError
 from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent
 from packages.library.common import LibraryError, content_hash, document
+from packages.library.robot_asset import scene_robot_asset
 from packages.library.structural import USDGraph
 from packages.library.suites import load_suite
 from packages.library.transactions import sync_directory
-from packages.policies.export import scene_robot_asset
 from packages.policies.observations import ObservationSpec
+from packages.policies.subjects import fixed_bindings, validate_trajectory_deadline
 from packages.protocol.schema import MAX_SESSION_SEED
 from packages.sim_runtime.trial import BUCKETS
+from packages.training.declarative import trajectory_completion
 from packages.training.schema import TrialPerturbation
 
 PREFIX = "suite/goal-bound-"
@@ -132,6 +134,12 @@ class GoalSuites:
                 raise ValueError("Goal Suite parameters must use the pinned Task coverage")
         if math.prod(map(len, overrides.values())) > plan.evaluation.episodes:
             raise ValueError("Goal Suite episode count must cover the requested parameter combinations")
+        completion = trajectory_completion(task)
+        if completion:
+            binding = fixed_bindings(scene, "newton")[task["robot"]]
+            validate_trajectory_deadline(
+                scene, task, binding, completion, task["declarative"]["episodeSeconds"],
+            )
         return {
             "id": suite_identity(plan.goalId, task["implements"]),
             "goalId": plan.goalId, "implements": task["implements"],
@@ -141,6 +149,10 @@ class GoalSuites:
             "baseParameters": base_params, "parameterCoverage": overrides,
             "perturbation": trial,
             "timeoutSeconds": task["declarative"]["episodeSeconds"],
+            **({
+                "referenceMotionRef": task["referenceMotionRef"],
+                "trajectoryCompletion": completion.model_dump(mode="json"),
+            } if completion else {}),
         }
 
     def seal(self, approval, review, task_record):

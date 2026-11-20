@@ -92,3 +92,25 @@ def test_one_shot_holds_final_frame_and_calibration_round_trips():
     )
     (joint,) = calibrated.joints
     assert (0.40 - joint.zeroOffset) * joint.sign == pytest.approx(-0.15)
+
+
+def test_reference_tracking_reuses_phase_clock_and_shortest_arc_for_pose_and_velocity():
+    from packages.policies.motion import motion_observations, reference_tracking
+
+    key = "/Asset/tip"
+    start = {"time": 0., "position": [0., 0., .2], "orientation": [0., 0., 0., 1.],
+             "joints": [0.], "bodyLocal": {key: [1., 0., 0.]}}
+    end = {"time": 1., "position": [0., 0., .1], "orientation": [0., 0., -math.sqrt(.5), -math.sqrt(.5)],
+           "joints": [.2], "bodyLocal": {key: [2., 0., 0.]}}
+    motion = {"loop": False, "frames": [start, end, end | {"time": 1.4}]}
+    values = reference_tracking(motion, .5)
+    np.testing.assert_allclose(values["rootQuaternion"], [0, 0, math.sin(math.pi/8), math.cos(math.pi/8)])
+    assert values["rootQuaternion"] == motion_observations(motion, .5)["reference_motion_frame"][3:7]
+    assert values["rootPosition"] == pytest.approx([0., 0., .15])
+    assert values["rootLinearVelocity"] == pytest.approx([0., 0., -.1])
+    assert values["rootAngularVelocity"] == pytest.approx([0., 0., math.pi / 2])
+    assert values["bodyLocal"][key] == pytest.approx([1.5, 0., 0.])
+    for elapsed in (1., 1.2, 1.4, 100.):
+        held = reference_tracking(motion, elapsed)
+        assert held["rootLinearVelocity"] == held["rootAngularVelocity"] == [0., 0., 0.]
+        assert held["bodyLocal"][key] == [2., 0., 0.]

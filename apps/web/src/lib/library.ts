@@ -58,7 +58,7 @@ export interface ValidationReport {
     retainedFrom?: { reportId?: string; ranAt?: string };
   };
   checks: { id: string; tier: string; status: 'pass' | 'warn' | 'fail'; message: string;
-    entityKey?: string; location?: string }[];
+    entityKey?: string; location?: string; measurements?: Record<string, unknown> }[];
 }
 export interface SceneDetail extends SceneVersion {
   metadata: { name: string; title: string; stage: string; description?: string;

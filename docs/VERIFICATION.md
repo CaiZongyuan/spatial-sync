@@ -921,3 +921,113 @@ fence. Resume on B with a greater lease ID and record both iteration ranges,
 runtime identities and per-node GPU charges. For the selected checkpoint,
 record the ONNX and 256 distinct native witness results from a finalize Job.
 Use a separate slower-profile case to observe the extra-budget Approval Gate.
+
+## Motion Clip extraction
+
+The gateway needs FFprobe to inspect uploaded H.264 MP4 or VP8/VP9 WebM video.
+Upload accepts at most 16 MiB, 20 seconds, 600 decoded frames, and 2,073,600
+pixels per frame. Use an operator credential for upload and Job submission.
+The registered Node uses its CPU lease and its own Python environment with
+MediaPipe 0.10.32 and OpenCV's FFmpeg backend. Configure the fixed Google
+Pose Landmarker Lite float16/1 model, whose SHA-256 is
+`59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a`.
+
+```sh
+.venv/bin/python -m apps.node.runner --url "$LW_URL" --root "$NODE_ROOT" \
+  --pose-python "$POSE_PYTHON" --pose-model "$POSE_MODEL"
+lw motion video-upload "$VIDEO" --license 'CC BY 3.0' --attribution "$AUTHOR" --source-url "$SOURCE_URL" --json
+lw motion start "$VIDEO_ID" --node "$NODE_ID" --json
+lw job show "$JOB_ID" --json
+lw motion show "$CLIP_ID" --json
+```
+
+Provide the Node's registered credential through the existing Node setup.
+The Motion Clip contains source presentation timestamps, estimated body
+landmarks relative to the hips, capture diagnostics, and source and model
+provenance. Job diagnostics identify missing people, multiple detected
+people, and occluded body landmarks. A successful clip preserves gaps in the
+source timeline. It records global root translation as unobserved.
+
+```sh
+.venv/bin/python -m pytest -q tests/unit/test_motion_contract.py tests/gateway/test_motion_jobs.py
+```
+
+### Video imitation and Reference Motion
+
+A gateway that publishes Reference Motions needs the locked `motion` CPU extra.
+The separate Node pose runtime owns video decoding and landmark extraction. Its
+video and model bytes are identified by the Motion Clip. Publication takes either
+an exact Clip identity and digest or Asset-local keyframes with source attribution.
+The request names the exact robot Asset version and digest, semantic body or site
+paths, and signed hinge gains for dominant moving limbs. Source directions use the
+declared XYZW basis rotation. An in-place Clip uses a fixed horizontal root because
+monocular landmarks do not measure world translation. Keyframe input can supply
+world-relative translation in the canonical Asset frame.
+
+```sh
+lw motion show "motion-clip/<sha256>@1" --json
+lw motion retarget reference-request.json --json
+lw motion preview "reference-motion/<sha256>@1" --json
+lw motion task-create imitation-task.json --json
+lw task show task/microduck-imitate@1 --json
+lw plan submit training-plan.yaml --json
+```
+
+Inspect the immutable motion's feasibility report and the playback on its exact
+Asset page. The current feasibility check uses two planted feet with authored
+collision support, sampled joint and root speeds, and a static support polygon.
+The report records the applied thresholds. A one-shot appends a bounded terminal
+hold. The managed compiler uses the shared phase and quaternion sampler for
+reference observations and adds `root_pose_tracking`, `root_velocity_tracking`
+and `body_local_tracking` to the existing `joint_tracking` reward. Task assembly
+takes `reference: {id, sha256}`, a declarative Task document, and an observation
+document. The lease transfers the exact snapshot as a Task file, and Policy
+Export archives it under `provenance/reference-motion.json`.
+
+`tests/gateway/test_motion_jobs.py` exercises the video lease, unmapped limb,
+fitted support, Task assembly, and license archive. The actual managed compiler
+and isolated native observation replay are distinct from training a Policy and
+measuring its held-out evaluation. Submit a fresh Goal when the reference identity
+changes. The first human approval fixes that identity together with the Goal
+Suite's evaluation conditions and sealed trials.
+
+For an Asset-pinned imitation Goal, the Suite fixes the trajectory tolerances
+and terminal dwell with the Reference Motion digest. Evaluation starts from
+the seeded, zero-step state and resumes after the action enters the pipeline.
+The generic policy host compares measured joint positions, root pose, and
+mapped body-local points with targets on the shared simulation-time clock.
+Once the clip ends, the host requires continuous within-tolerance tracking,
+upright posture and bounded root and joint velocities for the declared dwell.
+An out-of-tolerance trajectory fails with `motion_tracking_failed`.
+
+Plan admission and frozen Suite evaluation use the same validated Scene
+timestep as the Newton launch. They project the clip end and the subsequent
+dwell onto the ordinary evaluator's control samples, starting at the first
+sample after resume. The completion sample must fall strictly before the
+shortest limit imposed by the Task or Suite, the Program, and the EntityType
+action. Admission replays the Newton control clock and uses the same
+inclusive elapsed comparisons as the trajectory host. For the Microduck
+Scene at 2 ms and 60 Hz, a 0.600-second clip with 0.250 seconds of dwell
+completes at 0.850 seconds of simulated action time and fits a 0.875-second
+deadline. A 19.74901-second clip with 0.25001 seconds of dwell needs 20.016
+seconds of simulated action time.
+A 19.70-second clip with that dwell needs 19.982 seconds and fits the 20-second
+Program limit.
+
+The 4.9-second Microduck squat probe includes a 0.4-second hold. It uses
+a 0.05 rad hinge tolerance, 25 mm root position tolerance, 0.18 rad root
+orientation tolerance and 18 mm local-point tolerance. The CPU tracking
+controller measured peak errors of 0.0345 rad at the joints, 14.5 mm at the
+root, 0.154 rad in root orientation and 3.9 mm at the mapped points. The knee
+excursion exceeds 0.15 rad. The held phase needs 0.25 seconds of terminal
+dwell, with 0.06 m/s root linear, 0.50 rad/s root angular and 0.35 rad/s
+hinge velocity limits.
+
+The fit bounds maximum explicit bend residual at 0.18 rad and measures
+tangential slip from each supporting collision vertex's first contact.
+`report.keypointTargets` identifies each measured error's path and target
+source. The source values are `source_landmark`, `planted_support`,
+`asset_nominal` and `authored_keyframe`. A nominal head target identifies
+the robot's Asset pose. Explicit keyframe keys must map to a published body
+or site. The two Python gateway CI shards install FFmpeg and FFprobe to
+exercise the actual video admission path and generated fixtures.

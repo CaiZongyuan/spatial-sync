@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Line, OrbitControls } from '@react-three/drei';
 import { Box3, DoubleSide, Group, Matrix4, Mesh, MeshStandardMaterial, Vector3 } from 'three';
 import { loadVisualAsset, disposeObject } from '../lib/scene/visual-assets';
 import { createPrimitiveGeometry } from '../lib/geometry/primitives';
@@ -8,6 +8,7 @@ import type { Visual } from '../lib/protocol';
 import { useViewerTheme, type ViewerTheme } from '../lib/scene/viewer-theme';
 import { CameraRig } from './viewer/CameraRig';
 import { ViewerLighting } from './viewer/ViewerLighting';
+import type { GhostFrame } from '../lib/motion';
 
 class AssetRenderBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }, { failed: boolean }> {
   state = { failed: false };
@@ -16,8 +17,8 @@ class AssetRenderBoundary extends Component<{ children: ReactNode; onError: (err
   render() { return this.state.failed ? null : this.props.children; }
 }
 
-function Model({ object, theme, capture, fitRequest }: {
-  object: Group; theme: ViewerTheme; capture?: (png: string) => void; fitRequest: number;
+function Model({ object, theme, capture, fitRequest, ghost }: {
+  object: Group; theme: ViewerTheme; capture?: (png: string) => void; fitRequest: number; ghost?: GhostFrame;
 }) {
   const invalidate = useThree(state => state.invalidate);
   useEffect(() => {
@@ -41,7 +42,7 @@ function Model({ object, theme, capture, fitRequest }: {
   const frames = useRef(0);
   const captured = useRef(false);
   const fitted = useRef(false);
-  useEffect(() => { invalidate(); }, [theme, invalidate]);
+  useEffect(() => { invalidate(); }, [theme, ghost, invalidate]);
   useFrame(({ gl, scene, camera }) => {
     if (!capture || !fitted.current || captured.current) return;
     if (++frames.current < 3) { invalidate(); return; }
@@ -53,7 +54,17 @@ function Model({ object, theme, capture, fitRequest }: {
     <CameraRig preset="isometric" bounds={() => bounds} revision={1} fitRequest={fitRequest} relativeScale
       onFit={() => { fitted.current = true; }} />
     <ViewerLighting theme={theme} radius={2} />
-    <group rotation={[-Math.PI / 2, 0, 0]}><primitive object={object} dispose={null} /></group>
+    <group rotation={[-Math.PI / 2, 0, 0]}>
+      <primitive object={object} dispose={null} />
+      {ghost && <group>
+        {ghost.links.map(([a, b]) => <Line key={b} points={[ghost.positions[a], ghost.positions[b]]}
+          color={theme.accent} lineWidth={3} transparent opacity={.8} depthTest={false} depthWrite={false} renderOrder={1} />)}
+        {ghost.positions.map((point, index) => <mesh key={index} position={point} renderOrder={2}>
+          <sphereGeometry args={[diameter / 90, 8, 6]} />
+          <meshBasicMaterial color={theme.accent} transparent opacity={.8} depthTest={false} depthWrite={false} />
+        </mesh>)}
+      </group>}
+    </group>
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[center.x, bounds.min.y - diameter * .003, center.z]} receiveShadow>
       <planeGeometry args={[diameter * 2, diameter * 2]} /><shadowMaterial transparent opacity={theme.ao * .45} />
     </mesh>
@@ -78,8 +89,9 @@ function buildFallbackGroup(visuals: Visual[], color: string): Group {
   return group;
 }
 
-export function AssetModelViewport({ url, fallbackVisuals, capture, captureKey }: {
+export function AssetModelViewport({ url, fallbackVisuals, capture, captureKey, ghost }: {
   url?: string | null; fallbackVisuals?: Visual[]; capture?: (png?: string) => void; captureKey?: string;
+  ghost?: GhostFrame;
 }) {
   const theme = useViewerTheme();
   const sourceKey = useMemo(
@@ -129,9 +141,11 @@ export function AssetModelViewport({ url, fallbackVisuals, capture, captureKey }
   const error = failure?.sourceKey === sourceKey ? failure.message : undefined;
   const current = !error && loaded?.sourceKey === sourceKey ? loaded : undefined;
   useEffect(() => { if (error) capture?.(); }, [error, capture]);
-  return <div className="asset-model-viewport" aria-label="素材静态模型预览" data-model-state={error ? 'error' : current ? 'ready' : 'loading'} data-mesh-count={current?.meshCount}>
+  const overlay = !capture && current ? ghost : undefined;
+  return <div className="asset-model-viewport" aria-label="素材静态模型预览" data-model-state={error ? 'error' : current ? 'ready' : 'loading'}
+    data-mesh-count={current?.meshCount} data-motion-overlay={overlay ? 'visible' : undefined}>
     {!error && <AssetRenderBoundary key={capture ? 'capture' : `${sourceKey}:${attempt}`} onError={error => setFailure({ sourceKey, message: error.message })}><Canvas shadows={!capture} frameloop="demand" dpr={capture ? 1 : [1, 1.75]} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: !!capture }}>
-      {current && <Model key={`${sourceKey}:${captureKey ?? ''}`} object={current.object} theme={theme} capture={capture} fitRequest={fitRequest} />}
+      {current && <Model key={`${sourceKey}:${captureKey ?? ''}`} object={current.object} theme={theme} capture={capture} fitRequest={fitRequest} ghost={overlay} />}
     </Canvas></AssetRenderBoundary>}
     {current && !capture && <button type="button" className="viewport-fit" aria-label="Fit model"
       onClick={() => setFitRequest(value => value + 1)}>重新取景</button>}

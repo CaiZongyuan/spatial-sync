@@ -64,12 +64,14 @@ lw = "apps/cli/lw"
 "share/spatial-sync/skills/archive/lab-scene-director/abf3f690217b1c9ae0ac6d1d8857f613417c5a0d0689a5ad911150b6c8d7b905" = ["skills/archive/lab-scene-director/abf3f690217b1c9ae0ac6d1d8857f613417c5a0d0689a5ad911150b6c8d7b905/SKILL.md"]
 
 [project.optional-dependencies]
+motion = ["mujoco==3.15.0", "scipy>=1.15,<2"]
 simulation = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "viser==1.1.1", "pycollada==0.9.3", "scipy>=1.15,<2"]
 usd = ["newton-usd-schemas>=0.5,<1"]
 
 [dependency-groups]
 dev = [
-    "mujoco==3.15.0", # Exercise the real MJCF compiler in the GPU-free test lanes.
+    "mujoco==3.15.0", # Exercise physical asset and motion checks on CPU.
+    "scipy>=1.15,<2",
     "pytest>=8.3,<10",
     "pytest-asyncio>=0.25,<2",
     "pytest-xdist>=3.8,<4",

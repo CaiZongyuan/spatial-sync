@@ -6,8 +6,12 @@ import { AssetBindings, AssetEntityTypes, AssetProvenance, AssetReferencingScene
 import { ValidationReport, ValidationStatus } from '../components/ValidationReport';
 import { LibraryDeletionRequest } from '../components/LibraryDeletion';
 import { GenerateThumbnail } from '../components/GenerateThumbnail';
+import { RobotSettlingComparison } from '../components/RobotSettlingComparison';
+import type { GhostFrame } from '../lib/motion';
 
 const AssetModelViewport = lazy(() => import('../components/AssetModelViewport').then(value => ({ default: value.AssetModelViewport })));
+
+const ReferenceMotionPreview = lazy(() => import('../components/ReferenceMotionPreview').then(value => ({ default: value.ReferenceMotionPreview })));
 
 export const Route = createFileRoute('/assets/$kind/$name/$rev')({ component: AssetDetails });
 function AssetImage({ url, label }: { url: string; label: string }) {
@@ -15,6 +19,26 @@ function AssetImage({ url, label }: { url: string; label: string }) {
   const [attempt, setAttempt] = useState(0);
   return failed ? <div className="asset-preview-status" role="alert"><p>预览图无法载入。</p><button onClick={() => { setFailed(false); setAttempt(value => value + 1); }}>重试预览</button></div>
     : <img key={attempt} src={url} alt={label} onError={() => setFailed(true)} />;
+}
+function AssetPreview({ asset }: { asset: AssetDetail }) {
+  const [ghost, setGhost] = useState<GhostFrame>();
+  const hasViewport = Boolean(asset.visualUrl || asset.fallbackVisuals?.length);
+  return <>
+    <section className="asset-panel" id="asset-model-preview"><header><h2>预览</h2></header>
+      <figure className="asset-detail-figure"><div className="asset-detail-model">
+        {hasViewport ? <Suspense fallback={null}>
+          <AssetModelViewport url={asset.visualUrl} fallbackVisuals={asset.fallbackVisuals} ghost={ghost} />
+        </Suspense> : asset.thumbnailUrl ? <AssetImage url={asset.thumbnailUrl} label={`${asset.id} 的素材预览`} />
+          : <div className="asset-empty">此素材没有视觉文件</div>}
+      </div><figcaption className="asset-figure-caption"><b>{asset.files['source/robot.json'] ? '静态 Asset 模型' : '图 1'}</b>
+        <code>{asset.id}</code>{!asset.visualUrl && !!asset.fallbackVisuals?.length &&
+          <span className="asset-small-note">回退几何 · 未提供 PBR 视觉文件</span>}</figcaption></figure>
+      <RobotSettlingComparison asset={asset} />
+    </section>
+    {asset.kind === 'robot' && <Suspense fallback={null}>
+      <ReferenceMotionPreview asset={asset.id} contentHash={asset.contentHash} onGhost={setGhost} />
+    </Suspense>}
+  </>;
 }
 function AssetDetails() {
   const { kind, name, rev } = Route.useParams();
@@ -29,11 +53,10 @@ function AssetDetails() {
     return () => controller.abort();
   }, [kind, name, rev, attempt]);
   const license = asset && licenseFile(asset);
-  const hasViewport = Boolean(asset && (asset.visualUrl || asset.fallbackVisuals?.length));
   return <main className="asset-page asset-detail-page">{error ? <div className="asset-empty" role="alert">{error}<button onClick={() => setAttempt(attempt + 1)}>重试</button><Link to="/assets">返回素材库</Link></div> : !asset ? <div className="asset-empty" role="status">正在读取素材版本…</div> : <>
     <header className="asset-page-heading"><h1>{asset.title}</h1><p><code>{asset.id}</code><span>·</span>{assetKinds[asset.kind]}<span>·</span>{dimensionsLabel(asset.dimensionsM)}</p></header>
     <div className="asset-detail-grid"><div className="asset-detail-stack">
-      <section className="asset-panel"><header><h2>预览</h2></header><figure className="asset-detail-figure"><div className="asset-detail-model">{hasViewport ? <Suspense fallback={null}><AssetModelViewport key={asset.contentHash} url={asset.visualUrl} fallbackVisuals={asset.fallbackVisuals} /></Suspense> : asset.thumbnailUrl ? <AssetImage url={asset.thumbnailUrl} label={`${asset.id} 的素材预览`} /> : <div className="asset-empty">此素材没有视觉文件</div>}</div><figcaption className="asset-figure-caption"><b>图 1</b><code>{asset.id}</code>{!asset.visualUrl && asset.fallbackVisuals?.length ? <span className="asset-small-note">回退几何 · 未提供 PBR 视觉文件</span> : null}</figcaption></figure></section>
+      <AssetPreview key={`${asset.id}:${asset.contentHash}`} asset={asset} />
       <section className="asset-panel"><header><h2>完整度清单</h2><span className="asset-small-note">{asset.gapCount} 缺口 / 警告</span></header><div className="asset-panel-body"><AssetCompleteness asset={asset} /><p className="asset-small-note">{asset.validationCoverage}</p></div></section>
       <AssetBindings asset={asset} />
       <section className="asset-panel"><header><h2>验证报告</h2><ValidationStatus status={asset.validationStatus} /></header><ValidationReport report={asset.validation} /></section>

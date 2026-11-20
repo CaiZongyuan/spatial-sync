@@ -35,7 +35,9 @@ export interface JobVersions {
 }
 export interface TrainingJob {
   jobId: string;
-  kind: 'training' | 'plan_validation' | 'checkpoint_finalize';
+  kind: 'training' | 'plan_validation' | 'checkpoint_finalize' | 'motion_preprocess';
+  motionVideo?: string;
+  motionClip?: { id: string; sha256: string; bytes: number } | null;
   status: JobStatus;
   planId: string;
   planRevision: number;
@@ -150,3 +152,18 @@ export const getJob = (id: string, signal?: AbortSignal): Promise<TrainingJob> =
 export async function listNodes(signal?: AbortSignal): Promise<TrainingNode[]> {
   return (await request<{ nodes: TrainingNode[] }>('/nodes', { signal })).nodes;
 }
+
+export interface NodeRegistration {
+  nodeId: string;
+  code: string;
+  expiresAt: number;
+  colocated: boolean;
+}
+
+export const issueNodeRegistration = (nodeId: string | undefined, ttlSeconds: number, colocated: boolean) =>
+  request<NodeRegistration>('/nodes/registrations', {
+    method: 'POST', body: JSON.stringify({ nodeId, ttlSeconds, colocated }),
+  });
+
+export const revokeNode = (nodeId: string) =>
+  request<void>(`/nodes/${encodeURIComponent(nodeId)}`, { method: 'DELETE' });

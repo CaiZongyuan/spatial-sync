@@ -530,7 +530,7 @@ def create_app(
             return await call_next(request)
         if manager.jobs.authenticated_node(request.headers) and re.fullmatch(
             r"/api/v1/(?:nodes/[a-z0-9-]+/heartbeat|jobs/job-[a-f0-9]{32}/"
-            r"(?:inputs(?:/packages/[0-9]+|/checkpoint/[a-f0-9]{64})?|artifacts|checkpoints))",
+            r"(?:inputs(?:/packages/[0-9]+|/checkpoint/[a-f0-9]{64}|/video)?|artifacts|checkpoints))",
             request.url.path,
         ):
             return await call_next(request)

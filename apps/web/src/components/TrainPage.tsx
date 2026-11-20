@@ -74,7 +74,8 @@ function EmbodiedTrainPage() {
               return <tr key={job.jobId}><td><Link to="/train/jobs/$id" params={{ id: job.jobId }}><code>{job.jobId}</code></Link><small>{job.task}</small></td>
                 <td><span className={`job-status is-${job.status}`}>{jobStatusLabels[job.status]}</span>
                   {jobReason(job.reason) && <small>{jobReason(job.reason)}</small>}</td>
-                <td><Link to="/plans/$planId" params={{ planId: job.planId }}>{job.planId}</Link><small>固定修订 r{job.planRevision}</small></td>
+                <td>{job.planId ? <><Link to="/plans/$planId" params={{ planId: job.planId }}>{job.planId}</Link>
+                  <small>固定修订 r{job.planRevision}</small></> : <span>{job.motionVideo}</span>}</td>
                 <td>{job.nodeId ?? '等待分配'}<small>{job.executionDevice === 'cpu' ? 'CPU' : job.resourceModel ?? job.resourceId ?? 'GPU 尚未分配'}</small></td>
                 <td>{numberOrUnknown(job.metrics.iteration, 0)}{typeof maximum === 'number' && maximum > 0 ? ` / ${maximum}` : ''}
                   <small>{job.metrics.iteration == null ? '等待首次心跳' : typeof maximum !== 'number' ? '总迭代数尚未读取' : '次更新'}</small></td>

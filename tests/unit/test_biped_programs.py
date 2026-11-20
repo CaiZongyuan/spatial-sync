@@ -1198,3 +1198,96 @@ def test_biped_min_stand_height_and_fall_settle_across_posture_and_policy(tmp_pa
     step_p(4)
     assert invs_p["p-su-beak"].status == "succeeded"
     assert host_p.values()[entity]["fallen"] is False
+
+
+@pytest.mark.parametrize("recovers", [True, False], ids=["upright", "still-fallen"])
+def test_standup_hands_back_to_pinned_bow(tmp_path, monkeypatch, recovers):
+    monkeypatch.setenv("LW_LIBRARY", str(tmp_path / "library"))
+    from packages.library.scenes import SceneLibrary
+    from packages.policies.subjects import fixed_bindings
+
+    scene = SceneLibrary(user_root=tmp_path / "library").resolve("microduck-arena@1")
+    entity, binding = next(iter(fixed_bindings(scene, "newton").items()))
+    posture = binding["config"]
+    joints = posture["jointKeys"]
+    base = posture["baseBody"]
+    defaults = posture["defaultPosition"]
+    port = KinematicBipedPort(joints, base, pose_p=(0., 0., .2))
+    for joint, value in zip(joints, defaults, strict=True):
+        port.q[joint] = value
+    frame = {"position": [0., 0., .2], "orientation": [0., 0., 0., 1.], "joints": defaults}
+    action = {
+        "space": "joint_position_offset", "jointKeys": joints, "units": ["rad"] * len(joints),
+        "defaultPosition": defaults, "lower": [-1.2] * len(joints), "upper": [1.2] * len(joints),
+        "scale": [1.] * len(joints),
+    }
+    task = {
+        "title": "Pinned bow handoff fixture",
+        "scene": scene.id, "robot": entity, "implements": "biped/v1.bow",
+        "episode": {"params": {}}, "control": {"hz": 50., "action": action["space"]},
+        "referenceMotionRef": {"id": "controlled-test-identity"},
+        "completion": {"mode": "phase_clip", "dwellSeconds": .04},
+        "referenceMotion": {
+            "loop": False, "jointKeys": ["/Asset" + joint.removeprefix(entity) for joint in joints],
+            "frames": [frame | {"time": 0.}, frame | {"time": .1}],
+        },
+    }
+    spec = {"schema": "lw.obs-spec/2", "action": action, "observations": [{
+        "name": "gravity", "source": "projected_gravity", "key": base, "unit": "1",
+        "shape": [3], "offset": [0.] * 3, "scale": [1.] * 3,
+    }]}
+    policy = write_policy_package(
+        tmp_path / "library", name="pinned-bow", rev=1, task=task, spec=spec,
+        onnx_bytes=linear_onnx_bytes(np.zeros((3, len(joints)))),
+    )
+    program = REGISTRY["embodied.policy"]
+    config = program.Config.model_validate({
+        "jointKeys": joints, "baseBody": base, "defaultPosition": defaults, "policies": {"bow": policy},
+        "postureFallback": {"program": "biped.posture", "config": posture},
+    })
+    catalog = compile_catalog(
+        "handoff", {"biped/v1": _load_biped_type()}, {entity: binding | {"program": program.id}},
+        {entity: config}, sites=[waypoint["site"] for waypoint in scene.locations["waypoints"].values()],
+    )
+    host = HostCore(catalog, REGISTRY, physics=port, source="sim")
+    tick_count = 0
+
+    def tick(count):
+        nonlocal tick_count
+        for _ in range(count):
+            tick_count += 1
+            events = host.tick(tick_count * .02, .02)
+            assert all(event.type != "server.error" for event in events), events
+
+    def request(identifier, action):
+        return InvokeRequest(
+            invocationId=identifier, requestId=identifier, entityKey=entity, action=action,
+            params={}, actor=Actor(kind="user", name="operator"), epoch=0,
+            createdSimTime=tick_count * .02, createdAtMs=1.,
+        )
+
+    initial = request("initial-bow", "bow")
+    assert host.invoke(initial).status == "accepted"
+    tick(1)
+    port.set_euler(pitch_deg=90)
+    tick(1)
+    assert host.invoke(initial).error.code == "robot_fallen"
+
+    recovery = request("recover", "standUp")
+    assert host.invoke(recovery).status == "accepted"
+    tick(1)
+    if recovers:
+        port.set_euler()
+    tick(80)
+    facts = host.values()[entity]
+    assert facts["fallen"] is not recovers
+    assert facts["phase"] == ("idle" if recovers else "fallen")
+    result = host.invoke(recovery)
+    assert result.status == ("succeeded" if recovers else "failed")
+
+    retry = request("retry-bow", "bow")
+    assert host.invoke(retry).status == ("accepted" if recovers else "rejected")
+    if recovers:
+        tick(20)
+        assert host.invoke(retry).status == "succeeded"
+        assert host.values()[entity]["lastCompletedAction"] == "bow"

@@ -20,6 +20,7 @@ from packages.library.archive import (
 )
 from packages.library.common import NAME, LibraryError, content_hash, document
 from packages.library.transactions import durable_json
+from packages.motion.snapshot import REFERENCE_FILE, reference_snapshot
 
 from .observations import ObservationSpec
 
@@ -158,6 +159,9 @@ class PolicyLibrary:
                 raise ValueError("Observation action differs from the pinned Task control")
             (package / "obs_spec.yaml").write_bytes(observation.read_bytes())
             durable_json(package / "task.json", task["task"])
+            snapshot = reference_snapshot(task["task"], task_path)
+            if snapshot is not None:
+                (package / REFERENCE_FILE).write_bytes(snapshot)
             for name in sources:
                 destination = package / "artifacts" / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -198,6 +202,8 @@ class PolicyLibrary:
                 "qualified": False,
                 "missingEvidence": ["platform_newton_evaluation", "trainer_observation_consistency_256"],
             }
+            if snapshot is not None:
+                provenance["referenceMotionRef"] = task["task"]["referenceMotionRef"]
             durable_json(package / "policy.json", provenance)
             value_hash = content_hash(package)
             versions = [value for value in self.list() if value["name"] == task["name"]]

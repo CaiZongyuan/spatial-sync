@@ -16,6 +16,7 @@ from packages.info.plans import PlanError
 from packages.library.archive import destination_parent
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
+from packages.motion.contract import MOTION_TIMEOUT, POSE_RUNTIME
 from packages.training import checkpoints
 from packages.training.finalization import finalization_profile
 from packages.training.inputs import publish_attempt_artifacts
@@ -258,6 +259,8 @@ class TrainingJobs:
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
         value.setdefault("attempts", [])
+        if job["kind"] == "motion_preprocess" and job["status"] != "succeeded":
+            value.update(motionClip=None, artifacts=[])
         if job["reason"] == "pending_approval":
             value["code"] = "pending_approval"
         return value
@@ -270,8 +273,16 @@ class TrainingJobs:
         return value
 
     def request(self, plan_id, seed, actor, request_id, revision=None, *, kind="training",
-                target_node=None, checkpoint=None):
+                target_node=None, checkpoint=None, motion_video=None):
         self._require_available()
+        if kind == "motion_preprocess":
+            if not motion_video or any(value is not None for value in (plan_id, seed, revision, checkpoint)):
+                raise PlanError(
+                    "invalid_job", "Motion preprocessing requires a video and no training Plan", status=422,
+                )
+            return self._request_motion(motion_video, actor, request_id, target_node)
+        if not plan_id or motion_video is not None:
+            raise PlanError("invalid_job", "This Job requires a Plan and no motion video", status=422)
         if (kind == "checkpoint_finalize") != (checkpoint is not None):
             raise PlanError("invalid_job", "Provide a Checkpoint only for checkpoint_finalize", status=422)
         for job in self.records.values():
@@ -408,6 +419,37 @@ class TrainingJobs:
         self._save()
         return self.document(job)
 
+    def _request_motion(self, video, actor, request_id, target):
+        source = self.manager.motion.video(video)
+        for job in self.records.values():
+            if job["requestId"] != request_id or job["requestedBy"] != actor.model_dump():
+                continue
+            if (job["kind"], job.get("motionVideo"), job.get("targetNodeId")) != (
+                "motion_preprocess", source["id"], target,
+            ):
+                raise PlanError("idempotency_conflict", "Request ID belongs to different job inputs")
+            return self.document(job)
+        if target and target != "local" and (
+            not self.manager.settings.remote or target not in self.node_credentials
+        ):
+            raise PlanError("unknown_node", "Select a registered Compute Node", status=404)
+        job = {
+            "jobId": "job-" + uuid.uuid4().hex, "kind": "motion_preprocess", "status": "queued",
+            "motionVideo": source["id"], "motionClip": None, "requestId": request_id,
+            "requestedBy": actor.model_dump(), "targetNodeId": target, "executionDevice": "cpu",
+            "planId": None, "planRevision": None, "task": None, "seed": None, "approvalId": None,
+            "createdAt": self.clock(), "startedAt": None, "finishedAt": None,
+            "nodeId": None, "resourceId": None, "resourceModel": None, "leaseId": None,
+            "budgetReserved": False, "cancelRequested": False, "chargedGpuHours": 0.0,
+            "estimatedGpuHours": None, "estimatedWallSeconds": None, "metrics": {}, "artifacts": [],
+            "reason": "pose_runtime_unavailable",
+        }
+        self.records[job["jobId"]] = job
+        self.reconcile()
+        self._queue_event(job)
+        self._save()
+        return self.document(job)
+
     def _validation_plan(self, plan_id, revision):
         store = self.manager.training_plans
         plan = store.document(store.get(plan_id))
@@ -426,7 +468,9 @@ class TrainingJobs:
                 )
             }
         for job in reversed(self.records.values()):
-            if job["planApprovalId"] == approval_id and job.get("validationEstimate"):
+            if job["kind"] == "plan_validation" and job["planApprovalId"] == approval_id and job.get(
+                "validationEstimate"
+            ):
                 return deepcopy(job["validationEstimate"])
         return {}
 
@@ -566,6 +610,9 @@ class TrainingJobs:
             job["budgetReserved"] = False
             job.pop("allowedGpuHours", None)
         for job in queued:
+            if job["kind"] == "motion_preprocess":
+                self._schedule_motion(job, now)
+                continue
             validation = job["kind"] == "plan_validation"
             try:
                 if validation:
@@ -594,6 +641,23 @@ class TrainingJobs:
                     self._queue_event(job)
                     continue
             self._schedule(job, now, validation)
+
+    def _schedule_motion(self, job, now):
+        target = job["targetNodeId"]
+        if target and target != "local" and target not in self.node_credentials:
+            job.update(status="cancelled", reason="node_revoked", finishedAt=now)
+            self._queue_event(job)
+            return
+        resource = {"id": "cpu"}
+        job["reason"] = "pose_runtime_unavailable"
+        for node in self.nodes.values():
+            if ((node["id"] != "local" and not self.manager.settings.remote)
+                    or (target and target != node["id"])
+                    or not node.get("cpuAvailable") or node.get("poseRuntime") != POSE_RUNTIME):
+                continue
+            if self._reserve_resource(job, node, resource, now, None):
+                node["leases"]["cpu"]["poseRuntime"] = POSE_RUNTIME
+                return
 
     def _schedule(self, job, now, validation):
         source = self.resume_source(job)
@@ -746,15 +810,21 @@ class TrainingJobs:
     def _offline(node, now):
         return now > max(node["lastSeen"] + 60, node.get("reconnectDeadline", 0))
 
-    def _validation_expired(self, lease, now):
-        return (
-            self.records[lease["jobId"]]["kind"] == "plan_validation"
-            and now - lease["assignedAt"] > VALIDATION_TIMEOUT
-        )
+    def _dispatch_timeout(self, lease, now):
+        kind = self.records[lease["jobId"]]["kind"]
+        elapsed = now - lease["assignedAt"]
+        if kind == "plan_validation" and elapsed > VALIDATION_TIMEOUT:
+            return "validation_timeout"
+        if kind == "motion_preprocess" and elapsed > MOTION_TIMEOUT:
+            return "motion_timeout"
+        return None
 
     def dispatch_expired(self, node, lease):
         now = self.clock()
-        return lease["quarantined"] or self._offline(node, now) or self._validation_expired(lease, now)
+        return (
+            lease["quarantined"] or self._offline(node, now)
+            or self._dispatch_timeout(lease, now) is not None
+        )
 
     def _expire_leases(self, node, now):
         offline = self._offline(node, now)
@@ -765,8 +835,10 @@ class TrainingJobs:
             for resource, lease in tuple(node["leases"].items()):
                 if node["id"] == "local" and lease["quarantined"]:
                     continue
-                if offline or lease["quarantined"] or self._validation_expired(lease, now):
-                    self._fence_lease(node, resource, "node_lost" if offline else "validation_timeout", now)
+                timeout = self._dispatch_timeout(lease, now)
+                if offline or lease["quarantined"] or timeout:
+                    reason = "node_lost" if offline else timeout or "validation_timeout"
+                    self._fence_lease(node, resource, reason, now)
                     changed = True
             return changed
 
@@ -1058,6 +1130,21 @@ class TrainingJobs:
                         "trainer_version_mismatch", "Trainer changed on the leased node", status=422
                     )
             self._check_validation(job, lease, report, now)
+            if report.status == "succeeded" and job["kind"] == "motion_preprocess":
+                if self.dispatch_expired(node, lease):
+                    raise PlanError("lease_mismatch", "The motion dispatch expired", status=403)
+                if body.poseRuntime != lease.get("poseRuntime"):
+                    raise PlanError(
+                        "pose_runtime_mismatch", "Pose runtime changed on the leased node", status=422,
+                    )
+                if job.get("artifactLeaseId") != lease["leaseId"] or not job.get("motionClip"):
+                    raise PlanError(
+                        "artifacts_incomplete", "Upload verified motion artifacts before success", status=422,
+                    )
+                if job["cancelRequested"]:
+                    raise PlanError(
+                        "motion_job_cancelled", "Motion Job cancellation was requested", status=409,
+                    )
             if report.status == "succeeded" and job["kind"] in ("training", "checkpoint_finalize") and (
                 not job["artifacts"]
                 or lease.get("checkpointVersion") and job.get("artifactLeaseId") != lease["leaseId"]
@@ -1110,6 +1197,10 @@ class TrainingJobs:
             checkpointVersion=body.checkpointVersion,
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )
+        if body.poseRuntime is None:
+            node.pop("poseRuntime", None)
+        else:
+            node["poseRuntime"] = body.poseRuntime
         for profile in body.profiles:
             retained = node["profiles"].get(profile.key)
             if retained is None or profile.measuredAt > retained["measuredAt"]:
@@ -1189,6 +1280,7 @@ class TrainingJobs:
                     or self.records[lease["jobId"]]["status"] in TERMINAL,
                     **({"timeoutSeconds": VALIDATION_TIMEOUT}
                        if self.records[lease["jobId"]]["kind"] == "plan_validation" else {}),
+                    **({"timeoutSeconds": MOTION_TIMEOUT} if lease.get("poseRuntime") else {}),
                     **({"cleanupOnly": True, "quarantined": lease["quarantined"]}
                        if lease.get("cleanupOnly") or identity == "local" and lease["quarantined"] else {}),
                     **({"logAfter": lease["logAfter"], "startIteration": lease["startIteration"]}
@@ -1263,6 +1355,7 @@ class TrainingJobs:
                 key: deepcopy(job[key]) for key in ("jobId", "scene", "sceneContentHash", "assets")
             }
             for job in tuple(self.records.values())
+            if job["kind"] != "motion_preprocess"
         }
 
     def _log_path(self, identity):

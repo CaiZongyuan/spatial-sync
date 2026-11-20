@@ -26,7 +26,7 @@ from packages.programs.biped.posture import (
     read_biped_kinematics,
     wrap_pi,
 )
-from packages.programs.embodied import _clamp_posture
+from packages.programs.embodied import ReferencePlacement, TrajectoryCheck, _clamp_posture
 from packages.programs.policy_base import (
     MultiPolicyConfig,
     MultiPolicyProgram,
@@ -35,11 +35,15 @@ from packages.programs.policy_base import (
     extract_observation_state,
 )
 from packages.programs.waypoint_guidance import slot_command_bounds, waypoint_command
+from packages.training.declarative import trajectory_completion
 
 FallDirection = Literal["front", "back", "left", "right"]
 
 
 class BipedPolicyConfig(MultiPolicyConfig):
+    referencePlacement: ReferencePlacement | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     baseBody: SpatialPath = Field(json_schema_extra={"spatialReference": "body"})
     locations: dict = Field(default_factory=dict, json_schema_extra={"documentSchema": "locations"})
     defaultPosition: list[float] | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -107,6 +111,10 @@ class BipedPolicyProgram(MultiPolicyProgram):
     fault_state = "fallen"
 
     def _init_robot(self, ctx):
+        self.trajectories = {
+            action: (completion, TrajectoryCheck(ctx, slot, self.joints, self.joint_units))
+            for action, slot in self.slots.items() if (completion := trajectory_completion(slot.task))
+        }
         parsed_locations = Locations.model_validate(ctx.config.locations)
         self.waypoints = {
             name: wp.model_dump(mode="json") for name, wp in parsed_locations.waypoints.items()
@@ -186,6 +194,8 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._set_idle_state(ctx)
 
     def _parameter_coverage_failure(self, inv, ctx, slot: PolicySlot) -> dict | None:
+        if inv.action in self.trajectories:
+            return super()._parameter_coverage_failure(inv, ctx, slot)
         bounds = slot.task.get("episode", {}).get("paramBounds") or {}
         if inv.action == "walkTo":
             name = inv.params.get("waypoint")
@@ -259,6 +269,9 @@ class BipedPolicyProgram(MultiPolicyProgram):
         return command
 
     def _command(self, inv, ctx, slot: PolicySlot) -> list[float] | None:
+        if inv.action in self.trajectories:
+            keys = ctx.config.commandParams.get(inv.action)
+            return [float(inv.params[key]) for key in keys] if keys else None
         if inv.action == "walkTo":
             return self._compute_walk_command(inv, ctx, slot, update_state=(self.handle is inv))
         cmd_bounds = slot_command_bounds(slot)
@@ -282,6 +295,8 @@ class BipedPolicyProgram(MultiPolicyProgram):
             if cand not in ordered:
                 ordered.append(cand)
         for cand in ordered:
+            if cand.action in self.trajectories:
+                continue
             needs_ref = False
             for obs_term in cand.spec.observations:
                 _, keys, frame_body = observation_canonical_refs(obs_term)
@@ -368,7 +383,11 @@ class BipedPolicyProgram(MultiPolicyProgram):
         self._fall_tilt_reached_at = None
         self._smoothed_cmd = [0.0, 0.0, 0.0]
         self._action_start_inferences = slot.model.inference_calls
-        if inv.action == "walkTo":
+        if trajectory := self.trajectories.get(inv.action):
+            trajectory[1].reset()
+            self.target_waypoint = None
+            self._pre_fall_direction = None
+        elif inv.action == "walkTo":
             self.target_waypoint = inv.params["waypoint"]
             self.current_waypoint = None
             self.phase = "walking"
@@ -411,6 +430,12 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 return
             if not self.fallen:
                 self._step_idle_balance(ctx)
+            return
+
+        if trajectory := self.trajectories.get(inv.action):
+            completion, tracker = trajectory
+            self._dwell_elapsed = tracker.sample(ctx, self.base_body, ctx.sim_time - self.started, completion)
+            self.fallen = tracker.fallen
             return
 
         if inv.action != "standUp":
@@ -493,6 +518,12 @@ class BipedPolicyProgram(MultiPolicyProgram):
                 self._dwell_elapsed = 0.0
 
     def _fault_failure(self, inv, ctx, slot: PolicySlot) -> tuple[str, str] | None:
+        if trajectory := self.trajectories.get(inv.action):
+            if self.fallen:
+                return "robot_fallen", "Base height or tilt left the commissioned range"
+            if trajectory[1].failed:
+                return "motion_tracking_failed", "Measured pose left the pinned trajectory tolerance"
+            return None
         if inv.action == "standUp":
             if (
                 self._pre_fall_direction is not None
@@ -525,6 +556,8 @@ class BipedPolicyProgram(MultiPolicyProgram):
     def _action_completed(self, inv, ctx, slot: PolicySlot) -> bool:
         if slot.model.inference_calls <= self._action_start_inferences:
             return False
+        if trajectory := self.trajectories.get(inv.action):
+            return not self.fallen and self._dwell_elapsed >= trajectory[0].dwellSeconds
         if inv.action == "walkTo":
             return not self.fallen and self._dwell_elapsed + 1e-9 >= ctx.config.dwellSeconds
         if inv.action == "standUp":
@@ -538,6 +571,8 @@ class BipedPolicyProgram(MultiPolicyProgram):
         return super()._action_completed(inv, ctx, slot)
 
     def _step_active_action(self, inv, ctx, slot: PolicySlot, dt: float) -> bool:
+        if inv.action in self.trajectories:
+            return False
         if inv.action == "standUp" and self._pre_fall_direction is not None:
             self._apply_posture(ctx, self._pre_fall_posture(ctx, self._pre_fall_direction))
             return True
@@ -554,9 +589,9 @@ class BipedPolicyProgram(MultiPolicyProgram):
         return False
 
     def _on_action_complete(self, inv, ctx, slot: PolicySlot):
-        if inv.action == "walkTo":
+        if inv.action not in self.trajectories and inv.action == "walkTo":
             self.current_waypoint = self.target_waypoint
-        elif inv.action == "standUp":
+        elif inv.action not in self.trajectories and inv.action == "standUp":
             self.fallen = False
         self._collapse_elapsed = 0.0
         self.last_completed_action = inv.action

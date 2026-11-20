@@ -227,3 +227,33 @@
 .acquisition-actions>button,.acquisition-actions>a{justify-content:center}
 .acquisition-records>header{flex-wrap:wrap}
 }
+.robot-archive-upload {
+  display: grid;
+  gap: 6px;
+  margin-block: 12px 20px;
+  padding: 12px 16px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+.robot-archive-upload label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.robot-archive-upload input { max-width: 100%; }
+.robot-archive-upload small { color: var(--muted); }
+.robot-archive-upload p { margin: 0; overflow-wrap: anywhere; }
+.robot-settling { padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.robot-settling h3, .robot-settling p { margin: 0 0 8px; }
+.robot-settling table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.robot-settling th, .robot-settling td { padding: 6px 8px; text-align: left; border-top: 1px solid var(--line); }
+.robot-settling th[scope=row] { font-weight: 400; }
+.robot-settling td { font-variant-numeric: tabular-nums; }
+.robot-settling code { overflow-wrap: anywhere; }
+.motion-workbench { display: grid; gap: 12px; }
+.motion-workbench :is(code, small) { overflow-wrap: anywhere; }
+.motion-workbench select { max-width: 100%; }
+.motion-workflow > summary { cursor: pointer; }
+.motion-form { display: grid; justify-items: start; gap: 8px; margin-block: 8px; }
+.motion-form fieldset { display: grid; justify-items: start; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.motion-form :is(label, textarea) { max-width: 100%; }
+.motion-form textarea { display: block; width: min(36em, 100%); font-family: var(--mono); }
+.motion-form .robot-archive-upload { margin-block: 0; }
+.motion-provenance small, .motion-provenance dd > code + code { display: block; }
+.motion-playback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

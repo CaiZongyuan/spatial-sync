@@ -18,3 +18,9 @@
 @media (max-width: 1100px) { .training-plan-details { grid-template-columns: minmax(0, 1fr); } }
 .program-review code, .program-review a { overflow-wrap: anywhere; }
 .program-review pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-reward-editor { margin-block: 12px 20px; }
+.task-reward-editor fieldset { margin-block: 10px; border: 1px solid var(--line); }
+.task-reward-editor label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.task-reward-editor input[type=range] { flex: 1 1 10rem; max-width: 22rem; }
+.task-reward-editor output { min-width: 5ch; font-variant-numeric: tabular-nums; }
+.task-reward-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 8px; }

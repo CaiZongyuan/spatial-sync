@@ -22,9 +22,11 @@ import psutil
 from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.process import CleanupIncomplete, OwnedProcess, cleanup_confirmed
 from apps.node.view_relay import relay_views
-from packages.library.archive import extract_package, import_lock, package_files, relative_path
+from packages.library.archive import extract_package, import_lock, relative_path
 from packages.library.common import content_hash
 from packages.library.transactions import durable_json
+from packages.motion.contract import MAX_VIDEO_BYTES, MODEL_SHA256, POSE_RUNTIME, SDK_VERSION
+from packages.motion.snapshot import declarative_files
 from packages.training import checkpoint_format
 from packages.training import runtime as training_runtime
 from packages.training.checkpoints import identity as checkpoint_identity
@@ -285,6 +287,39 @@ class OwnedRun:
                 pass
             self.cancel.wait(0.1)
 
+    def _motion(self, http, inputs, env):
+        command = self.node.pose_command
+        if command is None or inputs["poseRuntime"] != POSE_RUNTIME:
+            raise ValueError("pose_runtime_unavailable")
+        video = inputs["video"]
+        raw = self._request(http, "GET", video["url"], maximum_bytes=MAX_VIDEO_BYTES)
+        if len(raw) != video["bytes"] or hashlib.sha256(raw).hexdigest() != video["sha256"]:
+            raise ValueError("motion_video_changed")
+        video_path = self.root / "video"
+        evidence = self.root / "pose.json"
+        try:
+            video_path.write_bytes(raw)
+            source = self.root / "video.json"
+            durable_json(source, video)
+            with ((self.root / "stdout.log").open("wb") as stdout,
+                  (self.root / "stderr.log").open("wb") as stderr):
+                self._command([*command, "--inputs", str(source)], env, stdout, stderr)
+            reply = self._request(
+                http, "POST", f"/api/v1/jobs/{self.assignment['jobId']}/artifacts",
+                content=evidence.read_bytes(), headers={"Content-Type": "application/json"},
+            ).json()
+            if not reply.get("motionClip"):
+                raise ValueError("motion_artifact_invalid")
+            self.status = "succeeded"
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.json().get("detail")
+            if isinstance(detail, dict) and str(detail.get("code", "")).startswith("motion_"):
+                raise ValueError(detail["code"]) from exc
+            raise
+        finally:
+            video_path.unlink(missing_ok=True)
+            evidence.unlink(missing_ok=True)
+
     def run(self):
         try:
             if self.assignment.get("cleanupOnly") or self.root.exists():
@@ -314,6 +349,9 @@ class OwnedRun:
                 response = self._request(http, "GET", f"/api/v1/jobs/{self.assignment['jobId']}/inputs")
                 inputs = response.json()
                 job = inputs["job"]
+                if job["kind"] == "motion_preprocess":
+                    self._motion(http, inputs, env)
+                    return
                 validation = job["kind"] == "plan_validation"
                 portable = inputs["schemaVersion"] == 2
                 if portable and (self.node.capabilities.get("checkpointVersion") != 1
@@ -388,9 +426,8 @@ class OwnedRun:
                 if declarative:
                     declared = TaskMetadata.model_validate(inputs["task"])
                     task_root = Path(task_package["directory"])
-                    if set(package_files(task_root)) != {"task.yaml", declared.observation}:
-                        raise ValueError("Declarative task input contains unapproved files")
                     inputs["task"] = declared.model_dump(mode="json")
+                    declarative_files(inputs["task"], task_root)
                 demonstration_inputs = []
                 for reference in job.get("demonstrationSets", []):
                     dataset = next(item for item in inputs["packages"]
@@ -722,9 +759,10 @@ class OwnedRun:
 
 class LocalNode:
     def __init__(self, url, root, trainer, capabilities, *, mjlab_trainer=(), interval=10, timeout=86400,
-                 node_id="local", token=None):
+                 node_id="local", token=None, pose_command=None):
         self.url, self.root, self.trainer = url, Path(root), trainer
         self.mjlab_trainer = mjlab_trainer
+        self.pose_command = pose_command
         self.capabilities, self.interval, self.timeout = capabilities, interval, timeout
         self.root.mkdir(parents=True, exist_ok=True)
         self.node_id, self.instance = node_id, uuid.uuid4().hex
@@ -912,6 +950,8 @@ def main():
         "--mjlab-trainer", default="[]", help="JSON command prefix in an existing mjlab environment"
     )
     parser.add_argument("--capabilities", help="Measured node/GPU/timing metadata JSON")
+    parser.add_argument("--pose-python", help="Python interpreter in the owned MediaPipe CPU environment")
+    parser.add_argument("--pose-model", help="Local path to the pinned Pose Landmarker Lite model bundle")
     parser.add_argument("--interval", type=float, default=10)
     parser.add_argument("--timeout", type=float, default=86400)
     args = parser.parse_args()
@@ -979,6 +1019,19 @@ def run_node(args):
         capabilities.get("trainingEntries") or {}
     ).get("mjlab") == "mjlab:managed":
         capabilities["checkpointVersion"] = 1
+    capabilities.pop("poseRuntime", None)
+    pose_command = None
+    pose_python, pose_model = getattr(args, "pose_python", None), getattr(args, "pose_model", None)
+    if pose_python or pose_model:
+        if not pose_python or not pose_model:
+            raise ValueError("Configure both --pose-python and --pose-model")
+        pose_command = [
+            str(Path(pose_python).absolute()), "-I", str(Path(__file__).with_name("pose_worker.py")),
+            str(Path(pose_model).resolve(strict=True)), MODEL_SHA256, SDK_VERSION,
+        ]
+        subprocess.run(pose_command, check=True, timeout=20, env=trainer_environment(), capture_output=True)
+        capabilities["poseRuntime"] = POSE_RUNTIME
+        capabilities["cpuAvailable"] = True
     if not args.capabilities:
         durable_json(capabilities_path, capabilities)
     node = LocalNode(
@@ -991,6 +1044,7 @@ def run_node(args):
         timeout=args.timeout,
         node_id=node_id,
         token=token,
+        pose_command=pose_command,
     )
     node.capabilities_path = capabilities_path
     asyncio.run(node.run())

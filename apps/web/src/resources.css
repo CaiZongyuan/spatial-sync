@@ -54,3 +54,26 @@ p.resource-note { margin: 12px 0 0; }
   .resource-page-tabs small { font-size: 10px; }
   .resource-panel > header > div { justify-content: space-between; width: 100%; }
 }
+.workbench-fields {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.workbench-fields label, .node-registration-receipt label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--fs-sm);
+}
+.workbench-fields input, .workbench-fields select { max-width: 100%; }
+.workbench-fields label:has(input[type=checkbox]) {
+  display: flex;
+  align-items: center;
+  align-self: center;
+}
+.node-registration { margin-block: 12px; }
+.node-registration summary { padding: 12px 16px; }
+.node-registration-receipt { margin-block: 12px; }
+.node-registration-receipt input { max-width: 440px; font-family: var(--mono); }

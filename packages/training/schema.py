@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from packages.programs.metadata import ProgramIntent
-from packages.training.declarative import Completion, LayerA, ReferenceMotion
+from packages.training.declarative import Completion, LayerA, ReferenceMotion, ReferencePin
 from packages.training.predictions import prediction
 
 
@@ -111,6 +111,7 @@ class TaskMetadata(Schema):
     declarative: LayerA | None = Field(default=None, exclude_if=lambda value: value is None)
     completion: Completion | None = Field(default=None, exclude_if=lambda value: value is None)
     referenceMotion: ReferenceMotion | None = Field(default=None, exclude_if=lambda value: value is None)
+    referenceMotionRef: ReferencePin | None = Field(default=None, exclude_if=lambda value: value is None)
     evaluation: Evaluation
     loopBudget: LoopBudget
     demonstrations: list[DemonstrationUse] = Field(default_factory=list, max_length=32)
@@ -160,6 +161,23 @@ class TaskMetadata(Schema):
                     or "velocity_tracking" in kinds and not self.declarative.command
                     or self.demonstrations):
                 raise ValueError("Layer A tracking requires matching immutable motion or command inputs")
+            if kinds & {"root_pose_tracking", "root_velocity_tracking", "body_local_tracking"}:
+                if self.referenceMotionRef is None or self.referenceMotion is None:
+                    raise ValueError("Root and body tracking require a published Reference Motion")
+                if "body_local_tracking" in kinds and not self.referenceMotion.frames[0].bodyLocal:
+                    raise ValueError("Body tracking requires Reference Motion local body coordinates")
+        if self.referenceMotionRef is not None:
+            if self.declarative is None or self.referenceMotion is None:
+                raise ValueError("Reference Motion pins require declarative Task frames")
+            completion = self.completion or Completion(mode="phase_clip")
+            if completion.mode != "phase_clip":
+                raise ValueError("A pinned Reference Motion requires phase_clip completion")
+            duration = self.referenceMotion.frames[-1].time
+            if self.referenceMotion.loop:
+                duration *= completion.cycles
+            duration += completion.dwellSeconds
+            if self.declarative.episodeSeconds < duration:
+                raise ValueError("Episode must cover the Reference Motion and completion dwell")
         if self.completion is not None:
             if self.completion.mode == "phase_clip" and self.referenceMotion is None:
                 raise ValueError("phase_clip requires a pinned reference motion")

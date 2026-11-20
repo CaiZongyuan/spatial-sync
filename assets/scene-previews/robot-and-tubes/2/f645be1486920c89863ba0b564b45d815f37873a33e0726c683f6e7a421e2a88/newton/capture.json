@@ -22,7 +22,7 @@
   ],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T05:40:33.459692+00:00",
+  "capturedAt": "2026-11-20T15:15:29.486987+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -42,7 +42,7 @@
     },
     {
       "path": "apps/api/app/sources/newton_source.py",
-      "sha256": "fa79ae0d250ccd5d54fc038d2fcc347231ebd06a2e0a94a74ecb2f6c402f20ab"
+      "sha256": "00e0f9f4e4e7c4ab51a5a4831ff87f11685a40d9a1fbfe8729f77e325ccf3a3f"
     },
     {
       "path": "assets/registry.yaml",
@@ -354,7 +354,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "d8f64d624f61a14bebe610a1fd551af995372e4cc0771f88c696f004c590b68b"
+      "sha256": "0685adf9589fae8ede7e3bd9861c38adaac04672cce47b5f1cb5dfe4bc2538de"
     },
     {
       "path": "packages/library/scenes.py",
@@ -377,6 +377,14 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/motion/__init__.py",
+      "sha256": "ba59b10297b68c62e7b92bae211939f981f64448e5e523474df33af0a2556aa0"
+    },
+    {
+      "path": "packages/motion/snapshot.py",
+      "sha256": "ddff7d04e2eeb17f227a91653ba4bbef83c10a11c75cae0a39e40f5d592592fb"
+    },
+    {
       "path": "packages/policies/action_contract.py",
       "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
     },
@@ -386,11 +394,11 @@
     },
     {
       "path": "packages/policies/library.py",
-      "sha256": "32c0eb6849b761060dcb2ed940f70d60ad1669bf32fea20852d2afb2b2a7cca6"
+      "sha256": "131c314185b32c032050cefc1040b1ecdeb0fd36dc1dbc04e025f9e9390f3228"
     },
     {
       "path": "packages/policies/motion.py",
-      "sha256": "dcbbe638a08dd37dc81d250375c5c7f462b2a8cb6ed2ee1b21456c03603ed0ee"
+      "sha256": "5ab6f7d9906e5d30b69e1410ad3bca245b9877899b70cfff49ce932fa1038b9c"
     },
     {
       "path": "packages/policies/observations.py",
@@ -398,7 +406,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "8c86e5dac2b541efbabcf34a582dd6af7935be8b2d7f1aa785e12a360166b391"
+      "sha256": "521ae77be24cec9cdc20e2da229d1aa255c92631a070d0ff64570b429215b2d6"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -406,7 +414,7 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "4e66e74e9943f2446adc3beb075894bdc63e52d38beb207592a4d88089af3d00"
+      "sha256": "705a93e470b545a7df5de269b2e8cb474be52d0f8ea223e22fc3210734d5ebb2"
     },
     {
       "path": "packages/programs/biped/posture.py",
@@ -426,7 +434,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "f725515643bcae604da77dd4db87dd1d49a5deb6ba8148335faf346d0bc10401"
+      "sha256": "a5ea37f72769f62f83b53443fce24bcb6b7c0ac0be55eb8e31fb64a42c14075b"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -525,6 +533,10 @@
       "sha256": "220d13f67a99fb9e3c5f9bb1c946594411c54a212a85424cf28213b4e34bf775"
     },
     {
+      "path": "packages/sim_runtime/control_clock.py",
+      "sha256": "f09ad0563048bd1c6366e56103e9d5705807ca887e1db32ffc2ee71093581596"
+    },
+    {
       "path": "packages/sim_runtime/info_catalog.py",
       "sha256": "a816e4fd3cf4045a9bf4a6d54a41f0dd6dfa1e2db5d2236cd08f986923aae92e"
     },
@@ -570,7 +582,7 @@
     },
     {
       "path": "packages/sim_runtime/runner.py",
-      "sha256": "95b2c8a8b99747ae2cd1dc1f00fc6d308fd1b8323077a47e15924d34d104e385"
+      "sha256": "b1ffc49ba291c8efde2d0d348d4dcbbd8c5f7d618378884bcd1ef93a0d39ed68"
     },
     {
       "path": "packages/sim_runtime/scenes.py",
@@ -578,7 +590,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "07840e3efa0e6b0ffc72cbb689a195977a0d1e5a982efdc00fcbde715dc71a04"
+      "sha256": "31b894427e4e639fa12bde6cd3226547437789aea89121fbd34171c27b2eab8d"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -598,7 +610,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "c491a92ec762ff2e1d92eb7b321ac6a12351021cb9cc1e998850f24ef3110fd3"
+      "sha256": "352dce17c8551408b5875a294bb45e40f5aa44780ddfa35f35d063cf1f7095ca"
     },
     {
       "path": "packages/training/reward_state.py",
@@ -618,7 +630,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "8272998f927aee9b3301c3d4aa80e3ef6e0e5b8642a0af9d0438a518d094b9d3"
+      "sha256": "1b00007876cd5a5928b2fb3c2347e4c7743aa697e100d58e7676b99ef8b5167a"
     }
   ],
   "documents": {
@@ -628,10 +640,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "7e8aa911a9bb52c5ae47756a86a77c209dcba4396300a277ccd702151098574a",
-    "catalog.json": "3ebe1f95b3bdb3de186ac59645e785b435e05063338f8c1d6388a4331b43fb96",
-    "state.json": "85624088dd79deec0df264ddb579560dd425a28e969c06bfe093f87951dc937e",
-    "snapshot.bin": "3c49c2c87b15186cd175f4941d022d66bdf260a41c7a816f9b91f51c111178e7",
+    "manifest.json": "38a13b0c1393efc1bc31fd17cf916cdb17d9b1611509e404c3b61ef1a4b6a386",
+    "catalog.json": "3adcfb350902c81ed24bab925e3306f7bde3aa3287c7b90bf2e84b9704803ca8",
+    "state.json": "653107529d294f1ab5b22eeb5e8e536b4d2e636532611f234d068e22a8ed61ff",
+    "snapshot.bin": "3355b9ef50908c3f50a9ff4c5844392bcb2ca07c1f5908a897b698dfbb61a9a1",
     "assets/sha256-668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb.glb": "668b54d9e4fb3057a83913df4745a1ce8a9cb23d5eea1be628a6bbd878ad89cb",
     "assets/sha256-d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704.glb": "d93aff017c90ed68251e2ab31974a5752ccfa0d9bfb265d5f7f3807a136f7704",
     "assets/sha256-003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672.glb": "003dc393a44c2e5e551569ece219ec9d3a7e566b438af2fed6c7ed6bbe356672",
