@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import math
+import zipfile
 
 import pytest
 import trimesh
@@ -12,7 +13,9 @@ from fastapi.testclient import TestClient
 from test_asset_imports import archive, upload
 
 from apps.api.app.main import create_app
+from apps.api.app.settings import Settings
 from packages.library.physics import skipped
+from tests.gateway.test_training_jobs import TOKEN
 
 URDF = b"""<robot name="probe">
   <link name="base">
@@ -37,7 +40,7 @@ def client(tmp_path, monkeypatch):
     # the same HTTP entry with the installed Newton and MuJoCo distributions.
     monkeypatch.setattr("packages.library.validation.physics_availability",
                         lambda _: (skipped("Fixture has no Newton wheels", ["newton"]), {}))
-    with TestClient(create_app()) as test_client:
+    with TestClient(create_app(Settings(node_token=TOKEN))) as test_client:
         yield test_client
 
 
@@ -302,19 +305,197 @@ def test_mjcf_inferred_inertia_uses_recipe_density_and_keeps_authored_mass(clien
     assert client.get(item["files"]["source/probe.xml"]).content == model
 
 
-@pytest.mark.parametrize(("setting", "expected"), [
-    ('joint:stiffness="5" springref=".3"', "joint springs"),
-    ('flag:damper="disable"', "disables authored joint damping"),
-    ('flag:actuation="disable"', "disables the joint actuator"),
+@pytest.mark.parametrize("zero_mass", [False, True])
+def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_path, zero_mass):
+    import mujoco
+    import numpy as np
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, .01)
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    UsdPhysics.SetStageKilogramsPerUnit(stage, .5)
+    root = UsdGeom.Xform.Define(stage, "/Robot").GetPrim()
+    stage.SetDefaultPrim(root)
+    UsdPhysics.ArticulationRootAPI.Apply(root)
+    for name, x in (("base", 0), ("arm", 20), ("tip", 40)):
+        link = UsdGeom.Xform.Define(stage, f"/Robot/{name}")
+        link.AddTranslateOp().Set(Gf.Vec3d(x, 0, 20))
+        UsdPhysics.RigidBodyAPI.Apply(link.GetPrim())
+        collider = UsdGeom.Cube.Define(stage, f"/Robot/{name}/box")
+        collider.CreateSizeAttr(8)
+        UsdPhysics.CollisionAPI.Apply(collider.GetPrim())
+        mass = UsdPhysics.MassAPI.Apply(link.GetPrim())
+        mass.CreateDiagonalInertiaAttr(Gf.Vec3f(8, 9, 10))
+        mass.CreateCenterOfMassAttr(Gf.Vec3f(1, 2, 3))
+        if name == "arm":
+            if zero_mass:
+                mass.CreateMassAttr(0.)
+            mass.CreateDensityAttr(.001)
+            mass.CreatePrincipalAxesAttr(Gf.Quatf(math.sqrt(.5), Gf.Vec3f(0, 0, math.sqrt(.5))))
+        else:
+            mass.CreateMassAttr(1.)
+    fixed = UsdPhysics.FixedJoint.Define(stage, "/Robot/anchor")
+    fixed.CreateBody1Rel().SetTargets(["/Robot/base"])
+    fixed.CreateLocalPos0Attr(Gf.Vec3f(0, 0, 20))
+    for kind, channel, name, parent, child, dynamics in (
+        (UsdPhysics.RevoluteJoint, "angular", "hinge", "base", "arm", (2., .3, 6000., 8000., .4, 1000.)),
+        (UsdPhysics.PrismaticJoint, "linear", "slide", "arm", "tip", (4., .8, 600., 8., 1.2, 40.)),
+    ):
+        joint = kind.Define(stage, "/Robot/" + name)
+        joint.CreateBody0Rel().SetTargets(["/Robot/" + parent])
+        joint.CreateBody1Rel().SetTargets(["/Robot/" + child])
+        joint.CreateLocalPos0Attr(Gf.Vec3f(20, 0, 0))
+        kp, kv, force, armature, damping, friction = dynamics
+        drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), channel)
+        drive.CreateTypeAttr("force")
+        drive.CreateStiffnessAttr(kp)
+        drive.CreateDampingAttr(kv)
+        drive.CreateMaxForceAttr(force)
+        for field, value in (("armature", armature), ("damping", damping), ("friction", friction)):
+            joint.GetPrim().CreateAttribute("newton:" + field, Sdf.ValueTypeNames.Float).Set(value)
+
+    source = stage.GetRootLayer().ExportToString().encode()
+    package = files("probe.usda", source)
+    manifest = json.loads(package["robot.json"])
+    manifest["calibration"] = {"density": 250.}
+    package["robot.json"] = json.dumps(manifest).encode()
+    reply = upload(client, package)
+    assert reply.status_code == 200, reply.text
+    item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    assert client.get(item["files"]["source/probe.usda"]).content == source
+    provenance = client.get(item["files"]["provenance.json"]).json()
+    assert provenance["estimatedMassPrims"] == ["/Asset/links/arm"]
+    path = tmp_path / "readback.usda"
+    path.write_bytes(client.get(item["files"]["asset.usda"]).content)
+    derived = derive_usd_mjcf(path)
+    model = derived.to_mjmodel()
+    arm = model.body(derived.body_names_by_path["/Asset/links/arm"]).id
+    assert model.body_mass[arm] == pytest.approx(.256)
+    assert model.body_ipos[arm] == pytest.approx([.01, .02, .03])
+    basis = np.empty(9)
+    mujoco.mju_quat2Mat(basis, model.body_iquat[arm])
+    basis = basis.reshape((3, 3))
+    np.testing.assert_allclose(basis @ np.diag(model.body_inertia[arm]) @ basis.T,
+                               np.diag([.00045, .0004, .0005]), atol=1e-9)
+
+    data = mujoco.MjData(model)
+    for joint, expected, command in zip(derived.joints, (
+        (1e-4 * 180 / math.pi, 1.5e-5 * 180 / math.pi, .3, .4, 2e-5 * 180 / math.pi, .05),
+        (2., .4, 3., 4., .6, .2),
+    ), (80., .65), strict=True):
+        native = model.joint(joint.name)
+        dof = native.dofadr[0]
+        actuator, = np.flatnonzero(model.actuator_trnid[:, 0] == native.id)
+        assert (model.actuator_gainprm[actuator, 0], -model.actuator_biasprm[actuator, 2],
+                model.actuator_forcerange[actuator, 1], model.dof_armature[dof],
+                model.dof_damping[dof], model.dof_frictionloss[dof]) == pytest.approx(expected)
+        data.qpos[native.qposadr[0]], data.qvel[dof], data.ctrl[actuator] = .1, .5, command
+    mujoco.mj_forward(model, data)
+    assert data.qfrc_actuator.tolist() == pytest.approx([.3, .9])
+    assert data.qfrc_passive.tolist() == pytest.approx([-1e-5 * 180 / math.pi, -.3])
+
+
+def test_policy_export_checks_scene_coordinates_of_explicit_calibration(client, tmp_path):
+    import yaml
+
+    from tests.fixtures.policy import observation_spec
+    from tests.fixtures.training_task import task_document
+    from tests.gateway.test_policies import uploaded_job
+
+    source = b"""<mujoco><compiler angle="radian"/>
+    <worldbody><body name="base"><geom type="box" size=".1 .1 .1" mass="2"/>
+      <body name="arm" pos=".3 0 0"><joint name="motor-a" axis="-1 0 0" range="-.7 .9"/>
+        <geom size=".05" mass=".25"/>
+        <body name="tip" pos=".3 0 0"><joint name="finger" type="slide" range="-.1 .2"/>
+          <geom size=".05" mass=".25"/><site name="tool"/>
+        </body>
+      </body></body></worldbody>
+    <actuator><position joint="motor-a" kp="10" ctrlrange="-.1 .2"/></actuator></mujoco>"""
+    reply = upload(client, files("probe.xml", source))
+    assert reply.status_code == 200, reply.text
+    entity = "/World/Lab/RobotA"
+    key = entity + "/joints/motor_a"
+    for name, override, expected in (
+        ("equivalent-frame", "quatf physics:localRot1 = (-1, 0, 0, 0)", "verified"),
+        ("changed-axis", 'uniform token physics:axis = "Y"', "unavailable"),
+    ):
+        task = task_document(name)
+        task["scene"] = task["evaluation"]["scene"] = name + "@1"
+        task["success"] = {"entity": entity, "property": "gripperWidth", "gte": 0.}
+        spec = observation_spec()
+        spec["action"]["jointKeys"] = spec["observations"][0]["keys"] = [key]
+        scene = {
+            "scene.yaml": yaml.safe_dump({"name": name, "title": name, "stage": "stage.usda",
+                                         "sources": ["newton"], "simulation": {"solver": "mujoco"}}).encode(),
+            "devices.yaml": yaml.safe_dump({"scene": name, "entities": [{
+                "key": entity, "type": "robot-arm/v1", "program": "robot_arm.newton",
+                "config": {"locations": "locations.yaml", "jointKeys": [key], "tubes": [],
+                           "fingerKeys": [entity + "/joints/finger"], "handBody": entity + "/links/tip",
+                           "tcpSite": entity + "/links/tip/tool"},
+            }]}).encode(),
+            "locations.yaml": b"locations: {}\n",
+            "stage.usda": f'''#usda 1.0
+(defaultPrim = "World"
+ metersPerUnit = 1
+ upAxis = "Z")
+def Xform "World" {{
+    def Xform "Lab" {{
+        def Xform "RobotA" (
+            prepend references = @library:assets/robot/calibration-probe/1/asset.usda@</Asset>
+        ) {{
+            over "joints" {{
+                over "motor_a" {{
+                    {override}
+                }}
+            }}
+        }}
+    }}
+}}
+'''.encode(),
+        }
+        reply = upload(client, scene)
+        assert reply.status_code == 200, reply.text
+        evaluation = {"scene": name + "@1", "episodes": 100, "threshold": 85}
+        job = uploaded_job(client, tmp_path / name, spec=spec, task_document=task,
+                           plan_overrides={"evaluation": evaluation})
+        checkpoint = job["jobId"] + "/checkpoint-origin.json"
+        policy = client.post("/api/v1/policies", json={"checkpoint": checkpoint})
+        assert policy.status_code == 201, policy.text
+        exported = client.get(f"/api/v1/policies/{name}/1/export")
+        assert exported.status_code == 200, exported.text
+        with zipfile.ZipFile(io.BytesIO(exported.content)) as package:
+            manifest = json.loads(package.read("manifest.json"))
+            mapping = manifest["sourceCalibration"]
+            assert mapping["status"] == expected
+            assert manifest["actuators"][0]["controlRange"] == pytest.approx([.05, .35])
+            if expected == "verified":
+                assert mapping["joints"] == [{"jointKey": "/Asset/joints/motor_a", "sourceName": "motor-a",
+                                              "sign": -1, "zeroOffset": .25, "unit": "rad"}]
+            else:
+                assert mapping["joints"] == [] and "coordinates differ" in mapping["reason"]
+                assert "source-calibration.json" not in package.namelist()
+
+
+@pytest.mark.parametrize(("setting", "path", "expected"), [
+    ('joint:stiffness="5" springref=".3"', "motor-a", "joint springs"),
+    ('flag:damper="disable"', "motor-a", "disables authored joint damping"),
+    ('flag:actuation="disable"', "motor-a", "disables the joint actuator"),
+    ('flag:constraint="disable"', "option/flag:constraint", "canonical USD subset"),
+    ('flag:contact="disable"', "option/flag:contact", "canonical USD subset"),
+    ('root:<joint type="free" name="float" damping="2"/>', "float", "Floating root"),
 ])
-def test_mjcf_unsupported_dynamics_fail_before_publication(client, setting, expected):
+def test_mjcf_unsupported_dynamics_fail_before_publication(client, setting, path, expected):
     import mujoco
 
     kind, value = setting.split(":", 1)
     option = f"<option><flag {value}/></option>" if kind == "flag" else ""
     joint = value if kind == "joint" else ""
+    root = value if kind == "root" else ""
     model = f"""<mujoco><compiler angle="radian"/>{option}
-    <worldbody><body name="base"><geom type="box" size=".1 .1 .1" mass="2"/>
+    <worldbody><body name="base">{root}<geom type="box" size=".1 .1 .1" mass="2"/>
       <body name="tip" pos=".3 0 0"><joint name="motor-a" damping="4" range="-1 1" {joint}/>
         <geom size=".05" mass=".25"/>
       </body></body></worldbody>
@@ -323,7 +504,7 @@ def test_mjcf_unsupported_dynamics_fail_before_publication(client, setting, expe
     reply = upload(client, files("probe.xml", model.encode()))
     assert reply.status_code == 422, reply.text
     problem = reply.json()["detail"]["problems"][0]
-    assert problem["path"] == "motor-a"
+    assert problem["path"] == path
     assert expected in problem["message"]
     assert client.get("/api/v1/library/assets/robot/calibration-probe/1").status_code == 404
 

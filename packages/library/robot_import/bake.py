@@ -68,7 +68,7 @@ def solid_mesh(shape, path):
 
 def inertial(body, density, length, kilograms, path):
     mass = body.mass * kilograms if body.mass is not None else None
-    center = body.center * length
+    center = body.center * length if body.center is not None else None
     inertia = body.inertia * kilograms * length**2 if body.inertia is not None else None
     estimated = mass is None or inertia is None
     if estimated:
@@ -82,16 +82,18 @@ def inertial(body, density, length, kilograms, path):
         volume = sum(part.volume for part in parts)
         if volume <= 0:
             raise invalid("Missing inertia requires volumetric collision geometry", path=path)
-        centroid = sum((part.mass * part.center_mass for part in parts), np.zeros(3)) / volume
-        center = centroid if mass is None else center
+        if center is None:
+            center = sum((part.volume * part.center_mass for part in parts), np.zeros(3)) / volume
         if mass is None:
-            mass = density * volume
+            mass = (body.density if body.density is not None else density) * volume
         if inertia is None:
             inertia = np.zeros((3, 3))
             for part in parts:
                 offset = part.center_mass - center
                 inertia += part.inertia + part.mass * (offset @ offset * np.eye(3) - np.outer(offset, offset))
             inertia *= mass / volume
+    if center is None:
+        center = np.zeros(3)
     if not np.isfinite(mass) or mass <= 0 or not np.isfinite(inertia).all():
         raise invalid("Mass and inertia must be finite and positive", path=path)
     diagonal, axes = np.linalg.eigh(inertia)

@@ -45,11 +45,12 @@ class Body:
     name: str
     pose: np.ndarray = field(default_factory=lambda: np.eye(4))
     mass: float | None = None
-    center: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    center: np.ndarray | None = None
     inertia: np.ndarray | None = None
     shapes: list[Shape] = field(default_factory=list)
     sites: dict = field(default_factory=dict)
     estimated_inertia: bool = False
+    density: float | None = None
 
 
 @dataclass

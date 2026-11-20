@@ -126,6 +126,13 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
 
     if model.ntendon or model.neq or model.nflex or model.npair:
         raise invalid("Unsupported coupled, deformable or explicit-pair MJCF physics", path=entry)
+    disabled = model.opt.disableflags
+    for flag, option in ((mujoco.mjtDisableBit.mjDSBL_CONSTRAINT, "constraint"),
+                         (mujoco.mjtDisableBit.mjDSBL_CONTACT, "contact")):
+        if disabled & flag:
+            raise invalid(
+                "Disabled MJCF option is outside the canonical USD subset", path=f"option/flag:{option}",
+            )
     if model.nbody > 129 or model.ngeom > 4096:
         raise invalid("Compiled MJCF exceeds the robot size budget", path=entry)
     names = {index: model.body(index).name or f"link_{index}" for index in range(1, model.nbody)}
@@ -207,6 +214,18 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
                 raise invalid("Root must be free or fixed to the world", path=name)
             fixed = not count
             if count:
+                dof = model.jnt_dofadr[joint_id]
+                free_dofs = slice(dof, dof + 6)
+                if (joint_id in actuators or model.jnt_stiffness[joint_id] != 0
+                        or np.any(model.jnt_stiffnesspoly[joint_id])
+                        or np.any(model.dof_damping[free_dofs])
+                        or np.any(model.dof_dampingpoly[free_dofs])
+                        or np.any(model.dof_frictionloss[free_dofs])
+                        or np.any(model.dof_armature[free_dofs])):
+                    raise invalid(
+                        "Floating root requires an undriven joint without passive forces or armature",
+                        path=model.joint(joint_id).name or name,
+                    )
                 start = model.jnt_qposadr[joint_id]
                 body.pose = transform(posture[start:start + 3], posture[start + 3:start + 7])
             continue
@@ -229,14 +248,13 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
         joint.reference = float(model.qpos0[address])
         joint.initial = float(posture[address])
         if model.jnt_limited[joint_id]:
-            if model.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_LIMIT:
+            if disabled & mujoco.mjtDisableBit.mjDSBL_LIMIT:
                 raise invalid("MJCF disables its authored hard limits", path=joint_name)
             joint.limits = tuple(model.jnt_range[joint_id])
         gain, damping, force, target_range = actuators.get(joint_id, (0., 0., None, None))
         passive_damping = float(model.dof_damping[dof])
         if not np.isfinite(passive_damping) or passive_damping < 0 or np.any(model.dof_dampingpoly[dof]):
             raise invalid("Joint requires finite nonnegative linear passive damping", path=joint_name)
-        disabled = model.opt.disableflags
         if passive_damping and disabled & mujoco.mjtDisableBit.mjDSBL_DAMPER:
             raise invalid("MJCF disables authored joint damping", path=joint_name)
         if joint_id in actuators and disabled & mujoco.mjtDisableBit.mjDSBL_ACTUATION:

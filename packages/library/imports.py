@@ -46,11 +46,11 @@ class LibraryImports:
             stage = Path(temporary) / "package"
             stage.mkdir()
             extract_package(stream, stage, allow_gzip=True)
-            if (stage / "robot.json").is_file():
+            if (stage / "robot.json").is_file() and not any(
+                (stage / name).exists() for name in ("asset.yaml", "scene.yaml")
+            ):
                 from packages.library.robot_import.prepare import prepare
 
-                if (stage / "asset.yaml").exists() or (stage / "scene.yaml").exists():
-                    raise invalid("Upload a single robot or library manifest", path="robot.json")
                 prepared = stage.parent / "prepared"
                 prepare(stage, prepared)
                 return self.import_staged(prepared, allowed_root=stage.parent)

@@ -18,13 +18,15 @@ def origin(node):
 
 
 def inertial(body, item):
+    frame = origin(item)
     if (mass := item.find("mass")) is not None and float(mass.attrib["value"]) > 0:
         body.mass = float(mass.attrib["value"])
-        body.center = origin(item)[:3, 3]
+    if body.mass is not None or item.find("origin") is not None:
+        body.center = frame[:3, 3]
     if (tensor := item.find("inertia")) is not None:
         xx, xy, xz, yy, yz, zz = (float(tensor.attrib.get(key, 0))
                                   for key in ("ixx", "ixy", "ixz", "iyy", "iyz", "izz"))
-        rotation = origin(item)[:3, :3]
+        rotation = frame[:3, :3]
         tensor = rotation @ np.array([[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]]) @ rotation.T
         if np.any(tensor):
             body.inertia = tensor

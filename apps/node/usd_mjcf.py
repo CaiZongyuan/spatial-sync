@@ -1565,7 +1565,8 @@ def derive_usd_mjcf(
 
             drive_type = "angular"
             pos_scale = math.pi / 180.0
-            gain_scale = 180.0 / math.pi
+            effort_scale = kg_per_unit * meters_per_unit**2
+            armature_scale = effort_scale
             kind: Literal["hinge", "slide"] = "hinge"
         elif j_prim.IsA(UsdPhysics.PrismaticJoint):
             pris = UsdPhysics.PrismaticJoint(j_prim)
@@ -1587,11 +1588,13 @@ def derive_usd_mjcf(
 
             drive_type = "linear"
             pos_scale = meters_per_unit
-            gain_scale = 1.0 / meters_per_unit if meters_per_unit > 0 else 1.0
+            effort_scale = kg_per_unit * meters_per_unit
+            armature_scale = kg_per_unit
             kind = "slide"
         else:
             raise ValueError(f"Unsupported USD joint type {j_prim.GetTypeName()} at {j_prim.GetPath()}")
 
+        gain_scale = effort_scale / pos_scale
         stiffness = 0.0
         damping = 0.0
         max_force: float | None = None
@@ -1608,7 +1611,7 @@ def derive_usd_mjcf(
             if raw_kd is not None and math.isfinite(float(raw_kd)):
                 damping = float(raw_kd) * gain_scale
             if raw_mf is not None and math.isfinite(float(raw_mf)) and float(raw_mf) > 0.0:
-                max_force = float(raw_mf)
+                max_force = float(raw_mf) * effort_scale
             if raw_tp is not None and math.isfinite(float(raw_tp)):
                 default_pos = float(raw_tp) * pos_scale
 
@@ -1623,12 +1626,12 @@ def derive_usd_mjcf(
         if math.isfinite(state_pos):
             default_pos = state_pos * pos_scale
 
-        armature = joint_armature(j_prim)
+        armature = joint_armature(j_prim) * armature_scale
         frictionloss = _custom_float(
             j_prim,
             ("mjc:frictionloss", "newton:friction", "physics:jointFriction"),
             default=0.0,
-        )
+        ) * effort_scale
         actuated = has_drive and (stiffness > 0.0 or damping > 0.0)
         target_range = joint_target_range(j_prim)
         if target_range is not None and stiffness <= 0.0:
@@ -1653,9 +1656,7 @@ def derive_usd_mjcf(
             frictionloss=frictionloss,
             actuated=actuated,
             initial_position=state_pos * pos_scale if math.isfinite(state_pos) else None,
-            passive_damping=_custom_float(j_prim, (JOINT_PASSIVE_DAMPING_ATTR,)) * (
-                180.0 / math.pi if kind == "hinge" else 1.0
-            ),
+            passive_damping=_custom_float(j_prim, (JOINT_PASSIVE_DAMPING_ATTR,)) * gain_scale,
             target_range=target_range,
         )
 
@@ -2036,6 +2037,11 @@ def derive_usd_mjcf(
                     ET.SubElement(actuator_elem, "position", act_attrs)
 
         col_count, col_shapes = _add_body_geoms_and_sites(b_prim, body_elem)
+        if source_units and mass_val is None and (has_authored_com or diag_val is not None):
+            # The importer resets missing mass before applying its density
+            # recipe. Carry the independently authored COM and tensor through
+            # the intermediate model, whose inertial element requires mass.
+            mass_val = 1.0
         if mass_val is not None and diag_val is not None:
             inertial_elem = ET.Element(
                 "inertial",

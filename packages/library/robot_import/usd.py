@@ -62,13 +62,35 @@ def load(source, entry, meters_per_unit=None):
     robot = mjcf.compiled(ET.tostring(xml, encoding="unicode"), entry, usd_colliders=colliders)
     robot.up = str(UsdGeom.GetStageUpAxis(stage))
     body_paths = {name: path for path, name in derived.body_names_by_path.items()}
+    meters, kilograms = units
     for name, body in robot.bodies.items():
-        prim = stage.GetPrimAtPath(body_paths[name])
+        path = body_paths[name]
+        prim = stage.GetPrimAtPath(path)
+        if not prim.HasAPI(UsdPhysics.MassAPI):
+            body.mass = body.center = body.inertia = None
+            continue
         mass = UsdPhysics.MassAPI(prim)
-        if not prim.HasAPI(UsdPhysics.MassAPI) or not mass.GetMassAttr().HasAuthoredValue():
+        weight = mass.GetMassAttr().Get() or 0.
+        if not math.isfinite(weight) or weight < 0:
+            raise invalid("USD mass must be finite and nonnegative", path=path)
+        if weight == 0:
             body.mass = None
-        if not prim.HasAPI(UsdPhysics.MassAPI) or not mass.GetDiagonalInertiaAttr().HasAuthoredValue():
+        center = mass.GetCenterOfMassAttr().Get()
+        if center is None or tuple(center) == (-math.inf,) * 3:
+            if body.mass is None:
+                body.center = None
+        elif not all(math.isfinite(value) for value in center):
+            raise invalid("USD center of mass must be finite", path=path)
+        diagonal = mass.GetDiagonalInertiaAttr().Get()
+        if diagonal is None or tuple(diagonal) == (0., 0., 0.):
             body.inertia = None
+        elif not all(math.isfinite(value) and value > 0 for value in diagonal):
+            raise invalid("USD principal moments must be finite and positive", path=path)
+        density = mass.GetDensityAttr().Get() or 0.
+        if not math.isfinite(density) or density < 0:
+            raise invalid("USD density must be finite and nonnegative", path=path)
+        if density > 0:
+            body.density = density * kilograms / meters**3
     source_joints = {joint.name: joint for joint in derived.joints}
     for joint in robot.joints:
         if joint.name in source_joints:
