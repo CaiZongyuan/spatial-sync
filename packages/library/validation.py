@@ -83,6 +83,9 @@ class StructuralValidator:
             structure = parse_report(self.worker("structural", payload, self.timeout), subject)
             if not include_physics:
                 return structure
+            robot_documents = {"source/robot.json", "calibration.json", "joint-calibration.json"}
+            if kind == "asset" and robot_documents.issubset(payload["package"]["files"]):
+                structure["requiredPhysicsChecks"] = ["P7", "P8"]
             payload |= {"structure": structure, "kernelCache": str(self.state_root / "physics-kernel-cache")}
             physical, _ = physics_availability(payload)
             if physical is None:

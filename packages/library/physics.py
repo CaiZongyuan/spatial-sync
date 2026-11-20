@@ -310,6 +310,11 @@ def availability(payload):
             tools[name] = version(name)
         except PackageNotFoundError:
             missing.append(name)
+    if payload.get("structure", {}).get("requiredPhysicsChecks"):
+        try:
+            tools["mujoco"] = version("mujoco")
+        except PackageNotFoundError:
+            missing.append("mujoco")
     if missing:
         return skipped("Physics tools are not installed: " + ", ".join(missing), missing), {}
     return None, tools
@@ -375,7 +380,12 @@ def validate(payload):
         try:
             # The reference remains the initial state, with no warmup/body
             # exclusion. Cover two seconds using this package's real clock.
-            sim.step(math.ceil(2. / sim.physics_dt - 1e-10))
+            if payload.get("structure", {}).get("requiredPhysicsChecks"):
+                from packages.library.robot_import.settling import measure
+
+                rows.append(measure(payload, sim))
+            else:
+                sim.step(math.ceil(2. / sim.physics_dt - 1e-10))
             if sim.sim_time < 2. - 1e-10 or sim.sim_time >= 2. + sim.physics_dt + 1e-10:
                 raise ValueError("Settling did not cover two simulation seconds")
             final = sim.state.body_q.numpy() if sim.model.body_count else None
@@ -386,6 +396,10 @@ def validate(payload):
             if finite_state(model_state(sim.model, sim.state))["status"] == "fail":
                 rows.append(check("P2", "fail", "Simulation produced non-finite state within two seconds"))
         except Exception as exc:
+            if payload.get("structure", {}).get("requiredPhysicsChecks"):
+                rows.append(check(
+                    "P8", "fail", f"Dual-model settling did not complete ({type(exc).__name__}: {exc})",
+                ))
             rows.append(check("P2", "fail", f"Two-second simulation did not complete ({type(exc).__name__})"))
             rows.append(check("P3", "warn", "Contact separation was not measured: simulation incomplete"))
             return result

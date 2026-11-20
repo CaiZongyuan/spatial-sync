@@ -22,6 +22,8 @@ from pxr import Ar, Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, UsdUtils
 QuatWXYZ = tuple[float, float, float, float]
 Vec3 = tuple[float, float, float]
 JOINT_ARMATURE_ATTR = "newton:armature"
+JOINT_PASSIVE_DAMPING_ATTR = "newton:damping"
+JOINT_TARGET_RANGE_ATTR = "newton:positionTargetRange"
 DEFAULT_FRICTION = (1., .005, .0001)  # Newton 1.7 ModelBuilder.ShapeConfig
 
 _AXIS_VECTORS: dict[str, Vec3] = {
@@ -56,6 +58,8 @@ class DerivedJoint:
     frictionloss: float
     actuated: bool
     initial_position: float | None = None
+    passive_damping: float = 0.
+    target_range: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -609,6 +613,18 @@ def _custom_float(prim: Usd.Prim, names: Sequence[str], default: float = 0.0) ->
 
 def joint_armature(prim, default=0.):
     return _custom_float(prim, (JOINT_ARMATURE_ATTR, "mjc:armature", "physxJoint:armature"), default)
+
+
+def joint_target_range(prim):
+    """Position targets in canonical solver units (radians or meters)."""
+    attribute = prim.GetAttribute(JOINT_TARGET_RANGE_ATTR)
+    if not attribute or not attribute.HasAuthoredValue():
+        return None
+    bounds = attribute.Get()
+    if (attribute.GetTypeName() != Sdf.ValueTypeNames.Double2 or bounds is None
+            or not all(math.isfinite(value) for value in bounds) or not bounds[0] < bounds[1]):
+        raise UnsupportedUsdPhysics(prim.GetPath(), "Invalid joint position control range")
+    return tuple(bounds)
 
 
 def bound_contact_material(prim):
@@ -1249,12 +1265,12 @@ def _check_collision_mesh(prim, cache):
         # An explicit convex hull defines a solid independently of the source face seams.
         if approximation == "convexHull" and _mesh_is_volumetric(vertices):
             return
-        if approximation != "convexHull" and _has_solid_components(vertices, counts, indices):
+        if approximation != "convexHull" and has_solid_components(vertices, counts, indices):
             return
     raise UnsupportedUsdPhysics(prim.GetPath(), "Collision mesh must be watertight and volumetric")
 
 
-def _has_solid_components(vertices, counts, indices):
+def has_solid_components(vertices, counts, indices, *, positive_volume=False):
     edges = {}
     faces = []
     cursor = 0
@@ -1295,7 +1311,8 @@ def _has_solid_components(vertices, counts, indices):
                 for b, c in zip(points[1:-1], points[2:], strict=True):
                     yield Gf.Dot(points[0], Gf.Cross(b, c))
 
-        if abs(math.fsum(signed_tetrahedra())) <= 1e-12:
+        volume = math.fsum(signed_tetrahedra())
+        if (volume if positive_volume else abs(volume)) <= 1e-12:
             return False
     return True
 
@@ -1372,23 +1389,24 @@ def derive_usd_mjcf(
     include_static_colliders: bool = True,
     model_name: str | None = None,
     allow_multiple_roots: bool = False,
+    source_units: bool = False,
 ) -> DerivedArticulation:
     """Derive a deterministic MuJoCo MJCF model and structured metadata from a Z-up USD stage."""
     stage, _pinned_layers = _open_usd_stage(source, asset_packages)
     up_axis = str(UsdGeom.GetStageUpAxis(stage) or "Z").upper()
-    if up_axis != "Z":
+    if not source_units and up_axis != "Z":
         raise ValueError(f"Expected canonical Z-up USD stage, got upAxis={up_axis!r}")
 
     raw_mpu = float(UsdGeom.GetStageMetersPerUnit(stage))
-    if not math.isclose(raw_mpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
+    if not source_units and not math.isclose(raw_mpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError(f"Expected canonical metersPerUnit=1.0 USD stage, got metersPerUnit={raw_mpu!r}")
-    meters_per_unit = 1.0
+    meters_per_unit = raw_mpu if source_units else 1.0
     raw_kpu = float(UsdPhysics.GetStageKilogramsPerUnit(stage) or 1.0)
-    if not math.isclose(raw_kpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
+    if not source_units and not math.isclose(raw_kpu, 1.0, rel_tol=0.0, abs_tol=1e-6):
         raise ValueError(
             f"Expected canonical kilogramsPerUnit=1.0 USD stage, got kilogramsPerUnit={raw_kpu!r}"
         )
-    kg_per_unit = 1.0
+    kg_per_unit = raw_kpu if source_units else 1.0
     xform_cache = UsdGeom.XformCache()
 
     if prim_path is not None:
@@ -1547,7 +1565,8 @@ def derive_usd_mjcf(
 
             drive_type = "angular"
             pos_scale = math.pi / 180.0
-            gain_scale = 180.0 / math.pi
+            effort_scale = kg_per_unit * meters_per_unit**2
+            armature_scale = effort_scale
             kind: Literal["hinge", "slide"] = "hinge"
         elif j_prim.IsA(UsdPhysics.PrismaticJoint):
             pris = UsdPhysics.PrismaticJoint(j_prim)
@@ -1569,11 +1588,13 @@ def derive_usd_mjcf(
 
             drive_type = "linear"
             pos_scale = meters_per_unit
-            gain_scale = 1.0 / meters_per_unit if meters_per_unit > 0 else 1.0
+            effort_scale = kg_per_unit * meters_per_unit
+            armature_scale = kg_per_unit
             kind = "slide"
         else:
             raise ValueError(f"Unsupported USD joint type {j_prim.GetTypeName()} at {j_prim.GetPath()}")
 
+        gain_scale = effort_scale / pos_scale
         stiffness = 0.0
         damping = 0.0
         max_force: float | None = None
@@ -1590,7 +1611,7 @@ def derive_usd_mjcf(
             if raw_kd is not None and math.isfinite(float(raw_kd)):
                 damping = float(raw_kd) * gain_scale
             if raw_mf is not None and math.isfinite(float(raw_mf)) and float(raw_mf) > 0.0:
-                max_force = float(raw_mf)
+                max_force = float(raw_mf) * effort_scale
             if raw_tp is not None and math.isfinite(float(raw_tp)):
                 default_pos = float(raw_tp) * pos_scale
 
@@ -1605,13 +1626,18 @@ def derive_usd_mjcf(
         if math.isfinite(state_pos):
             default_pos = state_pos * pos_scale
 
-        armature = joint_armature(j_prim)
+        armature = joint_armature(j_prim) * armature_scale
         frictionloss = _custom_float(
             j_prim,
             ("mjc:frictionloss", "newton:friction", "physics:jointFriction"),
             default=0.0,
-        )
+        ) * effort_scale
         actuated = has_drive and (stiffness > 0.0 or damping > 0.0)
+        target_range = joint_target_range(j_prim)
+        if target_range is not None and stiffness <= 0.0:
+            raise UnsupportedUsdPhysics(
+                j_prim.GetPath(), "Position control range requires positive stiffness",
+            )
         j_name = _unique_name(j_prim.GetName(), used_joint_names)
         return DerivedJoint(
             name=j_name,
@@ -1630,6 +1656,8 @@ def derive_usd_mjcf(
             frictionloss=frictionloss,
             actuated=actuated,
             initial_position=state_pos * pos_scale if math.isfinite(state_pos) else None,
+            passive_damping=_custom_float(j_prim, (JOINT_PASSIVE_DAMPING_ATTR,)) * gain_scale,
+            target_range=target_range,
         )
 
     def _add_body_geoms_and_sites(
@@ -1983,8 +2011,11 @@ def derive_usd_mjcf(
                 if j_spec.max_force is not None:
                     j_attrs["actuatorfrclimited"] = "true"
                     j_attrs["actuatorfrcrange"] = _fmt((-j_spec.max_force, j_spec.max_force))
-                if not j_spec.actuated and j_spec.damping > 0.0:
-                    j_attrs["damping"] = _fmt_scalar(j_spec.damping)
+                passive_damping = j_spec.passive_damping
+                if not j_spec.actuated:
+                    passive_damping += j_spec.damping
+                if passive_damping > 0.0:
+                    j_attrs["damping"] = _fmt_scalar(passive_damping)
                 ET.SubElement(body_elem, "joint", j_attrs)
 
                 if j_spec.actuated:
@@ -1996,6 +2027,8 @@ def derive_usd_mjcf(
                         "ctrllimited": "false",
                         "inheritrange": "0",
                     }
+                    if j_spec.target_range is not None:
+                        act_attrs.update(ctrllimited="true", ctrlrange=_fmt(j_spec.target_range))
                     if j_spec.max_force is not None:
                         act_attrs["forcelimited"] = "true"
                         act_attrs["forcerange"] = _fmt((-j_spec.max_force, j_spec.max_force))
@@ -2004,6 +2037,11 @@ def derive_usd_mjcf(
                     ET.SubElement(actuator_elem, "position", act_attrs)
 
         col_count, col_shapes = _add_body_geoms_and_sites(b_prim, body_elem)
+        if source_units and mass_val is None and (has_authored_com or diag_val is not None):
+            # The importer resets missing mass before applying its density
+            # recipe. Carry the independently authored COM and tensor through
+            # the intermediate model, whose inertial element requires mass.
+            mass_val = 1.0
         if mass_val is not None and diag_val is not None:
             inertial_elem = ET.Element(
                 "inertial",

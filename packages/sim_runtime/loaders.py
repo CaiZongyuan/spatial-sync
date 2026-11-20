@@ -23,7 +23,12 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
     from newton.usd import SchemaResolverMjc, SchemaResolverNewton, SchemaResolverPhysx
     from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
-    from apps.node.usd_mjcf import bound_contact_material, filtered_collider_pairs, joint_armature
+    from apps.node.usd_mjcf import (
+        bound_contact_material,
+        filtered_collider_pairs,
+        joint_armature,
+        joint_target_range,
+    )
 
     from .usd_articulations import root_import
 
@@ -56,11 +61,29 @@ def import_usd(builder, path, *, root_path="/", xform=None, hide_collision_shape
         for prim_path, index in paths[f"path_{kind}_map"].items():
             labels[index] = str(prim_path)
     for joint_path, index in paths["path_joint_map"].items():
+        prim = stage.GetPrimAtPath(joint_path)
+        joint = UsdPhysics.Joint(prim)
+        if joint and joint.GetCollisionEnabledAttr().Get() and joint.GetBody0Rel().GetForwardedTargets():
+            builder.spatial_authored_parent_contacts = True
         if builder.joint_type[index] in (newton.JointType.REVOLUTE, newton.JointType.PRISMATIC):
             dof = builder.joint_qd_start[index]
             builder.joint_armature[dof] = joint_armature(
-                stage.GetPrimAtPath(joint_path), builder.joint_armature[dof]
+                prim, builder.joint_armature[dof]
             )
+            if (bounds := joint_target_range(prim)) is not None:
+                if "mujoco:actuator_ctrlrange" not in builder.custom_attributes:
+                    raise ValueError(f"Position control range requires the MuJoCo solver at {joint_path}")
+                from newton.solvers import SolverMuJoCo
+
+                builder.add_custom_values(**{
+                    "mujoco:actuator_trnid": (dof, -1),
+                    "mujoco:actuator_trntype": int(SolverMuJoCo.TrnType.JOINT),
+                    "mujoco:ctrl_source": int(SolverMuJoCo.CtrlSource.JOINT_TARGET),
+                    "mujoco:ctrl_type": int(SolverMuJoCo.CtrlType.POSITION),
+                    "mujoco:actuator_has_ctrlrange": 1,
+                    "mujoco:actuator_ctrllimited": 1,
+                    "mujoco:actuator_ctrlrange": bounds,
+                })
 
     # The native reader covers individual bodies and shapes. Include authored
     # filters with containing scopes as endpoints once real shape IDs are known.

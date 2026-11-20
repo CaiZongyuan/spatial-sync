@@ -149,6 +149,70 @@ dressing: false                          # true：整个素材只作布景
 - 一个素材可以实现多个类型，但一个场景实体只绑定一个。
 - `environment` 类素材通常 `dressing: true`，比如房间外壳、百叶窗。
 
+### 5.5 外部机器人导入与标定
+
+在本地目录放置 `robot.json`、入口和其包内依赖，以及原始许可证。运行
+`lw asset import ./robot-source --json`。HTTP 客户端可以向
+`POST /api/v1/library/imports` 上传裸 tar（`application/x-tar`）或 tar.gz（`application/gzip`）。
+上传上限为 128 MiB，解包文件合计上限为 256 MiB，最多 4096 个归档条目。
+
+```json
+{
+  "schema": "lw.robot-import/1",
+  "id": "robot/example",
+  "title": "Example robot",
+  "entry": "robot.urdf",
+  "license": "LICENSE",
+  "licenseId": "Apache-2.0",
+  "upstream": "https://example.org/robot",
+  "revision": "v1.0",
+  "packages": {"example_description": "description"},
+  "calibration": {
+    "upAxis": "Z",
+    "density": 1000,
+    "friction": 0.6,
+    "joints": {"knee": {"kp": 25, "kv": 1, "armature": 0.003}}
+  }
+}
+```
+
+- 入口支持已展开的 URDF、刚性 MJCF 和非打包 USD。归档内路径按准确大小写解析。
+  `packages` 声明 URDF `package://` 可用的归档目录。MJCF 在展开包内 include 后从入口文件目录
+  解析全局 `meshdir` 和 `texturedir`，允许在归档根内规范化 `..`。
+  基本体及受支持的 STL、OBJ、PLY 网格生成可浏览的 GLB。OBJ 附带 MTL、需要纹理的机器人视觉、
+  闭链、球关节、mimic 和无法用连杆对表达的混合碰撞掩码会得到结构化诊断。
+  对单个单位传动位置驱动，MJCF 的执行器与关节对称力范围交集写入 USD `maxForce`。
+  生效的 MJCF 位置控制范围按同一关节符号及零位映射，写入 `newton:positionTargetRange`，
+  旋转关节用 rad，移动关节用 m。该范围要求正的驱动刚度，由两侧 MuJoCo 位置执行器夹紧。
+  URDF 和 MJCF 的线性关节被动阻尼写入 Newton 识别的 `newton:damping`，
+  与 USD DriveAPI 的阻尼分开施加。
+  有效的关节弹簧和禁用源阻尼或执行器的配置会得到定位诊断。MJCF 的惯量若由几何计算，
+  未声明质量或密度的碰撞体使用标定密度，来源记录列出估算惯量的刚体。
+  MJCF 机器人导入支持滑动摩擦。参与接触的几何须使用 `condim=3` 和 `priority=0`，
+  接触边距、间隙、`solref`、`solimp` 和 `solmix` 使用 MuJoCo 默认值。启用全局接触覆盖会得到定位诊断。
+  USD 按碰撞体、刚体、绑定物理材质、配方的顺序选用密度，保留各项显式刚体惯性属性。
+  刚体只声明主轴时，使用 OpenUSD 推导的主惯量顺序和声明的主轴。
+  独立碰撞体的质量、质心或惯量属性若参与推导，会在对应 Prim Path 返回诊断。
+  箱、球、圆柱和胶囊按解析体积与惯量推导缺失字段。封闭实体网格及显式凸包按其实际网格积分。
+- `rpyDegrees` 是绕固定 X、Y、Z 轴的旋转，`translationM` 是规范平移。
+  `metersPerUnit` 用于纠正源长度单位，`scale` 修正机器人几何尺寸并以恒定密度缩放质量和惯量。
+  移动关节的源行程和零位以换算后的米表示。可用 `fixedBase` 声明固定安装，
+  用 `standingKey` 选择 MJCF 的站姿。配方中的 `defaultPosition` 采用规范关节的 rad 或 m。
+  `excludePairs` 使用源连杆名，`sites` 使用源连杆名和局部米制位姿，
+  `implements` 沿用 Asset Binding Template 和规范局部 Prim Path。
+- `lw asset calibrate robot/example@1 recipe.json --json` 用保留的原始源和完整配方烘焙新版本。
+  MCP 的 `library_calibrate` 使用同一精确版本和客户端配方路径。
+  HTTP 入口为 `POST /api/v1/library/assets/robot/example/1/calibrate`，请求正文为配方 JSON。
+  发布包保留源字节、原始许可证、来源哈希、配方与基础 Asset 版本固定信息。
+- `joint-calibration.json` 随精确 Asset 版本发布。位置满足
+  `canonical = sign × source + zeroOffset`，速度应用同一符号。
+  逆向位置为 `source = sign × (canonical − zeroOffset)`。
+  配方全局刚性变换使用行优先 4×4 矩阵。
+- 导入自动执行 P7。P8 记录 Newton 和派生 MuJoCo 两秒重力静置后的基座高度、
+  倾角、自碰撞穿透和关节越界。可通过 `lw asset validate robot/example@1 --json`
+  在安装物理扩展的环境复测。缺少扩展时，验证报告标记跳过，导入的版本可供检查。
+  MJCF 和 USD 的导入编译本身需要 MuJoCo。
+
 ## 6. 场景包
 
 ### 6.1 内容

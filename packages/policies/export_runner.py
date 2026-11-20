@@ -105,10 +105,12 @@ def inference(directory, samples):
             delta = np.clip(delta, -limit, limit)
         targets = np.clip(current + delta, action["lower"], action["upper"])
         for index, channel in enumerate(physical):
-            low, high = channel["physicalLimits"]
-            targets[index] = np.clip(
-                targets[index], -np.inf if low is None else low, np.inf if high is None else high
-            )
+            for bounds in (channel["physicalLimits"], channel.get("controlRange")):
+                if bounds is not None:
+                    low, high = bounds
+                    targets[index] = np.clip(
+                        targets[index], -np.inf if low is None else low, np.inf if high is None else high
+                    )
         source_targets = (
             {
                 mapping["sourceName"]: (float(target) - mapping["zeroOffset"]) * mapping["sign"]

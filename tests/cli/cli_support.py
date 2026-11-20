@@ -58,6 +58,7 @@ TOOLS = {
     "library_describe",
     "library_import",
     "library_validate",
+    "library_calibrate",
     "library_remove",
     "scene_launch", "scene_draft_submit", "scene_draft_show", "scene_draft_publish",
     "alerts_list",

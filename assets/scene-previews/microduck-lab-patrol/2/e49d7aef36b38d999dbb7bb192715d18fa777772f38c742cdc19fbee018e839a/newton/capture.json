@@ -19,7 +19,7 @@
     }
   ],
   "source": "newton",
-  "capturedAt": "2026-11-20T04:35:07.364316+00:00",
+  "capturedAt": "2026-11-20T05:39:49.383866+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -43,7 +43,7 @@
     },
     {
       "path": "apps/node/usd_mjcf.py",
-      "sha256": "daf6276bcc02485bc0781993ffe4c9bca6bb59ec158ac449fc93e02f1b59deea"
+      "sha256": "6e6c8ecd7dbd1bd69e83539998d1cce7610f0a3817c2e7206cfac05924a6c825"
     },
     {
       "path": "assets/registry.yaml",
@@ -287,7 +287,7 @@
     },
     {
       "path": "packages/library/archive.py",
-      "sha256": "a4fbe2023cb623821cd667d59154b3ff3031baf6497f22ca852fcdfc8a768dcf"
+      "sha256": "429c6a366cdbebbfb614dd8261f800d9402aae319ea0a0b48666315f027ab5de"
     },
     {
       "path": "packages/library/assets.py",
@@ -327,7 +327,7 @@
     },
     {
       "path": "packages/library/reports.py",
-      "sha256": "a43f9659f8474a45b7a678399760742183a9106f5b71b7ec3d643d2c7aadeeab"
+      "sha256": "d8f64d624f61a14bebe610a1fd551af995372e4cc0771f88c696f004c590b68b"
     },
     {
       "path": "packages/library/scenes.py",
@@ -519,11 +519,11 @@
     },
     {
       "path": "packages/sim_runtime/loaders.py",
-      "sha256": "71c0deed5d73db10ac4783d7b5b55bea480f60e68a1cc78a7bc7255508cbc0b3"
+      "sha256": "68c9e458450256fd5abf71041f5aee5d08a0caac43dace07c96f49b89af7bd53"
     },
     {
       "path": "packages/sim_runtime/manifest_export.py",
-      "sha256": "90426a9d331412fca70ac3b9e1b5b08e8ee56acc1e33066601eda5401f5eebed"
+      "sha256": "afaeb209efd6236c7dabdb64466fa203fea9fa0dc665c0ab0dde8f623af3773e"
     },
     {
       "path": "packages/sim_runtime/mesh_assets.py",
@@ -551,7 +551,7 @@
     },
     {
       "path": "packages/sim_runtime/simulation.py",
-      "sha256": "147e5d4903c34a3e8a134b5c61ac03c6a57aa58b26a3922b02654552b47fe124"
+      "sha256": "07840e3efa0e6b0ffc72cbb689a195977a0d1e5a982efdc00fcbde715dc71a04"
     },
     {
       "path": "packages/sim_runtime/sites.py",
@@ -599,7 +599,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "36a5ef21cceee821461647e2525a347d5c761023ece5e81070af0e54c9712daf"
+      "sha256": "8272998f927aee9b3301c3d4aa80e3ef6e0e5b8642a0af9d0438a518d094b9d3"
     }
   ],
   "documents": {
@@ -609,10 +609,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "c5961c01da67daafb605086e4a3b45608282622e728d7eb5fe945809040c0905",
-    "catalog.json": "099be818ff1d1bbb5915630e5d72180706937b252462f47efa53771f246cfc50",
-    "state.json": "b76fbe099a3a278506c40b27b202b8e05b1a8b89931dfeb2e07897c559f0e8ea",
-    "snapshot.bin": "866eaf18bc80318756fb8729f85b4077b98a9671f8818a950081fba5effd39f7",
+    "manifest.json": "d9f5b738705edad10c73de4ecfb939139d9a081c63ee7e250de94b32fdf1aebc",
+    "catalog.json": "1ca7567727e714226ec9753c0fbc6b07b7a6dcd4a41dc8ab3058e05879a8b81e",
+    "state.json": "0da36cf54fb4fd8244b0a18de819edfe3ead6a4de836e76964775789de664190",
+    "snapshot.bin": "4753c78952b676078348d21f1ce9cf05766891020f6d3fc4440d4d22e72f8a6f",
     "assets/sha256-b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623.glb": "b95cef9b100d4fe6551d068e397646f09c5887bb38db52742bad9d81876a8623",
     "assets/sha256-4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb.glb": "4f95d7916a7e8620ac698190829bfbc40747860bc7f78f357739a48acc6607fb",
     "assets/sha256-4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399.glb": "4fcb29f23c94d030f948e2e41aaedf383dff06be4390939ab9bd5a0a5635f399",

@@ -1,5 +1,6 @@
 """Installed CLI and official MCP upload the same bytes through generic library tools."""
 
+import asyncio
 import json
 import os
 import subprocess
@@ -7,6 +8,45 @@ import subprocess
 import httpx
 from cli_support import LW, ROOT, TOOLS, result
 from mcp import Client, StdioServerParameters
+
+
+async def test_mcp_asset_calibration_pins_existing_version(gateway_url, tmp_path):
+    directory = tmp_path / "robot"
+    directory.mkdir()
+    (directory / "robot.json").write_text(json.dumps({
+        "id": "robot/mcp-calibration", "title": "MCP calibrated robot", "entry": "robot.urdf",
+        "license": "LICENSE", "licenseId": "CC0-1.0",
+    }))
+    (directory / "LICENSE").write_text("CC0-1.0 test fixture")
+    (directory / "robot.urdf").write_text(
+        '<robot name="probe"><link name="base"><collision><geometry><box size=".2 .2 .2"/>'
+        '</geometry></collision></link><link name="tip"><collision><geometry>'
+        '<sphere radius=".05"/></geometry></collision></link>'
+        '<joint name="hinge" type="revolute"><parent link="base"/><child link="tip"/>'
+        '<origin xyz=".4 0 0"/><axis xyz="0 0 1"/><limit lower="-1" upper="1" effort="3"/>'
+        '</joint></robot>'
+    )
+    recipe = tmp_path / "recipe.json"
+    recipe.write_text(json.dumps({"friction": .7, "joints": {"hinge": {"zeroOffset": .2}}}))
+    environment = os.environ | {"LW_URL": gateway_url, "PYTHONIOENCODING": "utf-8"}
+    server = StdioServerParameters(command=str(LW), args=["mcp"], env=environment)
+    async with Client(server, mode="legacy") as mcp:
+        async def call(name, arguments):
+            response = await asyncio.wait_for(mcp.call_tool(name, arguments), 120)
+            assert not response.is_error, response.content
+            return response.structured_content
+
+        first = await call("library_import", {"directory": str(directory)})
+        second = await call("library_calibrate", {"id": first["assetVersion"], "recipe": str(recipe)})
+        assert second["assetVersion"] == "robot/mcp-calibration@2"
+    with httpx.Client(base_url=gateway_url, trust_env=False) as http:
+        original = http.get("/api/v1/library/assets/robot/mcp-calibration/1").json()
+        revised = http.get("/api/v1/library/assets/robot/mcp-calibration/2").json()
+        assert original["contentHash"] == first["contentHash"]
+        provenance = http.get(revised["files"]["provenance.json"]).json()
+        assert provenance["calibratedFrom"] == {
+            "id": first["assetVersion"], "contentHash": first["contentHash"],
+        }
 
 
 async def test_asset_cli_mcp_upload_filters_description_and_export_dedup(gateway_url, tmp_path):

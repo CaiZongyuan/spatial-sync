@@ -66,13 +66,15 @@ def _physical(scene, task, action):
             armature=joint.armature,
             physicalLimits=[joint.lower, joint.upper] if joint.limited else [None, None],
         )
+        if joint.target_range is not None:
+            channel["controlRange"] = list(joint.target_range)
     from packages.sim_runtime.usd_settings import authored_settings
 
     dt, _ = authored_settings(stage)
     dt = (scene.metadata.get("simulation") or {}).get("physicsDt", dt)
     asset = scene_robot_asset(scene, task["robot"], stage, graph)
     coordinates_match = False
-    if asset and controls_match and "joint-calibration.json" not in asset["files"]:
+    if asset and controls_match:
         coordinates_match = _asset_coordinates_match(stage, task["robot"], graph, asset)
     return channels, dt, asset, coordinates_match
 
@@ -112,10 +114,7 @@ def _asset_coordinates_match(stage, robot, graph, asset):
     # Compare in the asset frame so the Scene may translate and rotate the robot.
     scene_to_asset = placement.GetInverse()
     source_to_asset = poses.GetLocalToWorldTransform(source_prim).GetInverse()
-    joint_coordinates = (
-        "physics:axis", "physics:jointEnabled",
-        "physics:localPos0", "physics:localPos1", "physics:localRot0", "physics:localRot1",
-    )
+    joint_coordinates = ("physics:axis", "physics:jointEnabled", "physics:localPos0", "physics:localPos1")
     for expected in Usd.PrimRange(source_prim, Usd.TraverseInstanceProxies()):
         if expected.IsA(UsdPhysics.Joint):
             actual = stage.GetPrimAtPath(expected.GetPath().ReplacePrefix(source_root, scene_root))
@@ -124,6 +123,11 @@ def _asset_coordinates_match(stage, robot, graph, asset):
             if any(actual.GetAttribute(key).Get() != expected.GetAttribute(key).Get()
                    for key in joint_coordinates if expected.HasAttribute(key)):
                 return False
+            for key in ("physics:localRot0", "physics:localRot1"):
+                rotation = expected.GetAttribute(key).Get()
+                options = (rotation, -rotation) if rotation is not None else (None,)
+                if actual.GetAttribute(key).Get() not in options:
+                    return False
             for key in ("physics:body0", "physics:body1"):
                 targets = expected.GetRelationship(key).GetForwardedTargets()
                 mapped = [target.ReplacePrefix(source_root, scene_root) for target in targets]
@@ -213,6 +217,9 @@ def _source_calibration(manager, scene, asset, task, action, coordinates_match, 
     explicit = asset and "joint-calibration.json" in asset["files"]
     record = {}
     if explicit:
+        if not coordinates_match:
+            reason = "Policy Scene coordinates differ from the calibrated Asset"
+            return unavailable | {"reason": reason}, asset
         path = Path(asset["files"]["joint-calibration.json"])
         calibration = JointCalibration.model_validate_json(path.read_bytes())
         namespace = ""
@@ -370,6 +377,7 @@ def policy_export(manager, identifier):
                 "maxDelta-from-measured",
                 "declared-limits",
                 "physical-limits",
+                *(["solver-control-range"] if any("controlRange" in channel for channel in channels) else []),
                 "source-joint-transform",
             ],
             "control": {

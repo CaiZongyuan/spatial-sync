@@ -381,6 +381,18 @@ def install_library_routes(
         version = assets.resolve(f"{kind}/{name}@{rev}")
         return await anyio.to_thread.run_sync(validator.revalidate, version, "asset", assets)
 
+    @app.post("/api/v1/library/assets/robot/{name}/{rev}/calibrate")
+    async def calibrate_robot(name: str, rev: int, request: Request):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
+        recipe = bytearray()
+        async for chunk in request.stream():
+            if len(recipe) + len(chunk) > 1024 * 1024:
+                raise invalid("Calibration recipe exceeds 1 MiB", path="calibration")
+            recipe.extend(chunk)
+        importer = LibraryImports(assets, scenes(), validator)
+        return await anyio.to_thread.run_sync(importer.calibrate_robot, f"robot/{name}@{rev}", bytes(recipe))
+
     @app.post("/api/v1/library/scenes/{name}/{rev}/preview")
     async def capture_scene_preview_route(
         name: str, rev: str, request: Request, source: Literal["synthetic", "newton"] | None = None
@@ -432,10 +444,11 @@ def install_library_routes(
     async def import_package(request: Request):
         if request.headers.get("content-type", "").split(";", 1)[0] not in (
             "application/x-tar",
+            "application/gzip",
             "application/octet-stream",
         ):
             raise invalid(
-                "Upload tar bytes with Content-Type: application/x-tar; host paths are not accepted"
+                "Upload archive bytes with Content-Type: application/x-tar or application/gzip"
             )
         size = 0
         with tempfile.TemporaryFile() as stream:

@@ -106,6 +106,17 @@ def test_import_revision_dedup_restart_full_hash_and_indexed_files(tmp_path):
         )
 
 
+def test_legacy_asset_manifest_preserves_robot_json_attachment():
+    attachment = b'{"controller": "vendor-experimental"}\n'
+    files = package_files() | {"robot.json": attachment}
+    with TestClient(create_app()) as client:
+        result = upload(client, files)
+        assert result.status_code == 200, result.text
+        assert result.json()["assetVersion"] == "labware/test-tube@1"
+        detail = client.get("/api/v1/library/assets/labware/test-tube/1").json()
+        assert client.get(detail["files"]["robot.json"]).content == attachment
+
+
 @pytest.mark.parametrize(
     "metadata",
     [

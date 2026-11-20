@@ -1317,6 +1317,17 @@ COMMANDS = (
         actor=True,
     ),
     Command(
+        path=("asset", "calibrate"),
+        help="Bake a JSON recipe from the retained source of an exact robot Asset.",
+        method="robot_calibrate",
+        arguments=(
+            Argument("id", ("robot/name@rev",), str, "Exact robot Asset version"),
+            Argument("recipe", ("recipe.json",), str, "Complete local calibration recipe"),
+        ),
+        mcp_name="library_calibrate",
+        actor=True,
+    ),
+    Command(
         path=("asset", "validate"),
         help="Recheck an exact immutable asset version and append a new validation report.",
         method="library_validate",

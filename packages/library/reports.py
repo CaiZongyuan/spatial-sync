@@ -110,7 +110,7 @@ class ValidationReport(BaseModel):
         return self
 
 
-PHYSICS_CHECKS = frozenset(f"P{i}" for i in range(1, 8))
+PHYSICS_CHECKS = frozenset(f"P{i}" for i in range(1, 9))
 
 
 def parse_report(value, subject=None):
@@ -267,9 +267,15 @@ def merge_physics(structure, result, retained=None):
         report["toolVersions"] = report.get("toolVersions", {}) | layer.get("toolVersions", {})
     report["physics"] = layer
     report["checks"] = [item for item in report["checks"] if item["tier"] != "physics"] + checks
-    report["launchable"] = report["launchable"] and not any(
-        item["status"] == "fail" for item in report["checks"]
-    )
+    no_failures = not any(item["status"] == "fail" for item in report["checks"])
+    required = report.get("requiredPhysicsChecks")
+    if required:
+        measured = {item["id"] for item in checks if item["status"] == "pass"}
+        measured.update(item["id"] for item in checks if
+                        item["id"] == "P8" and "measurements" in item and item["status"] == "warn")
+        report["launchable"] = no_failures and set(required).issubset(measured)
+    else:
+        report["launchable"] = report["launchable"] and no_failures
     report["inspection"] = (
         "Recorded structure and Newton CPU physics checks" if layer["status"] == "completed"
         else "Recorded structure; physics was skipped: " + layer["reason"]
