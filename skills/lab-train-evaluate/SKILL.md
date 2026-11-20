@@ -39,6 +39,26 @@ description: "Run and monitor approved training, analyze failures, evaluate exac
    lw tensorboard --json
    ```
 
+   A suspended Job with a durable Checkpoint can resume on a compatible Node.
+   Check the latest Job, its lease attempts, and any over-budget request first.
+   Finalize using the precise Checkpoint identity when a Policy export needs the
+   artifacts from that checkpoint.
+
+   ```text
+   lw node show <compute-node-id> --json
+   lw job resume <suspended-job-id> --node <compute-node-id> --json
+   lw job start <plan-id> --revision 1 --kind checkpoint_finalize --checkpoint <job-id/sha256> --json
+   ```
+
+   For a new authorized Node in remote gateway mode, issue a one-time registration
+   code and hand it to its owner for Runner setup. Confirm the Node's capabilities
+   from its actual heartbeat before dispatch.
+
+   ```text
+   lw node issue --node-id <compute-node-id> --json
+   lw node show <compute-node-id> --json
+   ```
+
    If logs/metrics establish OOM, nonfinite/divergent optimization or a mismatch
    with the approved runtime, cancel this Job and retain the actual reason:
 
@@ -110,3 +130,10 @@ description: "Run and monitor approved training, analyze failures, evaluate exac
    remaining gaps and next permitted action. A published Controller applies to new
    Sessions through its derived Scene; an already active Session retains its loaded
    identity. Report genuine training/contact quality only when actual evidence proves it.
+
+   Export the required immutable Policy through the CLI and inspect its manifest,
+   inference contract and provenance. Report the ZIP path and exact Policy version.
+
+   ```text
+   lw policy export <policy/name@revision> <output.zip> --json
+   ```

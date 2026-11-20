@@ -39,7 +39,7 @@ function AssetDetails() {
       <section className="asset-panel"><header><h2>预览</h2></header><figure className="asset-detail-figure"><div className="asset-detail-model">{hasViewport ? <Suspense fallback={null}><AssetModelViewport key={asset.contentHash} url={asset.visualUrl} fallbackVisuals={asset.fallbackVisuals} /></Suspense> : asset.thumbnailUrl ? <AssetImage url={asset.thumbnailUrl} label={`${asset.id} 的素材预览`} /> : <div className="asset-empty">此素材没有视觉文件</div>}</div><figcaption className="asset-figure-caption"><b>{asset.files['source/robot.json'] ? '静态 Asset 模型' : '图 1'}</b><code>{asset.id}</code>{!asset.visualUrl && asset.fallbackVisuals?.length ? <span className="asset-small-note">回退几何 · 未提供 PBR 视觉文件</span> : null}</figcaption></figure>
         <RobotSettlingComparison asset={asset} />
       </section>
-      {asset.kind === 'robot' && <Suspense fallback={null}><ReferenceMotionPreview key={asset.contentHash} asset={asset.id} contentHash={asset.contentHash} /></Suspense>}
+      {asset.kind === 'robot' && <Suspense fallback={null}><ReferenceMotionPreview key={`${asset.id}:${asset.contentHash}`} asset={asset.id} contentHash={asset.contentHash} /></Suspense>}
       <section className="asset-panel"><header><h2>完整度清单</h2><span className="asset-small-note">{asset.gapCount} 缺口 / 警告</span></header><div className="asset-panel-body"><AssetCompleteness asset={asset} /><p className="asset-small-note">{asset.validationCoverage}</p></div></section>
       <AssetBindings asset={asset} />
       <section className="asset-panel"><header><h2>验证报告</h2><ValidationStatus status={asset.validationStatus} /></header><ValidationReport report={asset.validation} /></section>

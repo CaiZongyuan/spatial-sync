@@ -242,3 +242,132 @@ remoteTest('viewer reads node and robot resources with operator actions withheld
   expect((await http.post('/api/v1/nodes/registrations', { headers: viewer, data: {} })).status()).toBe(403);
   expect((await http.get('/api/v1/policies/microduck-walk-to/1/export', { headers: viewer })).status()).toBe(403);
 });
+
+remoteTest('video drop binds a CPU result and reviewed ghost to one robot revision', async ({ remote }, info) => {
+  const { http, web, operator, viewer, open } = remote;
+  const output = info.outputPath('source.mp4');
+  await promisify(execFile)('ffmpeg', ['-v', 'error', '-threads', '1', '-f', 'lavfi', '-i', 'color=s=64x64:r=2',
+    '-t', '2', '-c:v', 'libx264', '-threads', '1', output], { timeout: 10_000 });
+  const video = await readFile(output);
+  const nodeId = 'browser-pose';
+  const issued = await http.post('/api/v1/nodes/registrations', { headers: operator, data: { nodeId } });
+  expect(issued.status()).toBe(201);
+  const joined = await http.post('/api/v1/nodes/register', { data: { code: (await issued.json()).code } });
+  expect(joined.status()).toBe(201);
+  const node = { 'X-Node-Id': nodeId, 'X-Node-Instance': 'pose-browser-fixture', 'X-Node-Token': (await joined.json()).token };
+  const beat = (reports: object[] = []) => http.post(`/api/v1/nodes/${nodeId}/heartbeat`, { headers: node, data: {
+    instanceId: node['X-Node-Instance'], hardware: 'Synthetic browser pose fixture', cpuAvailable: true,
+    gpus: [], poseRuntime: 'mediapipe-pose-landmarker-lite/1', reports,
+  } });
+  const asset = await (await http.get('/api/v1/library/assets/robot/microduck/1', { headers: operator })).json();
+
+  const page = await open(operator);
+  await page.goto(`${web}/assets/robot/microduck/1`);
+  await page.getByText('视频提取与重定向', { exact: true }).click();
+  const transfer = await page.evaluateHandle(bytes => {
+    const files = new DataTransfer();
+    files.items.add(new File([new Uint8Array(bytes)], 'source.mp4', { type: 'video/mp4' }));
+    return files;
+  }, [...video]);
+  await page.getByRole('group', { name: '上传动作视频' }).dispatchEvent('drop', { dataTransfer: transfer });
+  await page.getByLabel('视频许可证').fill('CC0-1.0');
+  await page.getByLabel('署名', { exact: true }).fill('Synthetic browser fixture');
+  const awaitingVideo = page.waitForResponse(reply => reply.request().method() === 'POST'
+    && new URL(reply.url()).pathname === '/api/v1/library/motion-videos');
+  await page.getByRole('button', { name: '上传视频' }).click();
+  const uploaded = await awaitingVideo;
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+  const source = await uploaded.json();
+  const awaitingJob = page.waitForResponse(reply => reply.request().method() === 'POST'
+    && new URL(reply.url()).pathname === '/api/v1/jobs');
+  await page.getByRole('button', { name: '提交 CPU 提取' }).click();
+  const queued = await awaitingJob;
+  expect(queued.status(), await queued.text()).toBe(202);
+  const job = await queued.json();
+  expect(job).toMatchObject({ motionVideo: source.id, executionDevice: 'cpu', status: 'queued' });
+  const dispatch = await beat();
+  expect(dispatch.ok(), await dispatch.text()).toBe(true);
+  const [assignment] = (await dispatch.json()).assignments;
+  expect(assignment).toMatchObject({ jobId: job.jobId, resourceId: 'cpu', timeoutSeconds: 180 });
+  const status = { jobId: job.jobId, leaseId: assignment.leaseId };
+  expect((await beat([{ ...status, status: 'running' }])).status()).toBe(200);
+  await expect(page.getByText(/CPU 提取中.*browser-pose/)).toBeVisible();
+
+  // Deterministic CPU Node wire fixture. The live Gateway validates the video lease and publishes the clip.
+  const pose = (index: number) => Array.from({ length: 16 }, (_, joint) => ({
+    position: ({ 6: [0, .1, .8], 7: [0, -.1, .8], 8: [0, .1, .4], 9: [0, -.1, .4],
+      10: [.08 * index, .1, .05], 11: [.08 * index, -.1, .05] } as Record<number, number[]>)[joint]
+      ?? [joint / 100, 0, .1],
+    inFrame: true, visibility: .9,
+  }));
+  const published = await http.post(`/api/v1/jobs/${job.jobId}/artifacts`, {
+    headers: { ...node, 'X-Lease-Id': assignment.leaseId },
+    data: {
+      sourceSha256: source.sha256,
+      modelSha256: '59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a',
+      frames: source.frameTimes.map((timeSeconds: number, index: number) => ({ timeSeconds, poses: [pose(index)] })),
+    },
+  });
+  expect(published.ok(), await published.text()).toBe(true);
+  const { motionClip } = await published.json();
+  expect((await beat([{ ...status, status: 'succeeded' }])).status()).toBe(200);
+  await expect(page.getByText(motionClip.id, { exact: true })).toBeVisible();
+  const mapping = {
+    pelvis: '/Asset/trunk_base', trunk: '/Asset/trunk_base', head: '/Asset/jaw_soft',
+    leftFoot: '/Asset/ankle_left/left_foot', rightFoot: '/Asset/ankle_right/right_foot',
+    bends: {
+      leftLeg: { joint: '/Asset/joints/left_knee', gain: .1 },
+      rightLeg: { joint: '/Asset/joints/right_knee', gain: -.1 },
+    },
+    auxiliaryJoints: ['left', 'right'].flatMap(side =>
+      ['hip_yaw', 'hip_roll', 'hip_pitch', 'ankle'].map(joint => `/Asset/joints/${side}_${joint}`)),
+  };
+  await page.getByLabel('肢体映射 JSON').fill(JSON.stringify(mapping));
+  const awaitingReference = page.waitForResponse(reply => reply.request().method() === 'POST'
+    && new URL(reply.url()).pathname === '/api/v1/library/reference-motions');
+  await page.getByRole('button', { name: '生成参考动作' }).click();
+  const fitted = await awaitingReference;
+  expect(fitted.status(), await fitted.text()).toBe(201);
+  const reference = await fitted.json();
+  expect(reference.motion).toMatchObject({ asset: asset.id, assetContentHash: asset.contentHash });
+  expect(reference.source).toMatchObject({ clip: { id: motionClip.id, sha256: motionClip.sha256 }, video: { id: source.id } });
+  await expect(page.getByLabel('参考动作版本')).toHaveValue(reference.id);
+  await expect(page.getByLabel('参考动作三维运动学预览').locator('canvas')).toBeVisible();
+  const phase = page.getByRole('slider', { name: '相位时间' });
+  await phase.press('End');
+  await expect(phase).toHaveValue(String(reference.ghost.samples.at(-1).time));
+  await page.getByText('从参考动作创建 Task', { exact: true }).click();
+  const submit = page.getByRole('button', { name: '创建固定版本 Task' });
+  await expect(submit).toBeDisabled();
+  const root = resolve('../..'), python = process.env.SPATIAL_PYTHON ?? resolve(root, '.venv/bin/python');
+  const { stdout } = await promisify(execFile)(python, ['-c', [
+    'import json, sys',
+    'from tests.gateway.test_reference_motion import imitation_request',
+    'print(json.dumps(imitation_request({"id": sys.argv[1], "sha256": sys.argv[2]})))',
+  ].join('\n'), reference.id, reference.sha256], { cwd: root });
+  const taskInput = JSON.parse(stdout);
+  taskInput.reference = { id: 'reference-motion/' + '0'.repeat(64) + '@1', sha256: '0'.repeat(64) };
+  await page.getByLabel('Task 和观测 JSON').setInputFiles({
+    name: 'imitation-task.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(taskInput)),
+  });
+  await expect(submit).toBeDisabled();
+  await page.getByLabel('已检查此版本的动作预览').check();
+  const awaitingTask = page.waitForResponse(reply => reply.request().method() === 'POST'
+    && new URL(reply.url()).pathname === '/api/v1/tasks/reference-motion');
+  await submit.click();
+  const assembled = await awaitingTask;
+  expect(assembled.status(), await assembled.text()).toBe(201);
+  const task = await assembled.json();
+  expect(task.task.referenceMotionRef).toEqual({ id: reference.id, sha256: reference.sha256 });
+  await expect(page.getByText(task.id, { exact: true })).toBeVisible();
+  await page.context().close();
+
+  const readonly = await open(viewer);
+  const permissions = readonly.waitForResponse(reply => reply.url().includes('/api/v1/approvals?view=summary'));
+  await readonly.goto(`${web}/assets/robot/microduck/1`);
+  expect((await (await permissions).json()).role).toBe('viewer');
+  await readonly.getByLabel('参考动作版本').selectOption(reference.id);
+  await expect(readonly.getByLabel('参考动作三维运动学预览').locator('canvas')).toBeVisible();
+  await expect(readonly.getByText('视频提取与重定向', { exact: true })).toHaveCount(0);
+  await expect(readonly.getByText('从参考动作创建 Task', { exact: true })).toHaveCount(0);
+});

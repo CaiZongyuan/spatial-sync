@@ -266,6 +266,18 @@ The official `lw mcp` server exposes the same HTTP behavior: `catalog_search`,
 `acquisition_show`, `acquisition_cancel`, `acquisition_retry`,
 `library_search`, `library_describe`, `library_import`, `library_validate`,
 `scene_launch`, `authoring_submit`, `authoring_list` and `authoring_show`.
+For deterministic training layouts, use a `lw.scene-draft/1` JSON document.
+Pin every referenced Asset version and hash, set its Z-up placement, and supply
+ground Waypoints explicitly. Read the saved draft before publishing the exact
+identity and inspect validation on the resulting Scene version.
+
+```text
+lw scene draft submit <layout.json> --json
+lw scene draft show <draft-id> --json
+lw scene draft publish <draft-id> --json
+lw scene show <scene-name@revision> --json
+```
+
 Generic library tools deliberately have no approval or promotion bypass.
 For explicitly authorized cleanup, ordinary `lw scene rm <name@rev> --json`
 and `lw asset rm <kind/name@rev> --json` move unused user versions to recovery

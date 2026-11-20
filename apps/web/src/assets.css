@@ -246,3 +246,14 @@
 .robot-settling th[scope=row] { font-weight: 400; }
 .robot-settling td { font-variant-numeric: tabular-nums; }
 .robot-settling code { overflow-wrap: anywhere; }
+.motion-workbench { display: grid; gap: 12px; }
+.motion-workbench :is(code, small) { overflow-wrap: anywhere; }
+.motion-workbench select { max-width: 100%; }
+.motion-workflow > summary { cursor: pointer; }
+.motion-form { display: grid; justify-items: start; gap: 8px; margin-block: 8px; }
+.motion-form fieldset { display: grid; justify-items: start; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.motion-form :is(label, textarea) { max-width: 100%; }
+.motion-form textarea { display: block; width: min(36em, 100%); font-family: var(--mono); }
+.motion-form .robot-archive-upload { margin-block: 0; }
+.motion-provenance small, .motion-provenance dd > code + code { display: block; }
+.motion-playback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

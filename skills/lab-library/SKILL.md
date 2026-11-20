@@ -75,6 +75,26 @@ their decision. Preserve sessions and files owned by other work.
    check marked not run is not evidence of a physics pass. Correct failed
    checks rather than changing report files or launch flags.
 
+## Prepare a motion reference
+
+Upload a rights-cleared single-person MP4 or WebM. Queue CPU extraction using
+the returned video ID. Read the Job and wait for the immutable Clip result.
+
+```text
+lw motion video-upload <video.mp4> --license <license-id> --attribution <verified-source> --json
+lw motion start <video-id> --node <pose-node-id> --request-id <stable-request-id> --json
+lw job show <job-id> --json
+lw motion show <clip-id> --json
+lw motion retarget <reference-request.json> --json
+lw motion preview <reference-id> --json
+```
+
+The retarget request supplies the exact Clip ID and digest, robot Asset ID
+and content hash, and an explicit Asset-local semantic mapping. Check the
+feasibility report and preview on that Asset's detail page. Retain the exact
+Reference ID and digest, source rights, and pose model identity. [Motion and
+Task inputs](../lab-training-plan/SKILL.md)
+
 ## Remove or restore a version
 
 For a cleanup task explicitly authorized by the person, move an exact unused

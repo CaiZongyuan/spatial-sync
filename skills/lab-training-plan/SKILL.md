@@ -34,7 +34,7 @@ lw loop show goal/fr3-pick-tube --json
 
 ## 固定 Task
 
-Task 是 Isaac Lab 下游源码包，`pyproject.toml` 声明 `isaaclab.tasks` entry point。`task.yaml` 包含 `name`、`title`、精确 `scene` 版本、`robot`、`implements`、`episode.params`、平台 `success` 条件、`control`、包内 `observation` 文件和 `isaaclab` 配置；同时声明固定 `evaluation`（场景、回合数、种子、参数覆盖）及 `loopBudget`（`gpuHours`、`episodes`、`days`，可选 `llmUsd`）。T1 使用已有 FR3 的 `robot-and-tubes@2`。
+自助任务使用受管 mjlab 的声明式 `Task`。`task.yaml` 固定 Scene、机器人、接口、成功条件、评估和预算，包内观测声明使用 `lw.obs-spec/2`。Layer A 选择标准奖励项。Layer B 使用 `lw.reward-state/1` 的有限数学表达式。平台内置或经人工审计的 Isaac Lab 代码任务沿已有源码快照路径提交。
 
 脚本路径仍引用真实固定 Task；它的控制逻辑放在独立 Program 包中，Task 推送保持静态快照。选择与 Task 的 Scene、robot、接口动作一致的固定 Suite，后续两条路径都由该 Suite 判定实际状态。
 
@@ -45,6 +45,15 @@ lw task show task/fr3-pick-tube@1 --json
 ```
 
 检查返回的版本和 `contentHash`。同内容重推会返回已有版本；推送只做静态快照，不运行包里的代码。
+
+动作模仿沿 [素材库动作流程](../lab-library/SKILL.md) 获取精确 Reference Motion。请人检查对应机器人版本的三维预览后，提交含 `reference`（`id` 和 `sha256`）、声明式 `task` 和 `observation` 的 JSON。计划提交后，针对精确修订和目标规模发起有界预检，再将实际报告交给审批人。
+
+```text
+lw motion task-create <imitation-task.json> --json
+lw plan submit <training-plan.yaml> --json
+lw job start <plan-id> --revision 1 --kind plan_validation --node <compute-node-id> --json
+lw job show <preflight-job-id> --json
+```
 
 ## Policy 示范输入
 

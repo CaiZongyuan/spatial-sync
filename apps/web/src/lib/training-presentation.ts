@@ -10,6 +10,7 @@ const reasons: Record<string, string> = {
   gpu_busy: 'GPU 租约被占用', session_gpu_busy: 'GPU 正由交互会话使用',
   node_starting: '节点正在准备作业', node_lost: '节点已失联', cancelling: '正在停止作业',
   checkpoint_runtime_mismatch: '等待兼容的续训节点',
+  pose_runtime_unavailable: '等待具备姿态提取运行时的 CPU 节点',
   cancelled: '已取消', plan_not_approved: '训练计划尚未获批',
 };
 export const jobReason = (reason: string | null | undefined) => reason ? reasons[reason] ?? reason : undefined;
