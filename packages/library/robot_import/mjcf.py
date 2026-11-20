@@ -28,20 +28,33 @@ def compiled(xml, entry, *, assets=None, standing_key=None, usd_colliders=None):
     return from_model(model, entry, standing_key=standing_key, usd_colliders=usd_colliders or {})
 
 
-def geom_shape(model, index, path):
+def geom_shape(model, index, path, usd_collider):
     import mujoco
 
     kind = mujoco.mjtGeom(int(model.geom_type[index])).name.removeprefix("mjGEOM_").lower()
     size = model.geom_size[index]
     collision = bool(model.geom_contype[index] or model.geom_conaffinity[index])
     pose = transform(model.geom_pos[index], model.geom_quat[index])
-    mesh = None
+    mesh, hull = None, None
+    restitution = usd_collider[1] if usd_collider else 0.
+    convex = collision and kind == "mesh" and (usd_collider is None or usd_collider[0])
     if kind == "mesh":
         mesh_id = model.geom_dataid[index]
         vertex, count = model.mesh_vertadr[mesh_id], model.mesh_vertnum[mesh_id]
         face, nface = model.mesh_faceadr[mesh_id], model.mesh_facenum[mesh_id]
         mesh = trimesh.Trimesh(model.mesh_vert[vertex:vertex + count], model.mesh_face[face:face + nface],
                                process=False)
+        if convex:
+            graph = model.mesh_graphadr[mesh_id]
+            if graph < 0:
+                raise invalid("MuJoCo did not compile a convex collision hull", path=path)
+            hull_vertices, hull_faces = model.mesh_graph[graph:graph + 2]
+            # MuJoCo stores global vertex indices for the triangle faces at
+            # the end of the graph (mjCMesh::MakeGraph in user_mesh.cc).
+            start = graph + 2 + 3 * hull_vertices + 3 * hull_faces
+            triangles = model.mesh_graph[start:start + 3 * hull_faces].reshape(-1, 3)
+            vertex_ids, local = np.unique(triangles, return_inverse=True)
+            hull = trimesh.Trimesh(mesh.vertices[vertex_ids], local.reshape(-1, 3), process=False)
         size = ()
     elif kind in ("box", "cylinder", "capsule", "sphere"):
         size = {"box": 2 * size, "sphere": size[:1], "cylinder": size[:2] * [1, 2],
@@ -54,7 +67,8 @@ def geom_shape(model, index, path):
     color = model.mat_rgba[material] if material >= 0 else model.geom_rgba[index]
     return Shape(
         kind, tuple(size), pose, collision, not collision or model.geom_group[index] < 3,
-        tuple(color), float(model.geom_friction[index, 0]), mesh, convex=collision and mesh is not None,
+        tuple(color), float(model.geom_friction[index, 0]), mesh, convex=convex,
+        restitution=restitution, collision_hull=hull,
     )
 
 
@@ -90,8 +104,8 @@ def from_model(model, entry, *, standing_key, usd_colliders):
                 or model.actuator_gear[index, 0] != 1 or joint in actuators):
             raise invalid("Only one standard position drive per scalar joint is supported", path=path)
         gain = float(model.actuator_gainprm[index, 0])
-        _, position, velocity = model.actuator_biasprm[index, :3]
-        if not np.isclose(gain, -position) or min(gain, -velocity) < 0:
+        offset, position, velocity = model.actuator_biasprm[index, :3]
+        if offset != 0. or not np.isclose(gain, -position) or min(gain, -velocity) < 0:
             raise invalid("Actuator is not a standard position drive", path=path)
         force = None
         if model.actuator_forcelimited[index]:
@@ -111,9 +125,7 @@ def from_model(model, entry, *, standing_key, usd_colliders):
             body.inertia = mujoco_link_inertia(model, index)
         for geom in range(model.body_geomadr[index], model.body_geomadr[index] + model.body_geomnum[index]):
             geom_name = model.geom(geom).name
-            shape = geom_shape(model, geom, f"{name}/{geom_name or geom}")
-            if geom_name in usd_colliders:
-                shape.convex, shape.restitution = usd_colliders[geom_name]
+            shape = geom_shape(model, geom, f"{name}/{geom_name or geom}", usd_colliders.get(geom_name))
             body.shapes.append(shape)
             if shape.collision:
                 colliders.setdefault(name, []).append(geom)
@@ -154,6 +166,18 @@ def from_model(model, entry, *, standing_key, usd_colliders):
                 raise invalid("MJCF disables its authored hard limits", path=joint_name)
             joint.limits = tuple(model.jnt_range[joint_id])
         gain, damping, force = actuators.get(joint_id, (0., 0., None))
+        if model.jnt_actfrclimited[joint_id]:
+            lower, upper = model.jnt_actfrcrange[joint_id]
+            if not np.isfinite([lower, upper]).all() or lower != -upper or upper <= 0:
+                raise invalid("Joint actuator force limit requires a finite symmetric range", path=joint_name)
+            if model.jnt_actgravcomp[joint_id]:
+                raise invalid("Joint actuator force limit includes gravity compensation", path=joint_name)
+            if joint_id in actuators:
+                if model.dof_damping[dof] != 0:
+                    raise invalid("Joint force limit with passive damping is unsupported", path=joint_name)
+                # With one unit-gear position drive, both constraints bound
+                # the same effort. USD DriveAPI can express their intersection.
+                force = float(upper) if force is None else min(force, float(upper))
         joint.kp, joint.kv, joint.force = gain, damping + float(model.dof_damping[dof]), force
         joint.armature = float(model.dof_armature[dof])
         joint.frictionloss = float(model.dof_frictionloss[dof])

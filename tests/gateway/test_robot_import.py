@@ -1,5 +1,6 @@
 """External robot archives use the public immutable Asset transaction."""
 
+import gzip
 import hashlib
 import io
 import json
@@ -8,7 +9,7 @@ import math
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
-from test_asset_imports import upload
+from test_asset_imports import archive, upload
 
 from apps.api.app.main import create_app
 from packages.library.physics import skipped
@@ -129,22 +130,132 @@ def test_robot_archive_dependency_and_topology_gaps_are_local(client):
         assert problem["path"]
 
 
-def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_path):
-    mujoco = pytest.importorskip("mujoco")
+def test_closed_stl_collision_imports_with_volume_and_rejects_bad_components(client):
+    model = URDF.replace(b'<box size=".2 .4 .6"/>', b'<mesh filename="frame.stl"/>', 1)
+    source = files(model=model)
+    cube = trimesh.creation.box(extents=(.2, .4, .6))
+    source["frame.stl"] = cube.export(file_type="stl")
+    response = upload(client, source)
+    assert response.status_code == 200, response.text
+    detail = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    assert detail["metadata"]["physics"]["massKg"] == pytest.approx(12.25)
+    assert "float physics:mass = 12" in client.get(detail["files"]["asset.usda"]).text
+
+    inner = trimesh.creation.box(extents=(.05, .05, .05))
+    inner.apply_translation([1., 0., 0.])
+    inner.invert()
+    inverted_component = trimesh.util.concatenate([cube, inner])
+    for mesh in (cube.submesh([range(len(cube.faces) - 1)], append=True), inverted_component):
+        response = upload(client, source | {"frame.stl": mesh.export(file_type="stl")})
+        assert response.status_code == 422, response.text
+        problem = response.json()["detail"]["problems"][0]
+        assert "closed, positive-volume components" in problem["message"]
+        assert problem["path"] == "/Asset/links/base"
+
+
+def test_gzip_robot_upload_deduplicates_against_bare_tar(client, monkeypatch):
+    raw = archive(files())
+    accepted = client.post("/api/v1/library/imports", content=gzip.compress(raw),
+                           headers={"Content-Type": "application/gzip"})
+    assert accepted.status_code == 200, accepted.text
+    bare = upload(client, files()).json()
+    assert bare["deduplicated"] and bare["contentHash"] == accepted.json()["contentHash"]
+    # Verify the compressed stream is checked to EOF, including its trailer.
+    broken = gzip.compress(raw)[:-4]
+    response = client.post("/api/v1/library/imports", content=broken,
+                           headers={"Content-Type": "application/x-tar"})
+    assert response.status_code == 422, response.text
+    monkeypatch.setattr("packages.library.archive.MAX_PACKAGE_BYTES", 512)
+    monkeypatch.setattr("packages.library.archive.MAX_FILES", 16)
+    over_budget = gzip.compress(raw + b"\0" * 64000)
+    response = client.post("/api/v1/library/imports", content=over_budget,
+                           headers={"Content-Type": "application/gzip"})
+    assert response.status_code == 422
+    assert "Expanded tar stream exceeds" in response.text
+    response = client.post("/api/v1/library/imports", content=gzip.compress(raw),
+                           headers={"Content-Type": "application/gzip"})
+    assert response.status_code == 422
+    assert "Expanded package exceeds" in response.text
+    monkeypatch.setattr("packages.library.archive.MAX_PACKAGE_BYTES", 8 * 1024)
+    monkeypatch.setattr("packages.library.archive.MAX_FILES", 2)
+    response = client.post("/api/v1/library/imports", content=gzip.compress(raw),
+                           headers={"Content-Type": "application/gzip"})
+    assert response.status_code == 422
+    assert "Package exceeds 2 entries" in response.text
+
+
+def test_mjcf_joint_actuator_force_limit_preserves_applied_torque(client, tmp_path):
+    import mujoco
+    from pxr import Usd, UsdPhysics
+
     from apps.node.usd_mjcf import derive_usd_mjcf
 
-    source = files(
-        "probe.xml", b'<mujoco><compiler angle="radian"/><include file="assembly/body.xml"/></mujoco>',
+    model = b"""<mujoco><compiler angle="degree"/><worldbody>
+      <body name="base" pos="0 0 .5"><geom type="box" size=".15 .12 .10" mass="2"/>
+        <body name="tip" pos=".2 0 0">
+          <joint name="motor-a" axis="0 0 -1" range="-30 70" ref="10" actuatorfrcrange="-3 3"/>
+          <geom type="sphere" size=".05" mass=".25"/>
+        </body>
+      </body></worldbody><actuator><position joint="motor-a" kp="10" kv="1"/></actuator></mujoco>"""
+    source = mujoco.MjModel.from_xml_string(model.decode())
+    source_data = mujoco.MjData(source)
+    source_data.ctrl[0] = .9
+    mujoco.mj_forward(source, source_data)
+    assert source_data.qfrc_actuator[0] == pytest.approx(3.)
+
+    reply = upload(client, files("probe.xml", model))
+    assert reply.status_code == 200, reply.text
+    detail = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    path = tmp_path / "baked.usda"
+    path.write_bytes(client.get(detail["files"]["asset.usda"]).content)
+    stage = Usd.Stage.Open(str(path))
+    drive = UsdPhysics.DriveAPI(stage.GetPrimAtPath("/Asset/joints/motor_a"), "angular")
+    assert drive.GetMaxForceAttr().Get() == pytest.approx(3.)
+    result = derive_usd_mjcf(stage)
+    derived = result.to_mjmodel()
+    data = mujoco.MjData(derived)
+    data.qpos[0] = result.joints[0].initial_position
+    data.ctrl[0] = -.9 + .25
+    mujoco.mj_forward(derived, data)
+    assert data.qfrc_actuator[0] == pytest.approx(-3.)
+
+    for changed, expected in (
+        (model.replace(b'="-3 3"', b'="-3 4"'), "symmetric"),
+        (model.replace(b'ref="10"', b'ref="10" damping="1"'), "passive damping"),
+    ):
+        reply = upload(client, files("probe.xml", changed))
+        assert reply.status_code == 422, reply.text
+        problem = reply.json()["detail"]["problems"][0]
+        assert problem["path"] == "motor-a"
+        assert expected in problem["message"]
+
+
+def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_path):
+    import mujoco
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    source = files("probe.xml", b'<mujoco><include file="setup/settings.xml"/>'
+                   b'<include file="assembly/body.xml"/></mujoco>')
+    source["setup/settings.xml"] = (
+        b'<mujocoinclude><compiler angle="radian" meshdir="meshes"/></mujocoinclude>'
     )
+    source["meshes/shape.stl"] = trimesh.creation.box(extents=(.1, .1, .1)).export(file_type="stl")
     source["assembly/body.xml"] = b"""
-<mujocoinclude><worldbody><body name="base" pos="0 0 .3">
+<mujocoinclude><asset><mesh file="shape.stl"/></asset><worldbody><body name="base" pos="0 0 .3">
   <geom type="box" size=".1 .2 .3" mass="3"/>
   <body name="tip" pos=".2 0 0">
     <joint name="motor-a" axis="-1 0 0" range="-.4 .7"/>
-    <geom type="box" size=".05 .05 .05" mass=".3" pos="0 0 .1"/>
+    <geom type="mesh" mesh="shape" mass=".3" pos="0 0 .1"/>
   </body>
 </body></worldbody></mujocoinclude>
 """
+    for name, value in source.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(value)
+    native = mujoco.MjModel.from_xml_path(str(tmp_path / "probe.xml"))
+    assert native.nmesh == 1
     first = upload(client, source)
     assert first.status_code == 200, first.text
     item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
@@ -174,3 +285,7 @@ def test_included_mjcf_and_usd_round_trip_at_public_asset_boundary(client, tmp_p
     second = client.get("/api/v1/library/assets/robot/usd-probe/1").json()
     mapping = client.get(second["files"]["joint-calibration.json"]).json()
     assert mapping["joints"][0]["sourceName"] == "/Asset/joints/motor_a"
+    no_mesh = {name: value for name, value in source.items() if name != "meshes/shape.stl"}
+    reply = upload(client, no_mesh)
+    assert reply.status_code == 422
+    assert "meshes/shape.stl" in reply.text

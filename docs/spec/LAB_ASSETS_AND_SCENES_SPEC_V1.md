@@ -153,7 +153,8 @@ dressing: false                          # true：整个素材只作布景
 
 在本地目录放置 `robot.json`、入口和其包内依赖，以及原始许可证。运行
 `lw asset import ./robot-source --json`。HTTP 客户端可以向
-`POST /api/v1/library/imports` 上传 `application/x-tar`。压缩后的项目目录可先在客户端解包。
+`POST /api/v1/library/imports` 上传裸 tar（`application/x-tar`）或 tar.gz（`application/gzip`）。
+上传上限为 128 MiB，解包文件合计上限为 256 MiB，最多 4096 个归档条目。
 
 ```json
 {
@@ -176,9 +177,11 @@ dressing: false                          # true：整个素材只作布景
 ```
 
 - 入口支持已展开的 URDF、刚性 MJCF 和非打包 USD。归档内路径按准确大小写解析。
-  `packages` 声明 URDF `package://` 可用的归档目录。MJCF 可引用包内 include。
+  `packages` 声明 URDF `package://` 可用的归档目录。MJCF 在展开包内 include 后从入口文件目录
+  解析全局 `meshdir` 和 `texturedir`。
   基本体及受支持的 STL、OBJ、PLY 网格生成可浏览的 GLB。OBJ 附带 MTL、需要纹理的机器人视觉、
   闭链、球关节、mimic 和无法用连杆对表达的混合碰撞掩码会得到结构化诊断。
+  对单个单位传动位置驱动，MJCF 的执行器与关节对称力范围交集写入 USD `maxForce`。
 - `rpyDegrees` 是绕固定 X、Y、Z 轴的旋转，`translationM` 是规范平移。
   `metersPerUnit` 用于纠正源长度单位，`scale` 修正机器人几何尺寸并以恒定密度缩放质量和惯量。
   移动关节的源行程和零位以换算后的米表示。可用 `fixedBase` 声明固定安装，

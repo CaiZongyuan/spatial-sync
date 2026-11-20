@@ -45,7 +45,7 @@ class LibraryImports:
         with tempfile.TemporaryDirectory(prefix=".import-", dir=root) as temporary:
             stage = Path(temporary) / "package"
             stage.mkdir()
-            extract_package(stream, stage)
+            extract_package(stream, stage, allow_gzip=True)
             if (stage / "robot.json").is_file():
                 from packages.library.robot_import.prepare import prepare
 

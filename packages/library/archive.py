@@ -1,9 +1,12 @@
 """Confined portable tar packages and cross-process immutable revision allocation."""
 
+import gzip
 import os
 import re
 import tarfile
+import tempfile
 import unicodedata
+import zlib
 from contextlib import contextmanager
 from pathlib import PurePosixPath
 
@@ -109,7 +112,30 @@ def package_files(path):
     return files
 
 
-def extract_package(stream, path):
+def extract_package(stream, path, *, allow_gzip=False):
+    if allow_gzip:
+        start = stream.tell()
+        header = stream.read(2)
+        stream.seek(start)
+        if header == b"\x1f\x8b":
+            # Budget the entire decoded stream, including PAX metadata and
+            # data after tar EOF, before tarfile can read any member sizes.
+            limit = MAX_PACKAGE_BYTES + 2048 * MAX_FILES + tarfile.RECORDSIZE
+            try:
+                with (
+                    gzip.GzipFile(fileobj=stream) as compressed,
+                    tempfile.TemporaryFile(dir=path.parent) as tar,
+                ):
+                    while chunk := compressed.read(min(1024 * 1024, limit + 1)):
+                        limit -= len(chunk)
+                        if limit < 0:
+                            raise invalid("Expanded tar stream exceeds its byte budget")
+                        tar.write(chunk)
+                    tar.seek(0)
+                    extract_package(tar, path)
+            except (EOFError, OSError, zlib.error) as exc:
+                raise invalid("Unreadable gzip tar package") from exc
+            return
     names, entries, files, size = {}, set(), set(), 0
     try:
         # Uncompressed streaming tar keeps metadata reads inside the upload byte budget.

@@ -23,6 +23,7 @@ class Shape:
     mesh: trimesh.Trimesh | None = None
     convex: bool = False
     restitution: float = 0.
+    collision_hull: trimesh.Trimesh | None = None
 
     def surface(self):
         match self.kind:

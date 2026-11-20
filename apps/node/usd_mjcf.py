@@ -1249,12 +1249,12 @@ def _check_collision_mesh(prim, cache):
         # An explicit convex hull defines a solid independently of the source face seams.
         if approximation == "convexHull" and _mesh_is_volumetric(vertices):
             return
-        if approximation != "convexHull" and _has_solid_components(vertices, counts, indices):
+        if approximation != "convexHull" and has_solid_components(vertices, counts, indices):
             return
     raise UnsupportedUsdPhysics(prim.GetPath(), "Collision mesh must be watertight and volumetric")
 
 
-def _has_solid_components(vertices, counts, indices):
+def has_solid_components(vertices, counts, indices, *, positive_volume=False):
     edges = {}
     faces = []
     cursor = 0
@@ -1295,7 +1295,8 @@ def _has_solid_components(vertices, counts, indices):
                 for b, c in zip(points[1:-1], points[2:], strict=True):
                     yield Gf.Dot(points[0], Gf.Cross(b, c))
 
-        if abs(math.fsum(signed_tetrahedra())) <= 1e-12:
+        volume = math.fsum(signed_tetrahedra())
+        if (volume if positive_volume else abs(volume)) <= 1e-12:
             return False
     return True
 

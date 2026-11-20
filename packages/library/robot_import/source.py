@@ -21,7 +21,7 @@ class Source:
         self.xml_budget = XML_LIMIT
         self.node_budget = XML_NODES
 
-    def resolve(self, owner, value, suffixes, *, directory=None):
+    def resolve(self, owner, value, suffixes, *, directory=None, fallback=None):
         if value.startswith("package://"):
             package, _, member = value.removeprefix("package://").partition("/")
             directory = self.packages.get(package)
@@ -32,23 +32,30 @@ class Source:
             except ValueError as exc:
                 raise invalid("package:// path must stay within its declared root", path=owner) from exc
             value = member
+            fallback = None
         elif directory is None:
             directory = str(PurePosixPath(owner).parent)
         if not value or value.startswith("/") or any(char in value for char in ":\\%?#"):
             raise invalid("Resource must be an archive-local path", path=owner)
-        parts = [] if directory == "." else directory.split("/")
-        for part in value.split("/"):
-            if part == ".." and parts:
-                parts.pop()
-            elif part != ".":
-                try:
-                    parts.extend(relative_path(part).parts)
-                except ValueError as exc:
-                    raise invalid("Resource escapes the archive or is ambiguous", path=owner) from exc
-        target = "/".join(parts)
-        if PurePosixPath(target).suffix.lower() not in suffixes or target not in self.files:
-            raise invalid(f"Missing or unsupported archive resource {target}", path=owner)
-        return target
+        def normalized(base):
+            parts = [] if base == "." else base.split("/")
+            for part in value.split("/"):
+                if part == ".." and parts:
+                    parts.pop()
+                elif part != ".":
+                    try:
+                        parts.extend(relative_path(part).parts)
+                    except ValueError as exc:
+                        raise invalid("Resource escapes the archive or is ambiguous", path=owner) from exc
+            return "/".join(parts)
+
+        target = normalized(directory)
+        if PurePosixPath(target).suffix.lower() in suffixes:
+            if target in self.files:
+                return target
+            if fallback is not None and (alternative := normalized(fallback)) in self.files:
+                return alternative
+        raise invalid(f"Missing or unsupported archive resource {target}", path=owner)
 
     def xml(self, name):
         path = self.root / name
@@ -86,69 +93,83 @@ class Source:
         return value
 
     def mjcf(self, entry):
-        assets, resource_names = {}, {}
-        # MuJoCo's compiler paths and asset files are all replaced before loading.
-        # Includes are resolved at the source document, never by the SDK.
-        def expand(name, stack, directories):
+        entry_dir = str(PurePosixPath(entry).parent)
+        owners = {}
+
+        def expand(name, stack):
             if name in stack or len(stack) == 16:
                 raise invalid("Recursive or excessively deep MJCF include", path=name)
             document = self.xml(name)
             if document.tag not in ("mujoco", "mujocoinclude"):
                 raise invalid("Expected a MuJoCo XML document", path=name)
-            parent = PurePosixPath(name).parent
-            directories = directories.copy()
-            for compiler in document.findall("compiler"):
-                common = compiler.attrib.pop("assetdir", "")
-                for kind in ("mesh", "texture"):
-                    declared = compiler.attrib.pop(kind + "dir", common)
-                    if declared:
-                        try:
-                            directories[kind] = str(parent / relative_path(declared.rstrip("/")))
-                        except ValueError as exc:
-                            raise invalid("Compiler directory must be archive-local", path=name) from exc
-                for attribute in ("strippath", "fusestatic", "discardvisual"):
-                    compiler.attrib.pop(attribute, None)
-
             pending = [(document, 0)]
             while pending:
                 node, depth = pending.pop()
+                owners[node] = name
                 if depth > 64:
                     raise invalid("MJCF nesting exceeds the parsing budget", path=name)
                 for child in list(node):
                     if child.tag == "include":
-                        target = self.resolve(name, child.get("file", ""), {".xml", ".mjcf"})
+                        target = self.resolve(
+                            name, child.get("file", ""), {".xml", ".mjcf"}, directory=entry_dir,
+                            fallback=str(PurePosixPath(name).parent),
+                        )
                         offset = list(node).index(child)
                         node.remove(child)
-                        for element in reversed(list(expand(target, (*stack, name), directories))):
+                        for element in reversed(list(expand(target, (*stack, name)))):
                             node.insert(offset, element)
                     else:
                         pending.append((child, depth + 1))
-                if (node.tag in ("equality", "tendon") and len(node)
-                        or node.tag in ("extension", "plugin", "flexcomp", "composite",
-                                        "replicate", "attach", "hfield", "deformable")):
-                    raise invalid(f"Unsupported MJCF element {node.tag}", path=name)
-                if "content_type" in node.attrib:
-                    raise invalid("MJCF resource decoder must be determined by its file extension", path=name)
-                for key, value in list(node.attrib.items()):
-                    if not key.startswith("file"):
-                        continue
-                    if node.tag not in ("mesh", "texture"):
-                        raise invalid(f"Unsupported MJCF file resource on {node.tag}", path=name)
-                    mesh = node.tag == "mesh"
-                    target = self.resolve(name, value, MESH_SUFFIXES if mesh else TEXTURE_SUFFIXES,
-                                          directory=directories.get(node.tag))
-                    if key == "file" and "name" not in node.attrib:
-                        node.set("name", PurePosixPath(target).stem)
-                    if target not in resource_names:
-                        virtual = f"resource{len(assets)}{PurePosixPath(target).suffix.lower()}"
-                        assets[virtual] = self.mesh_bytes(target) if mesh else self.texture_bytes(target)
-                        resource_names[target] = virtual
-                    virtual = resource_names[target]
-                    node.set(key, virtual)
-                if node.tag == "texture" and "file" not in node.attrib:
-                    if any(not 0 < int(node.get(key, "1")) <= 4096 for key in ("width", "height")):
-                        raise invalid("MJCF texture exceeds the rendering budget", path=name)
             return document
 
-        document = expand(entry, (), {})
+        document = expand(entry, ())
+        # Compiler directories are global across the expanded document and
+        # relative to its entry file. MuJoCo falls back to the declaring file.
+        directories = dict.fromkeys(("mesh", "texture"), entry_dir)
+        for compiler in document.findall("compiler"):
+            common = compiler.attrib.pop("assetdir", None)
+            for kind in directories:
+                declared = compiler.attrib.pop(kind + "dir", common)
+                if declared is None:
+                    continue
+                try:
+                    suffix = declared.rstrip("/")
+                    if declared and not suffix:
+                        raise ValueError("Absolute directory")
+                    suffix = "." if suffix in ("", ".") else relative_path(suffix)
+                    directories[kind] = str(PurePosixPath(entry_dir) / suffix)
+                except ValueError as exc:
+                    raise invalid("Compiler directory must be archive-local", path=owners[compiler]) from exc
+            for attribute in ("strippath", "fusestatic", "discardvisual"):
+                compiler.attrib.pop(attribute, None)
+
+        assets, resource_names = {}, {}
+        for node in document.iter():
+            name = owners[node]
+            if (node.tag in ("equality", "tendon") and len(node)
+                    or node.tag in ("extension", "plugin", "flexcomp", "composite",
+                                    "replicate", "attach", "hfield", "deformable")):
+                raise invalid(f"Unsupported MJCF element {node.tag}", path=name)
+            if "content_type" in node.attrib:
+                raise invalid("MJCF resource decoder must be determined by its file extension", path=name)
+            for key, value in list(node.attrib.items()):
+                if not key.startswith("file"):
+                    continue
+                if node.tag not in directories:
+                    raise invalid(f"Unsupported MJCF file resource on {node.tag}", path=name)
+                mesh = node.tag == "mesh"
+                target = self.resolve(
+                    name, value, MESH_SUFFIXES if mesh else TEXTURE_SUFFIXES,
+                    directory=directories[node.tag], fallback=str(PurePosixPath(name).parent),
+                )
+                if key == "file" and "name" not in node.attrib:
+                    node.set("name", PurePosixPath(target).stem)
+                if target not in resource_names:
+                    virtual = f"resource{len(assets)}{PurePosixPath(target).suffix.lower()}"
+                    assets[virtual] = self.mesh_bytes(target) if mesh else self.texture_bytes(target)
+                    resource_names[target] = virtual
+                node.set(key, resource_names[target])
+            if node.tag == "texture" and "file" not in node.attrib:
+                if any(not 0 < int(node.get(key, "1")) <= 4096 for key in ("width", "height")):
+                    raise invalid("MJCF texture exceeds the rendering budget", path=name)
         return ET.tostring(document, encoding="unicode"), assets

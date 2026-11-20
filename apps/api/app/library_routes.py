@@ -444,10 +444,11 @@ def install_library_routes(
     async def import_package(request: Request):
         if request.headers.get("content-type", "").split(";", 1)[0] not in (
             "application/x-tar",
+            "application/gzip",
             "application/octet-stream",
         ):
             raise invalid(
-                "Upload tar bytes with Content-Type: application/x-tar; host paths are not accepted"
+                "Upload archive bytes with Content-Type: application/x-tar or application/gzip"
             )
         size = 0
         with tempfile.TemporaryFile() as stream:

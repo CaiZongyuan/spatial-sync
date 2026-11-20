@@ -8,7 +8,7 @@ import trimesh
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdShade
 from trimesh import transformations as tf
 
-from apps.node.usd_mjcf import JOINT_ARMATURE_ATTR, check_training_structure
+from apps.node.usd_mjcf import JOINT_ARMATURE_ATTR, check_training_structure, has_solid_components
 from packages.library.archive import invalid
 from packages.library.visuals import glb_budget
 
@@ -46,12 +46,14 @@ def custom(prim, name, value):
 def solid_mesh(shape, path):
     if shape.kind != "mesh":
         return shape.surface()
-    mesh = shape.mesh.copy()
-    mesh.merge_vertices()
+    mesh = shape.collision_hull.copy() if shape.convex else shape.mesh.copy()
+    if not shape.convex:
+        mesh.merge_vertices()
     try:
-        if shape.convex:
-            mesh = mesh.convex_hull
-        if not mesh.is_volume or any(not part.is_volume for part in mesh.split(only_watertight=False)):
+        if not mesh.is_volume or (not shape.convex and not has_solid_components(
+            [tuple(point) for point in mesh.vertices.tolist()], [3] * len(mesh.faces),
+            mesh.faces.ravel().tolist(), positive_volume=True,
+        )):
             raise ValueError("Collision mesh must contain closed, positive-volume components")
     except (ValueError, ImportError) as exc:
         raise invalid(str(exc), path=path) from exc
