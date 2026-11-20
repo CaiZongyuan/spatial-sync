@@ -27,7 +27,7 @@ def _signature(value):
     }
 
 
-def _physical(manager, scene, task, action):
+def _physical(scene, task, action):
     from apps.node.usd_mjcf import derive_usd_mjcf
 
     channels = [
@@ -44,7 +44,7 @@ def _physical(manager, scene, task, action):
     ]
     stage_name = scene.metadata["stage"]
     if stage_name.startswith("python:"):
-        return channels, None, None
+        return channels, None, None, True
     payload = scene.runtime_payload()
     graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
     stage = graph.compose(stage_name)
@@ -54,8 +54,11 @@ def _physical(manager, scene, task, action):
         stage, prim_path=task["robot"], include_ground_plane=False, include_static_colliders=False
     )
     joints = {joint.prim_path: joint for joint in derived.joints}
+    controls_match = True
     for channel in channels:
         joint = joints[channel["jointKey"]]
+        if not joint.actuated or channel["unit"] != ("rad" if joint.kind == "hinge" else "m"):
+            controls_match = False
         channel.update(
             kp=joint.stiffness,
             kv=joint.damping,
@@ -67,7 +70,11 @@ def _physical(manager, scene, task, action):
 
     dt, _ = authored_settings(stage)
     dt = (scene.metadata.get("simulation") or {}).get("physicsDt", dt)
-    return channels, dt, _robot_asset(scene, task["robot"], stage, graph)
+    asset = _robot_asset(scene, task["robot"], stage, graph)
+    coordinates_match = False
+    if asset and controls_match and "joint-calibration.json" not in asset["files"]:
+        coordinates_match = _asset_coordinates_match(stage, task["robot"], graph, asset)
+    return channels, dt, asset, coordinates_match
 
 
 def _robot_asset(scene, entity, stage, graph):
@@ -86,6 +93,52 @@ def _robot_asset(scene, entity, stage, graph):
         ):
             referenced.append(snapshot)
     return referenced[0] if len(referenced) == 1 else None
+
+
+def _asset_coordinates_match(stage, robot, graph, asset):
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
+
+    source = Usd.Stage.Open(graph.layer(asset, asset["metadata"]["stage"]))
+    if not source or UsdGeom.GetStageMetersPerUnit(source) != UsdGeom.GetStageMetersPerUnit(stage):
+        return False
+    source_root, scene_root = Sdf.Path("/Asset"), Sdf.Path(robot)
+    source_prim = source.GetPrimAtPath(source_root)
+    if not source_prim:
+        return False
+    poses = UsdGeom.XformCache()
+    placement = poses.GetLocalToWorldTransform(stage.GetPrimAtPath(scene_root))
+    if placement.GetDeterminant3() <= 0 or not Gf.IsClose(placement, placement.RemoveScaleShear(), 1e-6):
+        return False
+    # Compare in the asset frame so the Scene may translate and rotate the robot.
+    scene_to_asset = placement.GetInverse()
+    source_to_asset = poses.GetLocalToWorldTransform(source_prim).GetInverse()
+    joint_coordinates = (
+        "physics:axis", "physics:jointEnabled",
+        "physics:localPos0", "physics:localPos1", "physics:localRot0", "physics:localRot1",
+    )
+    for expected in Usd.PrimRange(source_prim, Usd.TraverseInstanceProxies()):
+        if expected.IsA(UsdPhysics.Joint):
+            actual = stage.GetPrimAtPath(expected.GetPath().ReplacePrefix(source_root, scene_root))
+            if not actual or actual.GetTypeName() != expected.GetTypeName():
+                return False
+            if any(actual.GetAttribute(key).Get() != expected.GetAttribute(key).Get()
+                   for key in joint_coordinates if expected.HasAttribute(key)):
+                return False
+            for key in ("physics:body0", "physics:body1"):
+                targets = expected.GetRelationship(key).GetForwardedTargets()
+                mapped = [target.ReplacePrefix(source_root, scene_root) for target in targets]
+                if actual.GetRelationship(key).GetForwardedTargets() != mapped:
+                    return False
+        elif expected.HasAPI(UsdPhysics.RigidBodyAPI):
+            actual = stage.GetPrimAtPath(expected.GetPath().ReplacePrefix(source_root, scene_root))
+            if not actual or not actual.HasAPI(UsdPhysics.RigidBodyAPI):
+                return False
+            if not Gf.IsClose(
+                poses.GetLocalToWorldTransform(actual) * scene_to_asset,
+                poses.GetLocalToWorldTransform(expected) * source_to_asset, 1e-6,
+            ):
+                return False
+    return True
 
 
 def _retained_source_matches(directory, record):
@@ -127,8 +180,6 @@ def _retained_calibration(manager, scene, asset, task):
     root = BUILTIN_ROOT / "retained-calibrations"
     for path in sorted(root.glob("*.json")):
         record = read_json(path)
-        if "sceneContentHash" in record and scene.content_hash != record["sceneContentHash"]:
-            continue
         builder = record.get("legacyBuilder")
         namespace = ""
         if (builder and scene.metadata["stage"] == "python:" + builder["id"]
@@ -157,7 +208,7 @@ def _retained_calibration(manager, scene, asset, task):
     return None
 
 
-def _source_calibration(manager, scene, asset, task, action, files):
+def _source_calibration(manager, scene, asset, task, action, coordinates_match, files):
     unavailable = {"status": "unavailable", "joints": [], "baseTransform": None}
     explicit = asset and "joint-calibration.json" in asset["files"]
     record = {}
@@ -171,6 +222,10 @@ def _source_calibration(manager, scene, asset, task, action, files):
             return unavailable | {"reason": "No frozen source-joint calibration was recorded"}, None
         asset, record, path, namespace = retained
         calibration = JointCalibration.model_validate(record["mapping"])
+        if "sourceLicenses" in record:
+            asset = asset | {"retainedSource": _archive_retained_source(path, record, files)}
+        if not coordinates_match:
+            return unavailable | {"reason": "Policy Scene coordinates differ from the retained Asset"}, asset
     joints = {row.jointKey: row for row in calibration.joints}
     prefix = task["robot"] + "/" + namespace
     keys = ["/Asset/" + key.removeprefix(prefix) for key in action.jointKeys]
@@ -179,12 +234,10 @@ def _source_calibration(manager, scene, asset, task, action, files):
             or [joints[key].unit for key in keys] != action.units):
         if explicit:
             raise ValueError("Source joint calibration differs from the Policy action order or units")
-        return unavailable | {"reason": "Policy channels do not match the retained calibration"}, None
+        return unavailable | {"reason": "Policy channels do not match the retained calibration"}, asset
     mapping_path = "source-calibration.json"
     mapping_bytes = path.read_bytes()
     files[mapping_path] = mapping_bytes
-    if "sourceLicenses" in record:
-        asset = asset | {"retainedSource": _archive_retained_source(path, record, files)}
     return {
         "status": "verified",
         "asset": asset["id"],
@@ -267,8 +320,10 @@ def policy_export(manager, identifier):
             files[f"model/{name}"] = path.read_bytes()
         if digest(model_path) != policy["onnxSha256"]:
             raise ValueError("Frozen model changed")
-        channels, authored_dt, asset = _physical(manager, scene, task, spec.action)
-        calibration, calibration_asset = _source_calibration(manager, scene, asset, task, spec.action, files)
+        channels, authored_dt, asset, coordinates_match = _physical(scene, task, spec.action)
+        calibration, calibration_asset = _source_calibration(
+            manager, scene, asset, task, spec.action, coordinates_match, files
+        )
         provenance = _provenance(
             manager, policy, scene, task.get("referenceMotion"), files, calibration_asset
         )

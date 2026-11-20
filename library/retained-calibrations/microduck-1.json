@@ -1,7 +1,6 @@
 {
   "asset": "robot/microduck@1",
   "assetContentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b",
-  "sceneContentHash": "9af821e9b1d687a48c7cf65f879fd24497d09b62212a418e02a8cb7d3e0cf75a",
   "assetSourceEntrypoint": "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
   "sourceRepository": "https://github.com/pollen-robotics/microduck_rl",
   "sourceRevision": "2b25a48b08f1f17bc38c90bb03144c81fbd9ed07",

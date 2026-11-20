@@ -26,6 +26,7 @@ def uploaded_job(
     spec=None,
     task_document=None,
     artifact_factory=None,
+    plan_overrides=None,
 ):
     node_headers = node_headers or NODE
     task = client.post(
@@ -33,7 +34,9 @@ def uploaded_job(
         content=policy_task(tmp_path / "task", spec=spec, task=task_document),
         headers={"Content-Type": "application/x-tar"},
     ).json()
-    plan = client.post("/api/v1/plans", json=training_plan(task["id"])).json()
+    response = client.post("/api/v1/plans", json=training_plan(task["id"], **(plan_overrides or {})))
+    assert response.status_code == 201, response.text
+    plan = response.json()
     approve(client, plan["approvalId"])
     client.post(HEARTBEAT, headers=node_headers, json=heartbeat(plan, task))
     job = client.post("/api/v1/jobs", json={"planId": plan["id"], "seed": 42}).json()

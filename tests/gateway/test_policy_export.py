@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
-from packages.library.common import BUILTIN_ROOT, content_hash
+from packages.library.common import BUILTIN_ROOT, content_hash, document
 from packages.policies import export as policy_exports
 from packages.policies.inference import CpuPolicy
 from packages.policies.observations import ObservationSpec, joint_targets
@@ -133,7 +133,54 @@ def test_builtin_microduck_export_matches_pinned_mjcf_calibration(tmp_path, name
     assert row["sourceTargets"] == pytest.approx(dict(zip(source_names, targets, strict=True)), abs=1e-5)
 
 
-@pytest.mark.parametrize("pin", ["sceneContentHash", "sourceSha256"])
+@pytest.mark.parametrize("revision, unit", [(1, "rad"), (2, "rad"), (1, "m")])
+def test_microduck_export_reuses_asset_calibration_in_patrol(tmp_path, revision, unit):
+    published = BUILTIN_ROOT / "tasks/microduck-stand-up/1/package"
+    task = document(published / "task.yaml")
+    task.pop("mjlab")
+    task["isaaclab"] = task_document()["isaaclab"]
+    scene = f"microduck-lab-patrol@{revision}"
+    task.update(name="patrol-duck-export", scene=scene, robot="/World/Lab/PatrolDuck")
+    task["evaluation"]["scene"] = scene
+    spec = document(BUILTIN_ROOT / "policies/microduck-stand-up/1/package/obs_spec.yaml")
+    spec = json.loads(json.dumps(spec).replace("/World/Lab/Microduck/", task["robot"] + "/"))
+    spec["action"]["units"][0] = unit
+    model = (BUILTIN_ROOT / "policies/microduck-stand-up/1/package/artifacts/policy.onnx").read_bytes()
+    with TestClient(create_app(Settings(node_token=TOKEN))) as client:
+        job = uploaded_job(
+            client, tmp_path, model=model, spec=spec, task_document=task,
+            plan_overrides={"evaluation": {"scene": scene, "episodes": 4, "threshold": 4}},
+        )
+        created = client.post(
+            "/api/v1/policies", json={"checkpoint": job["jobId"] + "/checkpoint-origin.json"},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["scene"] == scene
+        patrol_export = client.get("/api/v1/policies/patrol-duck-export/1/export")
+        arena_export = client.get("/api/v1/policies/microduck-stand-up/1/export")
+    assert patrol_export.status_code == arena_export.status_code == 200, patrol_export.text
+    with (zipfile.ZipFile(io.BytesIO(patrol_export.content)) as patrol,
+          zipfile.ZipFile(io.BytesIO(arena_export.content)) as arena):
+        patrol_manifest = json.loads(patrol.read("manifest.json"))
+        arena_manifest = json.loads(arena.read("manifest.json"))
+        calibration = patrol_manifest["sourceCalibration"]
+        if unit == "m":
+            assert calibration["status"] == "unavailable"
+            assert calibration["joints"] == [] and calibration["baseTransform"] is None
+            assert "source-calibration.json" not in patrol.namelist()
+        else:
+            assert calibration == arena_manifest["sourceCalibration"]
+        assert len(patrol_manifest["actuators"]) == 14
+        assert patrol_manifest["actuators"][0]["jointKey"] == task["robot"] + "/joints/left_hip_yaw"
+        asset = next(row for row in patrol_manifest["provenance"] if row["id"] == "robot/microduck@1")
+        assert {item["license"] for item in asset["source"]["licenses"]} == {
+            "Apache-2.0", "Creative Commons BY-SA-NC",
+        }
+        for item in asset["source"]["licenses"]:
+            assert patrol.read(item["document"]) == arena.read(item["document"])
+
+
+@pytest.mark.parametrize("pin", ["asset", "assetContentHash", "sourceSha256"])
 def test_builtin_export_omits_calibration_without_matching_provenance(tmp_path, monkeypatch, pin):
     directory = tmp_path / "retained-calibrations"
     directory.mkdir()
