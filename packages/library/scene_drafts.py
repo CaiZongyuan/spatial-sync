@@ -149,7 +149,10 @@ def compose(stage_path, draft, assets):
         asset = assets.resolve(item.asset)
         if asset.content_hash != item.contentHash or content_hash(asset.path) != item.contentHash:
             raise LibraryError("scene_draft_asset_changed", f"Pinned Asset differs: {item.asset}", 409)
-        prim = UsdGeom.Xform.Define(stage, f"/World/Lab/{item.name}").GetPrim()
+        group = "/World/Dressing" if asset.metadata.get("dressing") else "/World/Lab"
+        if not stage.GetPrimAtPath(group):
+            UsdGeom.Xform.Define(stage, group)
+        prim = UsdGeom.Xform.Define(stage, f"{group}/{item.name}").GetPrim()
         kind, name, revision = item.asset.replace("@", "/").split("/")
         ref = f"library:assets/{kind}/{name}/{revision}/{asset.metadata['stage']}"
         prim.GetReferences().AddReference(ref, Sdf.Path("/Asset"))

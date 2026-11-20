@@ -41,6 +41,7 @@ class TrainingPlanStore:
         self.job_in_use = lambda identity, revision: False
         self.additional_in_use = lambda identity, revision: False
         self.validation_estimate = lambda approval_id: {}
+        self.require_layer_b_validation = None
         self.loop_budgets = None
         self.goal_suites = None
 
@@ -230,12 +231,19 @@ class TrainingPlanStore:
                 decision != "revoke" and current.status != "pending"
             ):
                 raise ApprovalConflict("This training plan approval has already been processed")
+            details = None
             if decision == "approve":
                 if record.plan.program is not None:
                     try:
                         self._require_program(record.plan, self.tasks.show(record.plan.task))
                     except (ValueError, LibraryError) as exc:
                         raise ApprovalConflict("Frozen program/Task is unavailable or differs") from exc
+                else:
+                    task = self.tasks.show(record.plan.task)
+                    if (task["task"].get("declarative") or {}).get("layerB"):
+                        if self.require_layer_b_validation is None:
+                            raise PlanError("plan_validation_required", "Layer B preflight is required")
+                        details = current.details | self.require_layer_b_validation(record, task)
                 if self.loop_budgets is not None:
                     self.loop_budgets.require_fresh_approval(record)
                 if record.goalSuite is not None:
@@ -253,9 +261,11 @@ class TrainingPlanStore:
                                 "goal_suite_changed", "Goal Suite proposal changed since submission"
                             )
                         suite, origin = self.goal_suites.seal(current, fresh, task)
-                        details = current.details | {"goalSuite": suite, "goalSuiteOrigin": origin}
+                        details = (details or current.details) | {
+                            "goalSuite": suite, "goalSuiteOrigin": origin,
+                        }
                         self.approvals.decide(approval.approvalId, decision, actor, note, details=details)
                     self._notify(record)
                     return
-            self.approvals.decide(approval.approvalId, decision, actor, note)
+            self.approvals.decide(approval.approvalId, decision, actor, note, details=details)
             self._notify(record)

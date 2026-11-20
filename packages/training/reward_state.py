@@ -143,42 +143,52 @@ def compile_expression(raw, expected="scalar", path="reward"):
 
 def state_references(expression):
     if expression.op == "state":
-        yield expression.value
+        yield expression
     for argument in expression.args:
         yield from state_references(argument)
 
 
-def evaluate(expression, state, template, *, reject_nonfinite=False):
+def validate_scene_references(expression, props):
+    for reference in state_references(expression):
+        name, key = reference.value
+        if key is not None and key not in props:
+            raise ValueError(f"{reference.path}: {name} unknown Scene rigid body {key}")
+
+
+def evaluate(expression, state, template, *, reject_nonfinite=False, arrays=None):
     import operator
 
-    import torch
+    if arrays is None:
+        import torch
+
+        arrays = torch
 
     unary = {
         "neg": operator.neg,
-        "abs": torch.abs,
-        "norm": lambda value: torch.linalg.vector_norm(value, dim=-1),
-        "gaussian": lambda value: torch.exp(-value.square()),
-        "not": torch.logical_not,
+        "abs": arrays.abs,
+        "norm": lambda value: arrays.sqrt((value * value).sum(-1)),
+        "gaussian": lambda value: arrays.exp(-(value * value)),
+        "not": arrays.logical_not,
     }
     binary = {
         "add": operator.add,
         "sub": operator.sub,
         "mul": operator.mul,
         "div": operator.truediv,
-        "dot": lambda left, right: (left * right).sum(dim=-1),
+        "dot": lambda left, right: (left * right).sum(-1),
         "lt": operator.lt,
         "le": operator.le,
         "gt": operator.gt,
         "ge": operator.ge,
         "eq": operator.eq,
-        "and": torch.logical_and,
-        "or": torch.logical_or,
+        "and": arrays.logical_and,
+        "or": arrays.logical_or,
     }
 
     def visit(node):
         if node.op == "constant":
-            return torch.full_like(
-                template, node.value, dtype=torch.bool if node.shape == "boolean" else None
+            return arrays.full_like(
+                template, node.value, dtype=arrays.bool if node.shape == "boolean" else None
             )
         if node.op == "state":
             value = state(*node.value)
@@ -188,21 +198,22 @@ def evaluate(expression, state, template, *, reject_nonfinite=False):
             values = [visit(child) for child in node.args]
             if node.shape in ("vector3", "quaternion"):
                 values = [
-                    value.unsqueeze(-1) if child.shape in ("scalar", "boolean") else value
+                    value[..., None] if child.shape in ("scalar", "boolean") else value
                     for child, value in zip(node.args, values, strict=True)
                 ]
             if node.op == "clamp":
-                value = torch.minimum(torch.maximum(values[0], values[1]), values[2])
+                value = arrays.minimum(arrays.maximum(values[0], values[1]), values[2])
             elif node.op == "where":
-                value = torch.where(*values)
+                value = arrays.where(*values)
             elif node.op in unary:
                 value = unary[node.op](*values)
             else:
                 value = binary[node.op](*values)
         if node.shape != "boolean":
-            if reject_nonfinite and not torch.isfinite(value).all().item():
+            if reject_nonfinite and not arrays.isfinite(value).all().item():
                 raise ValueError(f"{node.path}: {node.op} produced a non-finite value")
-            value = torch.nan_to_num(value, nan=0.0, posinf=LIMIT, neginf=-LIMIT).clamp(-LIMIT, LIMIT)
+            clean = arrays.nan_to_num(value, nan=0.0, posinf=LIMIT, neginf=-LIMIT)
+            value = arrays.clip(clean, -LIMIT, LIMIT)
         return value
 
     return visit(expression)

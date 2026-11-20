@@ -150,9 +150,9 @@ class LayerA(Data):
             self.layerB
             and not (self.targetSites or self.curriculum)
             and any(
-                name == "target_position_world"
+                reference.value[0] == "target_position_world"
                 for expression in self.layerB.expressions()
-                for name, _ in state_references(expression)
+                for reference in state_references(expression)
             )
         ):
             raise ValueError("Target state requires targetSites or curriculum")

@@ -22,13 +22,13 @@ if __package__:
     from apps.node.declarative_scene import baked_collision_layout, episode_layout
     from packages.policies.action_contract import action_delta_limit, command_endpoints
     from packages.policies.motion import motion_observations
-    from packages.training.reward_state import compile_expression, evaluate, state_references
+    from packages.training.reward_state import compile_expression, evaluate, validate_scene_references
 else:
     import lw_usd_mjcf as usd
     from lw_action_contract import action_delta_limit, command_endpoints
     from lw_declarative_scene import baked_collision_layout, episode_layout
     from lw_motion import motion_observations
-    from lw_reward_state import compile_expression, evaluate, state_references
+    from lw_reward_state import compile_expression, evaluate, validate_scene_references
 
 
 def _inverse_rotate(quaternion, vector):
@@ -394,9 +394,7 @@ def compile_environment(task, spec, stage_path):
         for index, row in enumerate(layer_b.get("terminations", ()))
     ]
     for expression in (*expressions, *stop_expressions):
-        for field_name, key in state_references(expression):
-            if key is not None and key not in props:
-                raise ValueError(f"{expression.path}: {field_name} unknown Scene rigid body {key}")
+        validate_scene_references(expression, props)
     group = ObservationGroupCfg(
         terms={
             item["name"]: ObservationTermCfg(func=observe, params={"item": item})

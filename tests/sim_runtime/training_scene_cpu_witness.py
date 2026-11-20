@@ -1,5 +1,7 @@
 """Run with the pinned Linux mjlab Python and PYTHONPATH set to the repository root."""
+
 import os
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -24,7 +26,9 @@ class Assets:
 
         assert key == "robot/microduck@1"
         return SimpleNamespace(
-            path=self.path, content_hash=content_hash(self.path), metadata={"stage": "asset.usdc"},
+            path=self.path,
+            content_hash=content_hash(self.path),
+            metadata={"stage": "asset.usdc"},
         )
 
 
@@ -39,21 +43,26 @@ def main():
     data["waypoints"]["upper"] = {"p": [1.5, 0, 0.2], "yaw": 0.0}
     data["sites"].append({"name": "Near", "position": [0, 0, 0.22]})
     ball_position = {"state": "prop_position_world", "key": "/World/Lab/Ball"}
-    settings = LayerA.model_validate({
-        "baseBody": task["robot"] + "/trunk_base", "episodeSeconds": 3.0,
-        "rewards": [],
-        "rigidReset": [{"key": "/World/Lab/Ball", "translation": [[0.15, 0.15], [0, 0], [0, 0]]}],
-        "curriculum": {
-            "levels": [
-                {"spawn": "/World/Lab/Waypoints/spawn", "target": "/World/Lab/Sites/Near"},
-                {"spawn": "/World/Lab/Waypoints/upper", "target": "/World/Lab/Sites/Goal"},
-            ],
-            "successDistance": 0.25, "demoteDistance": 0.5,
-        },
-        "layerB": {"state": "lw.reward-state/1", "rewards": [
-            {"weight": 1.0, "expression": {"op": "component", "args": [ball_position, 0]}}
-        ]},
-    })
+    settings = LayerA.model_validate(
+        {
+            "baseBody": task["robot"] + "/trunk_base",
+            "episodeSeconds": 3.0,
+            "rewards": [],
+            "rigidReset": [{"key": "/World/Lab/Ball", "translation": [[0.15, 0.15], [0, 0], [0, 0]]}],
+            "curriculum": {
+                "levels": [
+                    {"spawn": "/World/Lab/Waypoints/spawn", "target": "/World/Lab/Sites/Near"},
+                    {"spawn": "/World/Lab/Waypoints/upper", "target": "/World/Lab/Sites/Goal"},
+                ],
+                "successDistance": 0.25,
+                "demoteDistance": 0.5,
+            },
+            "layerB": {
+                "state": "lw.reward-state/1",
+                "rewards": [{"weight": 1.0, "expression": {"op": "component", "args": [ball_position, 0]}}],
+            },
+        }
+    )
     task["declarative"] = settings.model_dump(mode="json", by_alias=True)
     os.environ["LW_ASSET_PACKAGES"] = (
         '{"robot/microduck@1":"' + str(root / "library/assets/robot/microduck/1") + '"}'
@@ -73,6 +82,27 @@ def main():
         old_cfg, _, _ = compile_environment(without_goals, spec, no_sites)
         assert old_cfg.contract["layout"]["targets"] == []
 
+        invalid = deepcopy(task)
+        invalid["declarative"]["layerB"]["rewards"][0]["expression"] = {
+            "op": "add",
+            "args": [
+                1,
+                {
+                    "op": "component",
+                    "args": [
+                        {"state": "prop_position_world", "key": "/World/Lab/Missing"},
+                        0,
+                    ],
+                },
+            ],
+        }
+        try:
+            compile_environment(invalid, spec, stage)
+        except ValueError as error:
+            assert str(error).startswith("layerB.rewards[0].expression.args[1].args[0]: ")
+            print(str(error))
+        else:
+            raise AssertionError("A missing nested rigid reference was compiled")
         cfg, _, _ = compile_environment(task, spec, stage)
         cfg.scene.num_envs = 2
         cfg.seed = 123
@@ -84,13 +114,13 @@ def main():
             assert step.type[0] == mujoco.mjtGeom.mjGEOM_BOX
             assert abs(step.pos[2] + step.size[2] - 0.20) < 1e-6
             assert abs(float(model.body("prop0/Ball").mass[0]) - 0.25) < 1e-6
-            assert tuple(model.site("layout/site/Goal").pos) == (1.5, 0., 0.2)
+            assert tuple(model.site("layout/site/Goal").pos) == (1.5, 0.0, 0.2)
             ball = env.scene["prop0"].data.root_link_pos_w
             torch.testing.assert_close(ball[:, 0], torch.tensor([0.65, 0.65]))
             result = expression_term(env, compile_expression({"op": "component", "args": [ball_position, 0]}))
             torch.testing.assert_close(result, torch.tensor([0.65, 0.65]))
             fault = compile_expression({"op": "div", "args": [1, 0]})
-            torch.testing.assert_close(expression_term(env, fault), torch.full((2,), 10000.))
+            torch.testing.assert_close(expression_term(env, fault), torch.full((2,), 10000.0))
             env.validate_reward_state = True
             try:
                 expression_term(env, fault)
@@ -109,8 +139,8 @@ def main():
             env.scene.update(env.step_dt)
             env.reset()
             assert env.level.tolist() == [1, 0]
-            torch.testing.assert_close(env.target[:, 0], torch.tensor([1.5, 0.]))
-            torch.testing.assert_close(robot.data.root_link_pos_w[:, 0], torch.tensor([1.5, 0.]))
+            torch.testing.assert_close(env.target[:, 0], torch.tensor([1.5, 0.0]))
+            torch.testing.assert_close(robot.data.root_link_pos_w[:, 0], torch.tensor([1.5, 0.0]))
             state[0, 0] = -0.8
             robot.write_root_state_to_sim(state, env_ids=torch.tensor([0, 1], dtype=torch.int32))
             env.sim.forward()

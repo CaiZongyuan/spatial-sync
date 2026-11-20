@@ -14,6 +14,14 @@ from tests.fixtures.training_scene import draft
 def test_scene_draft_publishes_exact_baked_primitive_geometry():
     with TestClient(create_app()) as http:
         value = draft()
+        dressing = http.get("/api/v1/library/assets/environment/fr3-culture-laboratory-1/1").json()
+        value["assets"] = [
+            {
+                "name": "Backdrop",
+                "asset": "environment/fr3-culture-laboratory-1@1",
+                "contentHash": dressing["contentHash"],
+            }
+        ]
         staged = http.post("/api/v1/library/scene-drafts", json=value)
         assert staged.status_code == 201, staged.text
         identifier = staged.json()["id"]
@@ -30,6 +38,8 @@ def test_scene_draft_publishes_exact_baked_primitive_geometry():
         layer = Sdf.Layer.CreateAnonymous()
         assert layer.ImportFromString(stages.text)
         stage = Usd.Stage.Open(layer)
+        assert stage.GetPrimAtPath("/World/Dressing/Backdrop").HasAuthoredReferences()
+        assert not stage.GetPrimAtPath("/World/Lab/Backdrop")
         cache = UsdGeom.XformCache()
         step = stage.GetPrimAtPath("/World/Lab/Terrain/Step2")
         shifted_top = cache.GetLocalToWorldTransform(step).Transform(Gf.Vec3d(0, 0, 1))
@@ -161,20 +171,21 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
         headers = actor | {"Content-Type": "application/x-tar"}
         rejected = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
         assert rejected.status_code == 422 and "layerB.rewards[0].expression" in rejected.text
-        layer["rewards"][0]["expression"] = {"op": "div", "args": [1, 0]} if real_node else valid
+        layer["rewards"][0]["expression"] = {"op": "div", "args": [1, 0]}
         (source / "task.yaml").write_text(yaml.safe_dump(task))
         pushed = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
         assert pushed.status_code == 201, pushed.text
 
-        def preflight(task_id):
+        def preflight(task_id, *, revision_of=None, environments=2):
+            route = f"/api/v1/plans/{revision_of}/revisions" if revision_of else "/api/v1/plans"
             submitted = http.post(
-                "/api/v1/plans",
+                route,
                 headers=actor,
                 json=training_plan(
                     task_id,
                     algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
                     hyperparameters={
-                        "num_envs": 2,
+                        "num_envs": environments,
                         "max_iterations": 4,
                         "num_steps_per_env": 4,
                         "num_learning_epochs": 1,
@@ -182,7 +193,7 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
                         **({"device": "cpu"} if real_node else {}),
                     },
                     model={"actor": [8], "critic": [8]},
-                    evaluation={"scene": scene["sceneVersion"], "episodes": 1, "threshold": 1},
+                    evaluation={"scene": scene["sceneVersion"], "episodes": 30, "threshold": 1},
                 ),
             )
             assert submitted.status_code == 201, submitted.text
@@ -195,7 +206,12 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
             assert job["requestedBy"] == {"kind": "agent", "name": "scene-trainer"}
             return plan, start, job
 
-        _, start, job = preflight(pushed.json()["id"])
+        plan, start, job = preflight(pushed.json()["id"])
+        decision_url = f"/api/v1/approvals/{plan['approvalId']}/decision"
+        blocked = http.post(decision_url, headers=OPERATOR, json={"decision": "approve"})
+        assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "plan_validation_required"
+        assert http.get(f"/api/v1/plans/{plan['id']}", headers=actor).json()["status"] == "submitted"
+        assert "contentHash" not in http.get(f"/api/v1/plans/{plan['id']}", headers=actor).json()["goalSuite"]
         if real_node:
             from tests.gateway.test_mjlab_node_jobs import _wait_for
 
@@ -217,6 +233,7 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
             assert failed["status"] == "failed"
             assert "layerB.rewards[0].expression: div produced a non-finite value" == failed["reason"]
             assert http.post("/api/v1/jobs", headers=actor, json=start).status_code == 409
+            assert http.post(decision_url, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
             layer["rewards"][0]["expression"] = valid
             (source / "task.yaml").write_text(yaml.safe_dump(task))
             passed_task = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
@@ -232,6 +249,8 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
                 json={"decision": "approve"},
             )
             assert approval.is_success, approval.text
+            assert approval.json()["details"]["validationJobId"] == checked["jobId"]
+            assert "contentHash" in approval.json()["details"]["goalSuite"]
             started = http.post("/api/v1/jobs", headers=actor, json=start)
             assert started.status_code == 202, started.text
             trained = terminal(started.json())
@@ -257,13 +276,79 @@ def test_authenticated_actor_preflights_layer_b_before_training(tmp_path):
         assert any(
             entry["kind"] == "asset" and entry["id"] == "robot/microduck@1" for entry in inputs["packages"]
         )
+        import io
+        import tarfile
+
+        import numpy as np
+
+        from packages.training.reward_state import compile_expression, evaluate
+
+        task_input = next(entry for entry in inputs["packages"] if entry["kind"] == "task")
+        downloaded = http.get(task_input["url"], headers=lease)
+        assert downloaded.is_success, downloaded.text
+        with tarfile.open(fileobj=io.BytesIO(downloaded.content)) as archive:
+            leased_task = yaml.safe_load(archive.extractfile("task.yaml").read())
+        expression = compile_expression(
+            leased_task["declarative"]["layerB"]["rewards"][0]["expression"],
+            path="layerB.rewards[0].expression",
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            with pytest.raises(ValueError, match="div produced a non-finite value") as fault:
+                evaluate(expression, None, np.zeros(2, dtype=np.float32), arrays=np, reject_nonfinite=True)
         report = {
             "jobId": job["jobId"],
             "leaseId": assignment["leaseId"],
             "status": "failed",
-            "reason": "layerB.rewards[0].expression: div produced a non-finite value",
+            "reason": str(fault.value),
         }
         assert beat(http, node, reports=[report], **runtime).is_success
         failed = http.get(f"/api/v1/jobs/{job['jobId']}", headers=actor).json()
         assert failed["status"] == "failed" and failed["reason"] == report["reason"]
+        assert http.post(decision_url, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
         assert http.post("/api/v1/jobs", headers=actor, json=start).status_code == 409
+
+        layer["rewards"][0]["expression"] = valid
+        (source / "task.yaml").write_text(yaml.safe_dump(task))
+        revised = http.post("/api/v1/tasks", headers=headers, content=pack_package(source))
+        assert revised.status_code == 201, revised.text
+        previous, _, first_preflight = preflight(revised.json()["id"], revision_of=plan["id"])
+
+        def complete(job, environments):
+            (lease_assignment,) = beat(http, node, **runtime).json()["assignments"]
+            receipt = {
+                "jobId": job["jobId"],
+                "leaseId": lease_assignment["leaseId"],
+                "status": "succeeded",
+                "elapsedSeconds": 8.0,
+                "iteration": 3,
+                "validation": {
+                    "numEnvs": environments,
+                    "setupSeconds": 2.0,
+                    "warmupSeconds": 1.0,
+                    "samplesSeconds": [1.0, 1.0],
+                },
+            }
+            response = beat(http, node, reports=[receipt], **runtime)
+            return response
+
+        first = complete(first_preflight, 2)
+        assert first.is_success, first.text
+        current, _, current_preflight = preflight(
+            revised.json()["id"],
+            revision_of=previous["id"],
+            environments=4,
+        )
+        revision_decision = f"/api/v1/approvals/{current['approvalId']}/decision"
+        denied = http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"})
+        assert denied.status_code == 409 and denied.json()["detail"]["code"] == "plan_validation_required"
+        assert complete(current_preflight, 2).status_code == 422
+        assert http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"}).status_code == 409
+        final_report = complete(current_preflight, 4)
+        assert final_report.is_success, final_report.text
+        allowed = http.post(revision_decision, headers=OPERATOR, json={"decision": "approve"})
+        assert allowed.is_success, allowed.text
+        detail = allowed.json()["details"]
+        assert detail["validationJobId"] == current_preflight["jobId"]
+        assert detail["estimatedWallSeconds"] == 9
+        assert detail["estimatedGpuHours"] == pytest.approx(9 / 3600)
+        assert "contentHash" in detail["goalSuite"]
