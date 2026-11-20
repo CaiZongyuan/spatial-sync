@@ -1005,9 +1005,12 @@ timestep as the Newton launch. They project the clip end and the subsequent
 dwell onto the ordinary evaluator's control samples, starting at the first
 sample after resume. The completion sample must fall strictly before the
 shortest limit imposed by the Task or Suite, the Program, and the EntityType
-action. The calculation keeps exact sample boundaries clear of floating-point
-roundoff. For the Microduck Scene at 2 ms and 60 Hz, a 19.74901-second clip
-with 0.25001 seconds of dwell needs 20.016 seconds of simulated action time.
+action. Admission replays the Newton control clock and uses the same
+inclusive elapsed comparisons as the trajectory host. For the Microduck
+Scene at 2 ms and 60 Hz, a 0.600-second clip with 0.250 seconds of dwell
+completes at 0.850 seconds of simulated action time and fits a 0.875-second
+deadline. A 19.74901-second clip with 0.25001 seconds of dwell needs 20.016
+seconds of simulated action time.
 A 19.70-second clip with that dwell needs 19.982 seconds and fits the 20-second
 Program limit.
 

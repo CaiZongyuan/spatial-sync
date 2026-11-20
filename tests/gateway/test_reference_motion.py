@@ -361,10 +361,11 @@ def test_dominant_leg_requires_mapping_for_its_motion(mixed_motion):
 
 
 @pytest.mark.parametrize(
-    "duration,dwell,expected",
-    [(22.4, .25, 422), (19.74901, .25001, 422), (19.70, .25001, 201)],
+    "duration,dwell,deadline,expected",
+    [(22.4, .25, 25., 422), (19.74901, .25001, 25., 422), (19.70, .25001, 25., 201),
+     (.6, .25, .875, 201), (.6, .25, .85, 422)],
 )
-def test_pinned_plan_respects_sampled_host_deadline(duration, dwell, expected):
+def test_pinned_plan_respects_sampled_host_deadline(duration, dwell, deadline, expected):
     app = create_app(remote_settings())
     with TestClient(app) as client:
         request = keyframes(app.state.manager.library_assets)
@@ -372,7 +373,7 @@ def test_pinned_plan_respects_sampled_host_deadline(duration, dwell, expected):
         published = client.post(URL, headers=OPERATOR, json=request)
         assert published.status_code == 201, published.text
         recipe = imitation_request(published.json())
-        recipe["task"]["declarative"]["episodeSeconds"] = 25.
+        recipe["task"]["declarative"]["episodeSeconds"] = deadline
         recipe["task"]["completion"]["dwellSeconds"] = dwell
         task = client.post("/api/v1/tasks/reference-motion", headers=OPERATOR, json=recipe)
         assert task.status_code == 201, task.text
@@ -383,6 +384,6 @@ def test_pinned_plan_respects_sampled_host_deadline(duration, dwell, expected):
         assert plan.status_code == expected, plan.text
         if expected == 422:
             message = plan.json()["detail"]["message"]
-            assert "20 s deadline" in message
+            assert f"{min(deadline, 20.):g} s deadline" in message
             if duration == 19.74901:
                 assert "20.016 s at sampled control times" in message

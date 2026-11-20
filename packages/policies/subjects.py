@@ -1,7 +1,6 @@
 """Freeze policy identity separately from the fixed evaluation world and its bindings."""
 
 import math
-from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -26,6 +25,7 @@ from packages.programs.subjects import (
 )
 from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import ActionDefinition
+from packages.sim_runtime.control_clock import ControlClock
 from packages.training.declarative import clip_seconds, trajectory_completion
 
 from .library import PolicyLibrary, digest, read_json
@@ -254,31 +254,32 @@ def validate_trajectory_deadline(scene, task, binding, completion, timeout):
     types = load_entity_types() | scene.entity_types()
     action_limit = ActionDefinition.model_validate(types[interface]["actions"][action]).timeoutSeconds
     limit = min(timeout, host_limit, action_limit)
-    options = SessionOptions()
-    physics_dt = qualified_scene_physics_dt(scene.metadata, scene.report()) or options.physicsDt
-    physics_step = Fraction(str(physics_dt))
-    control_period = max(physics_step, 1 / Fraction(str(options.controlHz)))
-    tick_epsilon = Fraction("1e-10")  # Newton's program-loop scheduling tolerance.
-    clock_margin = Fraction("1e-9")  # Keep exact boundaries clear of accumulated float roundoff.
-
-    def sample_at_or_after(time):
-        step = max(1, math.ceil(time / physics_step))
-        previous_step = (step - 1) * physics_step
-        control_tick = math.floor((previous_step + tick_epsilon) / control_period) + 1
-        control_step = math.ceil((control_tick * control_period - tick_epsilon) / physics_step)
-        return max(step, control_step) * physics_step
-
-    # The evaluator arms the invocation at time zero and resumes into the first control sample.
-    started = sample_at_or_after(physics_step)
-    clip = Fraction(str(clip_seconds(task["referenceMotion"], completion)))
-    terminal_sample = sample_at_or_after(started + clip + clock_margin)
-    completion_sample = sample_at_or_after(
-        terminal_sample + Fraction(str(completion.dwellSeconds)) + clock_margin
-    )
-    required = completion_sample - started
-    if required >= Fraction(str(limit)):
+    clip = clip_seconds(task["referenceMotion"], completion)
+    required = clip + completion.dwellSeconds
+    if required < limit:
+        options = SessionOptions()
+        physics_dt = qualified_scene_physics_dt(scene.metadata, scene.report()) or options.physicsDt
+        clock = ControlClock(physics_dt, options.controlHz)
+        # Evaluation resumes from step zero. Use the same float samples and inclusive
+        # elapsed comparisons as the runtime's trajectory completion.
+        sim_time = 0.
+        started = terminal_sample = None
+        while True:
+            sim_time, sample = clock.advance(sim_time)
+            if sample is None:
+                continue
+            if started is None:
+                started = sim_time
+            if terminal_sample is None and sim_time - started >= clip:
+                terminal_sample = sim_time
+            if terminal_sample is not None and sim_time - terminal_sample >= completion.dwellSeconds:
+                required = sim_time - started
+                break
+    # The host tests timeout at this tolerance. Admission requires room before
+    # the deadline even if the host could complete on the same tick.
+    if required + 1e-10 >= limit:
         raise ValueError(
-            f"Reference Motion and terminal dwell require {float(required):g} s at sampled control times "
+            f"Reference Motion and terminal dwell require {required:g} s at sampled control times "
             f"before the {limit:g} s deadline"
         )
 
