@@ -10,7 +10,7 @@ import zipfile
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
-from test_asset_imports import archive, upload
+from test_asset_imports import archive, package_files, upload
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -158,7 +158,14 @@ def test_closed_stl_collision_imports_with_volume_and_rejects_bad_components(cli
 
 def test_gzip_robot_upload_deduplicates_against_bare_tar(client, monkeypatch):
     raw = archive(files())
-    accepted = client.post("/api/v1/library/imports", content=gzip.compress(raw),
+    route = "/api/v1/library/imports?robotSource=true"
+    wrong_package = client.post(
+        route, content=archive(package_files()), headers={"Content-Type": "application/x-tar"},
+    )
+    assert wrong_package.status_code == 422
+    assert wrong_package.json()["detail"]["problems"][0]["path"] == "robot.json"
+    assert client.get("/api/v1/library/assets/labware/test-tube/1").status_code == 404
+    accepted = client.post(route, content=gzip.compress(raw),
                            headers={"Content-Type": "application/gzip"})
     assert accepted.status_code == 200, accepted.text
     bare = upload(client, files()).json()

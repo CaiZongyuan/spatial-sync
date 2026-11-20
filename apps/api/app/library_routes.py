@@ -441,7 +441,9 @@ def install_library_routes(
         return assets.job(import_id)
 
     @app.post("/api/v1/library/imports")
-    async def import_package(request: Request):
+    async def import_package(request: Request, robotSource: bool = False):
+        if role_for(request.headers) != "operator":
+            raise HTTPException(403, {"code": "not_permitted"})
         if request.headers.get("content-type", "").split(";", 1)[0] not in (
             "application/x-tar",
             "application/gzip",
@@ -459,7 +461,9 @@ def install_library_routes(
                 stream.write(chunk)
             stream.seek(0)
             importer = LibraryImports(assets, scenes(), validator)
-            result = await anyio.to_thread.run_sync(importer.import_tar, stream)
+            result = await anyio.to_thread.run_sync(
+                functools.partial(importer.import_tar, stream, robot_source=robotSource)
+            )
         if (
             result.get("kind") == "scene"
             and not result.get("deduplicated")

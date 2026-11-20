@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { assetKinds, assetParams, dimensionsLabel, type AssetKind } from '../lib/asset-library';
 import { filterLabels, localAssetVersion, searchCatalogCards, type CatalogSelection, type CatalogScope, type CatalogSearchFilters, type CatalogCardResponse, type CatalogUsage } from '../lib/catalog';
 import { AssetThumbnails } from '../components/AssetThumbnails';
@@ -10,6 +10,8 @@ import { CatalogSyncPanel } from '../components/CatalogSyncPanel';
 import { CatalogMaintenancePanel } from '../components/CatalogMaintenancePanel';
 import { getCatalogVocabulary, type CatalogVocabulary, type MetadataCollection } from '../lib/catalog-maintenance';
 import { CatalogLoadError, CatalogLoading } from '../components/CatalogLoading';
+import { RobotArchiveUpload } from '../components/RobotArchiveUpload';
+import { ApprovalInboxContext } from '../lib/approvals';
 
 type Search = {
   scope?: CatalogScope; view?: 'card' | 'list'; kind?: AssetKind; usage?: CatalogUsage;
@@ -39,6 +41,7 @@ export const Route = createFileRoute('/assets/')({
 function AssetLibrary() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const permissions = useContext(ApprovalInboxContext);
   const scope = search.scope ?? 'local';
   const [catalog, setCatalog] = useState<CatalogCardResponse>();
   const [pending, setPending] = useState(true);
@@ -141,6 +144,7 @@ function AssetLibrary() {
     : '正在检索目录…';
   return <main className="asset-page asset-library-page">
     <header className="asset-page-heading"><h1>素材库</h1><p>{scope === 'local' ? '不可变的版本化素材包：物理、碰撞、PBR 视觉、来源与许可证' : '浏览在线素材目录，筛选素材并按需查看详情或获取本地版本。'}</p></header>
+    {scope === 'local' && permissions.inbox?.role === 'operator' && !permissions.error && <RobotArchiveUpload />}
     <div className="asset-library-toolbar"><span>{scope === 'local' ? catalog ? `${catalog.counts.matching} 件素材 · 圆点依次为六项完整度` : '正在读取素材…' : catalogToolbar}</span>
       <div className="asset-view-toggle" role="group" aria-label="视图">{(['card', 'list'] as const).map(view => <button key={view} aria-pressed={(search.view ?? 'card') === view} onClick={() => change({ view })}>{view === 'card' ? '▦ 卡片' : '☷ 列表'}</button>)}</div>
     </div>

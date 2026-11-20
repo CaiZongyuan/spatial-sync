@@ -39,16 +39,19 @@ class LibraryImports:
     def __init__(self, assets, scenes, validator):
         self.assets, self.scenes, self.validator = assets, scenes, validator
 
-    def import_tar(self, stream):
+    def import_tar(self, stream, *, robot_source=False):
         root = self.assets.roots["user"]
         root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=".import-", dir=root) as temporary:
             stage = Path(temporary) / "package"
             stage.mkdir()
             extract_package(stream, stage, allow_gzip=True)
-            if (stage / "robot.json").is_file() and not any(
+            is_robot_source = (stage / "robot.json").is_file() and not any(
                 (stage / name).exists() for name in ("asset.yaml", "scene.yaml")
-            ):
+            )
+            if robot_source and not is_robot_source:
+                raise invalid("Robot source archive requires a root robot.json", path="robot.json")
+            if is_robot_source:
                 from packages.library.robot_import.prepare import prepare
 
                 prepared = stage.parent / "prepared"
