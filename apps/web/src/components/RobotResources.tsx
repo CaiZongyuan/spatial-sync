@@ -1,4 +1,7 @@
 import { Link } from '@tanstack/react-router';
+import { useContext, useState } from 'react';
+import { requestResponse } from '../lib/api';
+import { ApprovalInboxContext } from '../lib/approvals';
 import { useRobotResources, type ControllerVersion, type RobotEmbodiment, type RobotModel } from '../lib/robot-resources';
 import { AssetModelViewport } from './AssetModelViewport';
 import { ResourceTabs } from './ResourceTabs';
@@ -16,7 +19,40 @@ function ControllerEvaluation({ version }: { version: ControllerVersion }) {
     <small><Link to="/eval/$suiteId" params={{ suiteId: evidence.suite.replace(/^suite\//, '') }}>{evidence.evaluationId} →</Link></small></>;
 }
 
-function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotModel[] }) {
+function PolicyDownload({ policy }: { policy: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const version = /^policy\/([a-z0-9-]+)@([1-9][0-9]*)$/.exec(policy);
+  if (!version) return null;
+  const [, name, revision] = version;
+
+  async function download() {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await requestResponse(`/policies/${encodeURIComponent(name)}/${revision}/export`);
+      if (response.headers.get('Content-Type')?.split(';')[0] !== 'application/zip') {
+        throw new Error('服务器未返回策略导出包');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${name}-${revision}.zip`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <><button type="button" disabled={busy} onClick={() => void download()}>下载 Policy Export</button>
+    {error && <small role="alert">{error}</small>}</>;
+}
+
+function RobotCard({ robot, models, canExport }: { robot: RobotEmbodiment; models: RobotModel[]; canExport: boolean }) {
   const current = robot.currentController, binding = robot.bindings[0];
   const model = models.find(item => item.id === (current?.robotModel ?? binding?.robotModel));
   const [kind, assetName] = robot.asset.split('@')[0].split('/'), assetRevision = robot.asset.split('@')[1];
@@ -33,7 +69,8 @@ function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotMod
     </div><div className="robot-control-stack"><h3>控制器栈</h3>
       <p className="resource-note">{current ? `Controller ${current.controller} · v${current.version}` : binding ? '尚无已提升 Controller。下方展示当前场景已绑定的内置程序。' : '未接入设备或控制器。'}</p>
       <dl><div><dt>Robot Model</dt><dd>{model?.title ?? '未绑定'}<small>{model?.id}</small></dd></div>
-        <div><dt>策略版本</dt><dd>{current?.policy ?? '无已提升策略'}</dd></div>
+        <div><dt>策略版本</dt><dd>{current?.policy ?? '无已提升策略'}
+          {canExport && current?.policy && <div><PolicyDownload key={current.policy} policy={current.policy} /></div>}</dd></div>
         <div><dt>设备程序</dt><dd><code>{current?.program ?? binding?.program ?? '未接入'}</code></dd></div>
         {current?.programArtifact && <div><dt>脚本版本</dt><dd><code>{current.programArtifact.id}</code><small>{current.programArtifact.contentHash}</small></dd></div>}
         {current && <div><dt>默认部署场景</dt><dd><Link to="/scenes/$name/$rev" params={{ name: current.scene.split('@')[0], rev: current.scene.split('@')[1] }}>{current.scene} →</Link></dd></div>}
@@ -47,7 +84,8 @@ function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotMod
     </div></div>
     <div className="robot-history"><h3>Controller 版本历史</h3>
       {robot.controllerHistory.length ? <div className="resource-table-scroll"><table aria-label={`${robot.id} Controller 历史`}><thead><tr><th>版本</th><th>Robot Model / 策略</th><th>程序</th><th>场景</th><th>公开 train 评估</th></tr></thead><tbody>
-        {robot.controllerHistory.map(value => <tr key={value.version}><td>v{value.version}{value.version === current?.version && <small>当前</small>}</td><td>{value.robotModel}<small>{value.policy ?? '无策略'}</small></td><td>{value.program}<small>{value.programArtifact?.id}</small></td><td>{value.scene}</td><td><ControllerEvaluation version={value} /></td></tr>)}
+        {robot.controllerHistory.map(value => <tr key={value.version}><td>v{value.version}{value.version === current?.version && <small>当前</small>}</td><td>{value.robotModel}<small>{value.policy ?? '无策略'}</small>
+          {canExport && value.policy && value.policy !== current?.policy && <PolicyDownload key={value.policy} policy={value.policy} />}</td><td>{value.program}<small>{value.programArtifact?.id}</small></td><td>{value.scene}</td><td><ControllerEvaluation version={value} /></td></tr>)}
       </tbody></table></div> : <p className="resource-note">尚无已提升版本。策略或脚本通过独立提升流程后，显示实际 Controller 版本与评估记录。</p>}
     </div>
   </article>;
@@ -55,10 +93,12 @@ function RobotCard({ robot, models }: { robot: RobotEmbodiment; models: RobotMod
 
 export function RobotResourcesPage() {
   const query = useRobotResources();
+  const permissions = useContext(ApprovalInboxContext);
+  const canExport = permissions.inbox?.role === 'operator' && !permissions.error;
   return <main className="model-resources robot-resources"><header className="page-heading"><div><h1>资源</h1><p>机器人本体、当前场景绑定与实际控制组合</p></div><button onClick={query.refresh}>刷新机器人</button></header>
     <ResourceTabs current="robots" robotModelCount={query.data?.models.length} embodimentCount={query.data?.embodiments.length} />
     {query.error && <p className="resource-error" role="alert">{query.error} {query.data && '保留上次成功读取的资源。'}</p>}
     {!query.data && !query.error && <p role="status">正在读取机器人本体与控制器…</p>}
-    {query.data?.embodiments.map(robot => <RobotCard key={robot.id} robot={robot} models={query.data!.models} />)}
+    {query.data?.embodiments.map(robot => <RobotCard key={robot.id} robot={robot} models={query.data!.models} canExport={canExport} />)}
   </main>;
 }

@@ -1,14 +1,17 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useContext, useEffect, useMemo, useState } from 'react';
 import { getSceneLibrary, sourceLabel, rootLabel, type ScenePagination, type SceneSource, type SceneVersion } from '../lib/library';
 import { SceneThumbnails } from '../components/SceneThumbnails';
 import { LaunchStatus } from '../components/SceneStatus';
 import { Icon } from '../components/Icon';
+import { ApprovalInboxContext } from '../lib/approvals';
 
-type Search = { q?: string; source?: SceneSource; launchable?: boolean; view?: 'card' | 'list'; cursor?: string };
+const SceneDraftEditor = lazy(() => import('../components/SceneDraftEditor'));
+type Search = { q?: string; source?: SceneSource; launchable?: boolean; view?: 'card' | 'list'; cursor?: string; draft?: string };
 const viewKey = 'lab.scenes.view';
 export const Route = createFileRoute('/scenes/')({
   validateSearch: (value: Record<string, unknown>): Search => ({
+    draft: typeof value.draft === 'string' && /^(new|draft-[a-f0-9]{64})$/.test(value.draft) ? value.draft : undefined,
     q: typeof value.q === 'string' && value.q ? value.q : undefined,
     source: value.source === 'synthetic' || value.source === 'newton' ? value.source : undefined,
     launchable: value.launchable === true || value.launchable === 'true' ? true
@@ -20,6 +23,8 @@ export const Route = createFileRoute('/scenes/')({
 
 function SceneLibrary() {
   const search = Route.useSearch();
+  const permissions = useContext(ApprovalInboxContext);
+  const canDraft = permissions.inbox?.role === 'operator' && !permissions.error;
   const navigate = Route.useNavigate();
   const [preferred, setPreferred] = useState<'card' | 'list'>(() => {
     try { return localStorage.getItem(viewKey) === 'list' ? 'list' : 'card'; } catch { return 'card'; }
@@ -45,7 +50,17 @@ function SceneLibrary() {
   const page = (cursor?: string | null) => void navigate({ search: previous => ({ ...previous, cursor: cursor ?? undefined }) });
   return <main className="scene-library-page">
     <header className="scene-page-heading"><div><h1>场景库</h1><p>每个场景展示最新版本；历史版本可在详情中查看。</p></div>
-      <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个场景` : '读取中…'}</span></header>
+      <div className="workbench-fields">
+        <span className="scene-result-count">{scenes ? `${current?.pagination?.total ?? scenes.length} 个场景` : '读取中…'}</span>
+        {canDraft && <Link to="/scenes" search={{ ...search, draft: search.draft ? undefined : 'new' }}>
+          {search.draft ? '关闭草稿编辑' : '新建场景草稿'}
+        </Link>}
+      </div></header>
+    {canDraft && search.draft && <Suspense fallback={<p role="status">正在载入草稿编辑…</p>}>
+      <SceneDraftEditor key={search.draft} id={search.draft} onSaved={draft => void navigate({
+        search: previous => ({ ...previous, draft }),
+      })} />
+    </Suspense>}
     <section className="scene-toolbar" aria-label="场景筛选">
       <label className="scene-search"><Icon name="search" /><input aria-label="搜索场景" type="search" placeholder="搜索场景…" value={search.q ?? ''} onChange={event => change({ q: event.target.value || undefined })} /></label>
       <label>物理源<select aria-label="物理源筛选" value={search.source ?? ''} onChange={event => change({ source: event.target.value as SceneSource || undefined })}>

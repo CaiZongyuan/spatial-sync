@@ -57,6 +57,7 @@ export function ApprovalCard({ record, canDecide, onDecision, onAttempt }: {
     <dl className="approval-facts"><div><dt>提交者</dt><dd>{actor(record.requestedBy)}</dd></div>
       <div><dt>提交时间</dt><dd>{time(record.createdAtMs)}</dd></div>
       <div><dt>审批对象</dt><dd><code>{record.subjectId}</code></dd></div>
+      {training && record.details.revision != null && <div><dt>计划修订</dt><dd>r{record.details.revision}</dd></div>}
       {record.sessionId && <div><dt>会话</dt><dd><Link to="/sessions/$sessionId" params={{ sessionId: record.sessionId }}>{record.sessionId}</Link></dd></div>}
       {record.subject === 'job' && <><div><dt>训练计划</dt><dd><Link to="/plans/$planId" params={{ planId: record.details.planId! }}>{record.details.planId}</Link> · r{record.details.planRevision}</dd></div>
         <div><dt>预计 GPU 小时</dt><dd>{record.details.estimatedGpuHours}</dd></div>

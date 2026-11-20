@@ -1,17 +1,23 @@
 import { Link } from '@tanstack/react-router';
+import { useContext } from 'react';
+import { ApprovalInboxContext } from '../lib/approvals';
 import { useTrainingResources } from '../lib/use-training-resources';
 import { jobReason, localTime } from '../lib/training-presentation';
 import { ComputeNodes } from './ComputeNodes';
+import { NodeRegistrationControls } from './NodeRegistrationControls';
 import { PlatformOverview } from './PlatformOverview';
 import '../resources.css';
 import '../training-resources.css';
 
 export function ComputeResources() {
   const result = useTrainingResources();
+  const permissions = useContext(ApprovalInboxContext);
   const queued = result.jobs?.filter(job => job.status === 'queued').sort((a, b) => a.createdAt - b.createdAt);
   return <main className="home compute-page"><PlatformOverview page="resources" nodeCount={result.nodes?.length}>
     <section aria-labelledby="compute-nodes-title"><div className="training-section-heading"><h2 id="compute-nodes-title">计算节点</h2>
       <button onClick={result.refresh}>刷新资源</button></div>
+      {permissions.inbox?.role === 'operator' && !permissions.error &&
+        <NodeRegistrationControls nodes={result.nodes ?? []} refresh={result.refresh} />}
       {result.nodesError && <p className="resource-error" role="alert">节点刷新失败：{result.nodesError}。{result.nodes && '保留最近一次结果。'}</p>}
       {result.nodes ? <ComputeNodes nodes={result.nodes} jobs={result.jobs ?? []} /> :
         <p className="resource-note" role="status">{result.nodesError ? '节点数据暂不可用。' : '正在读取节点…'}</p>}
