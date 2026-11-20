@@ -87,13 +87,33 @@ def _robot_asset(scene, entity, stage, graph):
     return referenced[0] if len(referenced) == 1 else None
 
 
+def _retained_source_matches(directory, record):
+    if "source" in record:
+        source = directory / record["source"]
+        return source.is_file() and digest(source) == record["sourceSha256"]
+    # This immutable asset retained the upstream digest in its provenance.
+    provenance_path = directory / "provenance.json"
+    if not provenance_path.is_file():
+        return False
+    provenance = read_json(provenance_path)
+    entrypoint = record["sourceEntrypoint"]
+    return (
+        provenance.get("revision") == record["sourceRevision"]
+        and provenance.get("sourceEntrypoint") == entrypoint
+        and provenance.get("sourceFiles", {}).get(entrypoint, {}).get("sha256") == record["sourceSha256"]
+    )
+
+
 def _retained_calibration(manager, scene, asset, task):
     root = BUILTIN_ROOT / "retained-calibrations"
     for path in sorted(root.glob("*.json")):
         record = read_json(path)
-        builder = record["legacyBuilder"]
+        if "sceneContentHash" in record and scene.content_hash != record["sceneContentHash"]:
+            continue
+        builder = record.get("legacyBuilder")
         namespace = ""
-        if scene.metadata["stage"] == "python:" + builder["id"] and task["robot"] == builder["entity"]:
+        if (builder and scene.metadata["stage"] == "python:" + builder["id"]
+                and task["robot"] == builder["entity"]):
             if any(
                 not (REPO_ROOT / file).is_file() or digest(REPO_ROOT / file) != sha
                 for file, sha in builder["files"].items()
@@ -112,8 +132,7 @@ def _retained_calibration(manager, scene, asset, task):
         directory = Path(asset["path"])
         if content_hash(directory) != record["assetContentHash"]:
             continue
-        source = directory / record["source"]
-        if not source.is_file() or digest(source) != record["sourceSha256"]:
+        if not _retained_source_matches(directory, record):
             continue
         return asset, JointCalibration.model_validate(record["mapping"]), path, namespace
     return None

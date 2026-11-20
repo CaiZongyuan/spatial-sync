@@ -1,0 +1,129 @@
+{
+  "asset": "robot/microduck@1",
+  "assetContentHash": "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b",
+  "sceneContentHash": "9af821e9b1d687a48c7cf65f879fd24497d09b62212a418e02a8cb7d3e0cf75a",
+  "sourceEntrypoint": "microduck_rl/src/mjlab_microduck/robot/microduck/robot_groundcontact.xml",
+  "sourceRevision": "5984efb770855432b03dafd3d879e9929981e45b",
+  "sourceSha256": "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
+  "mapping": {
+    "schema": "lw.joint-calibration/1",
+    "baseTransform": [
+      0.9961802141847969,
+      0.0,
+      -0.08732113642602385,
+      0.010478536371122862,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.08732113642602385,
+      0.0,
+      0.9961802141847969,
+      -0.0017696459377920248,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "joints": [
+      {
+        "jointKey": "/Asset/joints/left_hip_yaw",
+        "sourceName": "left_hip_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_hip_roll",
+        "sourceName": "left_hip_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_hip_pitch",
+        "sourceName": "left_hip_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_knee",
+        "sourceName": "left_knee",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/left_ankle",
+        "sourceName": "left_ankle",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/neck_pitch",
+        "sourceName": "neck_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_pitch",
+        "sourceName": "head_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_yaw",
+        "sourceName": "head_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/head_roll",
+        "sourceName": "head_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_yaw",
+        "sourceName": "right_hip_yaw",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_roll",
+        "sourceName": "right_hip_roll",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_hip_pitch",
+        "sourceName": "right_hip_pitch",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_knee",
+        "sourceName": "right_knee",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      },
+      {
+        "jointKey": "/Asset/joints/right_ankle",
+        "sourceName": "right_ankle",
+        "sign": 1,
+        "zeroOffset": 0.0,
+        "unit": "rad"
+      }
+    ]
+  }
+}

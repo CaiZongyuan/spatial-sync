@@ -14,12 +14,112 @@ from fastapi.testclient import TestClient
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.library.common import BUILTIN_ROOT, content_hash
+from packages.policies import export as policy_exports
 from packages.policies.inference import CpuPolicy
 from packages.policies.observations import ObservationSpec, joint_targets
 from tests.fixtures.policy import model_bytes, observation_spec
 from tests.fixtures.training_task import task_document
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import TOKEN
+
+
+def standalone_command(root):
+    isolated = """
+import importlib.util, runpy, sys
+sys.path.extend(sys.argv[1:3])
+assert importlib.util.find_spec("packages") is None
+sys.argv[:] = ["infer.py", "samples.json"]
+runpy.run_path("infer.py", run_name="__main__")
+"""
+    return [sys.executable, "-I", "-S", "-c", isolated, sysconfig.get_path("purelib"), str(root)]
+
+
+@pytest.mark.parametrize("name, command", [
+    ("microduck-stand-up", None), ("microduck-bow", [0.2]), ("microduck-walk-to", [0.1, 0., 0.]),
+])
+def test_builtin_microduck_export_matches_pinned_mjcf_calibration(tmp_path, name, command):
+    with TestClient(create_app()) as client:
+        response = client.get(f"/api/v1/policies/{name}/1/export")
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        archive.extractall(tmp_path)
+    manifest = json.loads((tmp_path / "manifest.json").read_bytes())
+    calibration = manifest["sourceCalibration"]
+    assert calibration["status"] == "verified"
+    assert calibration["asset"] == "robot/microduck@1"
+    asset_hash = "daf5e41b880367a5258bbcb97c15b6333b98d31595ef57f2a92e79f2c046f25b"
+    assert calibration["assetContentHash"] == asset_hash
+    mapping_bytes = (tmp_path / calibration["mappingPath"]).read_bytes()
+    assert hashlib.sha256(mapping_bytes).hexdigest() == calibration["mappingSha256"]
+    mapping = json.loads(mapping_bytes)
+    assert mapping["sourceSha256"] == "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15"
+    asset = next(row for row in manifest["provenance"] if row["id"] == calibration["asset"])
+    assert asset["contentHash"] == asset_hash
+    provenance_path = next(path for path in asset["documents"] if path.endswith("/provenance.json"))
+    source = json.loads((tmp_path / provenance_path).read_bytes())
+    assert mapping["sourceEntrypoint"] == source["sourceEntrypoint"]
+    assert mapping["sourceRevision"] == source["revision"]
+    assert mapping["sourceSha256"] == source["sourceFiles"][source["sourceEntrypoint"]]["sha256"]
+    # MuJoCo actuator order, verified against the pinned USD joint frames at zero and both signs.
+    source_names = (
+        "left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
+        "neck_pitch", "head_pitch", "head_yaw", "head_roll",
+        "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle",
+    )
+    assert calibration["joints"] == [
+        {"jointKey": f"/Asset/joints/{joint}", "sourceName": joint,
+         "sign": 1, "zeroOffset": 0., "unit": "rad"}
+        for joint in source_names
+    ]
+    spec = ObservationSpec.model_validate(manifest["observation"])
+    assert spec.schema_version == "lw.obs-spec/1"
+    robot = "/World/Lab/Microduck"
+    keys = [f"{robot}/joints/{joint}" for joint in source_names]
+    assert spec.action.jointKeys == keys
+    # Row-major asset-from-source transform, using the actual authored poses of trunk_base.
+    np.testing.assert_allclose(calibration["baseTransform"], [
+        0.9961802142, 0., -0.0873211364, 0.0104785364,
+        0., 1., 0., 0.,
+        0.0873211364, 0., 0.9961802142, -0.0017696459,
+        0., 0., 0., 1.,
+    ], rtol=0., atol=1e-9)
+    state = {
+        "joints": {key: {"q": value, "qd": 0.} for key, value in
+                   zip(keys, spec.action.defaultPosition, strict=True)},
+        "bodies": {f"{robot}/trunk_base": {"q": [0., 0., 0., 1.], "w": [0., 0., 0.]}},
+    }
+    (tmp_path / "samples.json").write_text(json.dumps([{"state": state, "command": command}]))
+    completed = subprocess.run(
+        standalone_command(tmp_path), cwd=tmp_path, capture_output=True, text=True, check=True, timeout=15,
+    )
+    row, = json.loads(completed.stdout)
+    vector = spec.assemble(state, previous_action=np.zeros(14), command=command)
+    policy = BUILTIN_ROOT / "policies" / name / "1/package/artifacts/policy.onnx"
+    raw = CpuPolicy(policy, spec).infer(vector)
+    np.testing.assert_allclose(row["raw"], raw, rtol=0., atol=1e-5)
+    targets = joint_targets(spec, spec.action.defaultPosition, raw)
+    limits = np.asarray([channel["physicalLimits"] for channel in manifest["actuators"]])
+    targets = np.clip(targets, limits[:, 0], limits[:, 1])
+    assert row["sourceTargets"] == pytest.approx(dict(zip(source_names, targets, strict=True)), abs=1e-5)
+
+
+@pytest.mark.parametrize("pin", ["sceneContentHash", "sourceSha256"])
+def test_builtin_export_omits_calibration_without_matching_provenance(tmp_path, monkeypatch, pin):
+    directory = tmp_path / "retained-calibrations"
+    directory.mkdir()
+    name = "microduck-1.json"
+    record = json.loads((BUILTIN_ROOT / "retained-calibrations" / name).read_bytes())
+    (directory / name).write_text(json.dumps(record | {pin: "0" * 64}))
+    monkeypatch.setattr(policy_exports, "BUILTIN_ROOT", tmp_path)
+    with TestClient(create_app()) as client:
+        response = client.get("/api/v1/policies/microduck-stand-up/1/export")
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        calibration = json.loads(archive.read("manifest.json"))["sourceCalibration"]
+        assert "source-calibration.json" not in archive.namelist()
+    assert calibration["status"] == "unavailable"
+    assert calibration["joints"] == []
+    assert calibration["baseTransform"] is None
 
 
 @pytest.mark.parametrize("offset", [False, True], ids=["delta", "offset-null"])
@@ -160,14 +260,7 @@ def test_export_runs_outside_platform_with_external_tensor_and_raw_action_histor
     sample = {"state": state, "command": command}
     requests = [sample, sample, sample | {"reset": True}]
     (root / "samples.json").write_text(json.dumps(requests))
-    isolated = """
-import importlib.util, runpy, sys
-sys.path.extend(sys.argv[1:3])
-assert importlib.util.find_spec("packages") is None
-sys.argv[:] = ["infer.py", "samples.json"]
-runpy.run_path("infer.py", run_name="__main__")
-"""
-    standalone = [sys.executable, "-I", "-S", "-c", isolated, sysconfig.get_path("purelib"), str(root)]
+    standalone = standalone_command(root)
     result = subprocess.run(
         standalone,
         cwd=root,
