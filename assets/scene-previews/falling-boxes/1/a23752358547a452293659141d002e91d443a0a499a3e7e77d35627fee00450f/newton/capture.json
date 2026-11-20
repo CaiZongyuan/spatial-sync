@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T05:37:58.346970+00:00",
+  "capturedAt": "2026-11-20T08:53:22.580820+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -132,6 +132,14 @@
       "sha256": "7636dc825c07f83915f8dab94d382fda00810d05ed9bacfd6884e84d179c928a"
     },
     {
+      "path": "packages/motion/__init__.py",
+      "sha256": "ba59b10297b68c62e7b92bae211939f981f64448e5e523474df33af0a2556aa0"
+    },
+    {
+      "path": "packages/motion/snapshot.py",
+      "sha256": "ddff7d04e2eeb17f227a91653ba4bbef83c10a11c75cae0a39e40f5d592592fb"
+    },
+    {
       "path": "packages/policies/action_contract.py",
       "sha256": "c7516ca359a7fe3bfcf9e6c7ff6c0ad5fba6d5273d1ece6831e2d529b752236b"
     },
@@ -141,11 +149,11 @@
     },
     {
       "path": "packages/policies/library.py",
-      "sha256": "32c0eb6849b761060dcb2ed940f70d60ad1669bf32fea20852d2afb2b2a7cca6"
+      "sha256": "131c314185b32c032050cefc1040b1ecdeb0fd36dc1dbc04e025f9e9390f3228"
     },
     {
       "path": "packages/policies/motion.py",
-      "sha256": "dcbbe638a08dd37dc81d250375c5c7f462b2a8cb6ed2ee1b21456c03603ed0ee"
+      "sha256": "5ab6f7d9906e5d30b69e1410ad3bca245b9877899b70cfff49ce932fa1038b9c"
     },
     {
       "path": "packages/policies/observations.py",
@@ -341,7 +349,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "c491a92ec762ff2e1d92eb7b321ac6a12351021cb9cc1e998850f24ef3110fd3"
+      "sha256": "fe5ef8d1ce488d1439345459afcf822cba3c1766e2e53fd7b74d06b0d46c8025"
     },
     {
       "path": "packages/training/reward_state.py",
@@ -361,7 +369,7 @@
     },
     {
       "path": "uv.lock",
-      "sha256": "8272998f927aee9b3301c3d4aa80e3ef6e0e5b8642a0af9d0438a518d094b9d3"
+      "sha256": "1b00007876cd5a5928b2fb3c2347e4c7743aa697e100d58e7676b99ef8b5167a"
     }
   ],
   "documents": {
@@ -371,10 +379,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "94a1689d98c716faa8acf08e6aa7b062ac6533d01288c56c57f5e245456db887",
-    "catalog.json": "e1800dee039316bbb7cf268835077e6d70a575e4da492872ff217fe95f7fb362",
-    "state.json": "52602df606e94e0cddb91ee82f130b1f95900d8f8869bbd8efce8e069d0c4d08",
-    "snapshot.bin": "e09b4380466ba506d2f755ce531dbe97d90d3dcdde9d9f12f367099b840395a6"
+    "manifest.json": "5706ad040e135c52b812dc81afca9414ebdf3c0e343d732f2fe7b1f8d8d21950",
+    "catalog.json": "6d5584b336fdff4739e6b90b539a64a87b767b4c4ff21eafc7a1cac0b9191940",
+    "state.json": "c8931df8e5c84c5c16afc290b4055cc857db271e3212764d9775747ed3faf5ae",
+    "snapshot.bin": "45a8d95d5871c1a5bb4631b5747e98f5521fec79254a0f748579a25ef5716d48"
   },
   "counts": {
     "physicalEntities": 3,
