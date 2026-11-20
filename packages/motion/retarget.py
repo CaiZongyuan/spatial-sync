@@ -170,7 +170,8 @@ def build_reference(asset, request, clip):
         return np.linalg.norm(position(name) - start) > 1e-7
 
     errors = []
-    point_errors = {name: [] for name in targets}
+    point_errors = {}
+    point_sources = {}
     if not 2 <= len(clip["frames"] if clip is not None else request.keyframes.frames) <= 2047:
         reject("reference_motion_limits", "Reference Motion needs between 2 and 2047 source frames")
     if clip is not None:
@@ -208,25 +209,24 @@ def build_reference(asset, request, clip):
             if name in targets
             and (name not in ("pelvis", "trunk") or (name == "trunk" and targets[name] != targets["pelvis"]))
         ]
-        signals = {}
+        signals, activity = {}, {}
         for limb, (first, middle, last) in LIMBS.items():
-            angles, directions = [], []
-            for frame in landmarks:
-                a, b = frame[first] - frame[middle], frame[last] - frame[middle]
-                if min(np.linalg.norm(a), np.linalg.norm(b)) < 0.001:
-                    reject("reference_degenerate_limb", "Source limb landmarks collapse", limb=limb)
-                angles.append(
-                    math.acos(float(np.clip(np.dot(a, b) / np.linalg.norm(a) / np.linalg.norm(b), -1, 1)))
-                )
-                direction = rotation.apply(-a / np.linalg.norm(a))
-                directions.append(direction)
-            if "Arm" in limb and np.ptp(angles) < 0.22:
-                angles = [
-                    math.acos(float(np.clip(np.dot(directions[0], value), -1, 1))) for value in directions
-                ]
-            signals[limb] = np.asarray(angles)
-        activity = {limb: float(np.ptp(signal)) for limb, signal in signals.items()}
-        minimum = max(0.22, 0.75 * max(activity.values()))
+            vectors = np.array(
+                [[frame[middle] - frame[first], frame[last] - frame[middle]] for frame in landmarks]
+            )
+            lengths = np.linalg.norm(vectors, axis=2)
+            if np.any(lengths < 0.001):
+                reject("reference_degenerate_limb", "Source limb landmarks collapse", limb=limb)
+            directions = vectors / lengths[:, :, None]
+            angles = np.arccos(np.clip(-np.sum(directions[:, 0] * directions[:, 1], axis=1), -1, 1))
+            swings = np.arccos(np.clip(np.sum(directions * directions[0], axis=2), -1, 1))
+            bend = float(np.ptp(angles))
+            # Proximal swing and joint flexion are independent. Measuring the distal
+            # direction as well would count the same flexion against the limb twice.
+            swing = swings[:, 0]
+            activity[limb] = max(bend, float(swing.max()))
+            signals[limb] = angles if bend >= 0.22 else swing
+        minimum = max(0.22, 0.85 * max(activity.values()))
         active = [limb for limb, amplitude in activity.items() if amplitude >= minimum]
         if not active:
             reject("reference_no_motion", "Motion Clip has no measurable dominant limb motion")
@@ -314,7 +314,12 @@ def build_reference(asset, request, clip):
             errors.extend(abs(values[qpos[key]] - value) for key, value in goal.items())
             for name, point in (rest_points | goals).items():
                 if name != "pelvis" and (name != "trunk" or name in goals):
-                    point_errors[name].append(float(np.linalg.norm(position(name) - point)))
+                    point_sources[name] = (
+                        "source_landmark"
+                        if name in goals
+                        else ("planted_support" if name in feet else "asset_nominal")
+                    )
+                    point_errors.setdefault(name, []).append(float(np.linalg.norm(position(name) - point)))
         if max(errors, default=0.0) > 0.18:
             reject(
                 "reference_tracking_unreachable",
@@ -358,12 +363,22 @@ def build_reference(asset, request, clip):
             }
         }
         for raw, fitted in zip(motion.frames, frames, strict=True):
-            if raw.bodyLocal:
-                for name, path in mapping.items():
-                    if isinstance(path, str) and path in raw.bodyLocal and path in fitted["bodyLocal"]:
-                        point_errors[name].append(
-                            float(np.linalg.norm(np.subtract(raw.bodyLocal[path], fitted["bodyLocal"][path])))
-                        )
+            if not raw.bodyLocal:
+                continue
+            unknown = raw.bodyLocal.keys() - fitted["bodyLocal"].keys()
+            if unknown:
+                reject(
+                    "reference_keyframe_keypoint_invalid",
+                    "Unmapped external keypoint target",
+                    keys=sorted(unknown),
+                )
+            for name in targets:
+                path = mapping[name]
+                if path in raw.bodyLocal:
+                    point_sources[name] = "authored_keyframe"
+                    point_errors.setdefault(name, []).append(
+                        float(np.linalg.norm(np.subtract(raw.bodyLocal[path], fitted["bodyLocal"][path])))
+                    )
         license = request.keyframeLicense.license
 
     if frames[-1]["time"] > KEYFRAME_DURATION:
@@ -415,8 +430,7 @@ def build_reference(asset, request, clip):
     ghost = []
     gaps, margins, slips = [], [], []
     saturated = coordinates = 0
-    forward(nominal)
-    contact_origin = {name: position(name).copy() for name in feet}
+    contact_origins = {}
     for index, time in enumerate(samples):
         values = motion_observations(motion, float(time))["reference_motion_frame"]
         forward(to_qpos({"position": values[:3], "orientation": values[3:7], "joints": values[7:]}))
@@ -438,8 +452,15 @@ def build_reference(asset, request, clip):
         for name in feet:
             vertices = sole(name)
             gaps.append(float(abs(vertices[:, 2].min())))
-            support.extend(vertices[vertices[:, 2] <= FLOOR_TOLERANCE, :2])
-            slips.append(float(np.linalg.norm(position(name)[:2] - contact_origin[name][:2])))
+            grounded = np.abs(vertices[:, 2]) <= FLOOR_TOLERANCE
+            support.extend(vertices[grounded, :2])
+            # Each row is one persistent material vertex in its authored collider.
+            origins = contact_origins.setdefault(name, np.full_like(vertices[:, :2], np.nan))
+            first_contact = grounded & np.isnan(origins[:, 0])
+            origins[first_contact] = vertices[first_contact, :2]
+            slips.append(
+                float(np.linalg.norm(vertices[grounded, :2] - origins[grounded], axis=1).max(initial=0))
+            )
         if len(support) < 3:
             reject("reference_ground_contact", "Mapped soles do not form a ground support polygon")
         try:
@@ -479,7 +500,10 @@ def build_reference(asset, request, clip):
             "slideSpeedMps": request.maxSlideSpeed,
         },
         "maxBendErrorRad": float(max(errors)) if errors else None,
-        "keypointErrorM": {name: max(values) for name, values in point_errors.items() if values},
+        "keypointErrorM": {name: max(values) for name, values in point_errors.items()},
+        "keypointTargets": {
+            name: {"path": mapping[name], "source": source} for name, source in point_sources.items()
+        },
         "maxRootSpeedMps": float(max(linear_speed)),
         "maxRootAngularSpeedRadps": float(max(angular_speed)),
         "maxGroundGapM": max(gaps),

@@ -61,6 +61,7 @@ class NewtonSource:
         self._invocations = OrderedDict()
         self._starting = True
         self.trial = None
+        self.initially_paused = False
 
     def configure_scene(self, scene_package):
         self.scene_package = scene_package
@@ -190,6 +191,7 @@ class NewtonSource:
                 self._metrics.update(packet["stats"])
                 self._runner_heartbeat.observe(packet["stats"])
             if kind == "ready":
+                self.initially_paused = packet.get("paused", False)
                 self.manifest = SceneManifest.model_validate(packet["manifest"])
                 from packages.sim_runtime.info_catalog import load_info_catalog
 

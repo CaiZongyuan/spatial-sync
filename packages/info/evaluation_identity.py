@@ -140,7 +140,10 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             if len(targets) != 1 or program_candidate and targets[0]["program"] != subject:
                 raise ValueError("Fixed Suite Program slot is unknown")
             registry = program_registry(suite.metadata["source"])
-            program = registry[targets[0]["program"]]
+            goal = suite.metadata.get("goalSuite") or {}
+            pinned = candidate["kind"] == "policy" and goal.get("trajectoryCompletion")
+            program_id = "embodied.policy" if pinned else targets[0]["program"]
+            program = registry[program_id]
             selected = Path(inspect.getsourcefile(program)).resolve().relative_to(root.resolve()).as_posix()
             raw = original[selected]
             content, masked, location = split_program_class(raw, program.__name__)
@@ -148,7 +151,7 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             if role not in ("candidate", "fixed-runtime"):
                 raise ValueError("Program provenance role is unknown")
             slot = {
-                "programId": targets[0]["program"],
+                "programId": program_id,
                 "target": suite.task["robot"],
                 "module": selected,
                 "location": location,
@@ -208,6 +211,9 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
         "suite": suite.id,
         "criteria": task if task is not None else suite.grading,
     }
+    goal = suite.metadata.get("goalSuite") or {}
+    if goal.get("trajectoryCompletion"):
+        judge_facts["trajectoryCompletion"] = goal["trajectoryCompletion"]
     # Retain complete original bytes, not just masked hashes or a possibly dirty commit.
     directory.mkdir(parents=True, exist_ok=True)
     archive = directory / (identifier + ".zip")

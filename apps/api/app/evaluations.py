@@ -10,6 +10,7 @@ from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
+from types import SimpleNamespace
 
 from fastapi import HTTPException, Request
 from pydantic import Field, StrictStr
@@ -43,7 +44,7 @@ from packages.programs.simulation import (
     verify_simulation_subject,
 )
 from packages.protocol.internal import SessionOptions
-from packages.protocol.schema import ActionRequest, Actor, EntityObservations, EntitySnapshot, Model
+from packages.protocol.schema import ActionRequest, Actor, Command, EntityObservations, EntitySnapshot, Model
 
 
 def now():
@@ -920,6 +921,8 @@ class EvaluationService:
             if attempt is not None:
                 attempt["milestones"] = dict(stages)
 
+        subject = getattr(session, "simulation_subject", None) or {}
+        pinned_motion = subject.get("binding", {}).get("config", {}).get("referencePlacement")
         observe(session.info_snapshot())
         cursor = session.info.event_seq
         pipeline = await session.action_pipeline()
@@ -940,6 +943,13 @@ class EvaluationService:
             )
         if attempt is not None:
             attempt.update(invocationId=invocation.invocationId, invocationStatus=invocation.status)
+        if pinned_motion and session.state == "PAUSED" and invocation.status not in TERMINAL:
+            replies = []
+            operator = SimpleNamespace(role="operator", enqueue_reliable=replies.append)
+            resume = Command(requestId=f"evaluation-{uuid.uuid4().hex}", command="resume")
+            await session.execute(operator, resume)
+            if not replies or json.loads(replies[-1])["status"] != "applied":
+                raise HTTPException(503, {"code": "source_unavailable"})
         deadline = time.monotonic() + task["timeoutSeconds"]
         timed_out = False
         while True:
@@ -967,7 +977,7 @@ class EvaluationService:
                 timed_out = True
                 break
         observe()
-        success = not timed_out and (
+        success = not timed_out and (not pinned_motion or invocation.status == "succeeded") and (
             condition_state([task["success"]], task["robot"], session.info.values(), session.info.metadata())
             is True
         )
@@ -981,6 +991,8 @@ class EvaluationService:
             "invocationId": invocation.invocationId,
             "invocationStatus": invocation.status,
             **({"reason": "task_timeout"} if timed_out else {}),
+            **({"reason": invocation.error.code}
+               if pinned_motion and invocation.error and not timed_out else {}),
         }
 
     async def cleanup(self, identifier, *, private=False):

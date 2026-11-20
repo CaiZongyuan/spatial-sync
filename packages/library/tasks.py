@@ -251,7 +251,10 @@ class TaskLibrary:
         asset = scene_robot_asset(scene, task.robot, stage, graph) if stage and not graph.errors else None
         if (not asset or asset["id"] != task.referenceMotion.asset
                 or asset["contentHash"] != task.referenceMotion.assetContentHash
-                or not asset_coordinates_match(stage, task.robot, graph, asset)):
+                or not asset_coordinates_match(
+                    stage, task.robot, graph, asset,
+                    mapped_points=[mapping["pelvis"], *(task.referenceMotion.frames[0].bodyLocal or {})],
+                )):
             raise ValueError("Reference Motion must pin the selected robot's calibrated Asset coordinates")
         if task.declarative.baseBody != task.robot + mapping["pelvis"].removeprefix("/Asset"):
             raise ValueError("Reference Motion pelvis must match the Task base body")

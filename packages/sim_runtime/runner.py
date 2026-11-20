@@ -122,6 +122,8 @@ class _Runner:
         )
         self.viewer = None
         self._viewer_error = None
+        if policy_subject and policy_subject["binding"]["config"].get("referencePlacement"):
+            self.sim.pause()
         if self.info.port:
             self.extractor.readback_mode = "control-snapshot-reuse"
 
@@ -431,6 +433,7 @@ class _Runner:
         self.control.offer(
             {
                 "kind": "ready",
+                "paused": self.sim.paused,
                 "manifest": self.manifest.model_dump(),
                 "snapshot": snapshot.model_dump(),
                 "catalog": self.info.catalog.model_dump(mode="json"),

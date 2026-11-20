@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.info.program import Reject
 from packages.library.metadata import Locations
+from packages.policies.motion import motion_observations, reference_tracking
 from packages.programs.policy_base import (
     ActionName,
     MultiPolicyConfig,
@@ -16,7 +17,8 @@ from packages.programs.policy_base import (
     inspect_port_joints,
 )
 from packages.programs.waypoint_guidance import slot_command_bounds, waypoint_command, wrap_pi
-from packages.training.declarative import Completion
+from packages.protocol.math import compose_pose, normalize_quaternion, rotate_vector
+from packages.training.declarative import Completion, trajectory_completion
 
 
 def _orientation_angles(q):
@@ -214,7 +216,88 @@ class EmbodiedPostureProgram:
             self._set_state(ctx, "idle")
 
 
+class ReferenceSite(BaseModel):
+    body: SpatialPath
+    offset: tuple[float, float, float]
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+
+class ReferencePlacement(BaseModel):
+    p: tuple[float, float, float] = (0., 0., 0.)
+    q: tuple[float, float, float, float] = (0., 0., 0., 1.)
+    sites: dict[str, ReferenceSite] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def unit_rotation(self):
+        self.q = normalize_quaternion(self.q)
+        return self
+
+
+class TrajectoryCheck:
+    """Measure physical state against the same phase used for policy observations."""
+
+    def __init__(self, ctx, slot, joints, units):
+        self.motion = slot.task["referenceMotion"]
+        placement = ctx.config.referencePlacement or ReferencePlacement()
+        self.placement = {"p": placement.p, "q": placement.q}
+        def scene_key(key):
+            return ctx.key + key.removeprefix("/Asset")
+
+        keys = [scene_key(key) for key in self.motion["jointKeys"]]
+        self.joints = [(joints[key], units[key]) for key in keys]
+        self.points = {}
+        for key in (self.motion["frames"][0].get("bodyLocal") or {}):
+            site = placement.sites.get(key)
+            if site:
+                self.points[key] = (ctx.physics.body_pose, ctx.physics.bind_body(site.body), site.offset)
+                continue
+            try:
+                index = ctx.physics.bind_body(scene_key(key))
+            except KeyError:
+                self.points[key] = (ctx.physics.site_pose, ctx.physics.bind_site(scene_key(key)), None)
+            else:
+                self.points[key] = (ctx.physics.body_pose, index, None)
+
+    def error(self, physics, position, orientation, elapsed, criteria):
+        pose = motion_observations(self.motion, elapsed)["reference_motion_frame"]
+        target = compose_pose(self.placement, {"p": pose[:3], "q": pose[3:7]})
+        actual = normalize_quaternion(orientation)
+        cosine = abs(sum(a * b for a, b in zip(actual, target["q"], strict=True)))
+        error = max(
+            math.dist(position, target["p"]) / criteria.rootPositionM,
+            2 * math.acos(min(1., cosine)) / criteria.rootOrientationRad,
+        )
+        for (joint, unit), expected in zip(self.joints, pose[7:], strict=True):
+            limit = criteria.slideM if unit == "m" else criteria.hingeRad
+            error = max(error, abs(float(physics.joint_q(joint)[0]) - expected) / limit)
+        if self.points:
+            x, y, z, w = actual
+            targets = reference_tracking(self.motion, elapsed)["bodyLocal"]
+            for key, (read_pose, index, site_offset) in self.points.items():
+                point, rotation = read_pose(index)
+                if site_offset is not None:
+                    point = [a + b for a, b in zip(point, rotate_vector(rotation, site_offset), strict=True)]
+                offset = [a - b for a, b in zip(point, position, strict=True)]
+                local = rotate_vector((-x, -y, -z, w), offset)
+                error = max(error, math.dist(local, targets[key]) / criteria.bodyLocalM)
+        return error
+
+    def joints_stationary(self, physics, criteria):
+        return all(
+            abs(float(physics.joint_qd(joint)[0])) <= (
+                criteria.terminalSlideMPerSec if unit == "m" else criteria.terminalHingeRadPerSec
+            )
+            for joint, unit in self.joints
+        )
+
+
 class EmbodiedPolicyConfig(MultiPolicyConfig):
+    referencePlacement: ReferencePlacement | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     locations: dict = Field(default_factory=dict, exclude_if=lambda value: not value,
                             json_schema_extra={"documentSchema": "locations"})
     xyTolerance: float = Field(default=.08, gt=0, exclude_if=lambda value: value == .08)
@@ -243,10 +326,19 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
 
     def _init_robot(self, ctx):
         self.state_property = _detect_state_property(ctx, self.state_property)
-        self.completions = {
-            action: Completion.model_validate(slot.task["completion"])
-            for action, slot in self.slots.items() if slot.task.get("completion") is not None
-        }
+        self.completions = {}
+        self.trajectories = {}
+        for action, slot in self.slots.items():
+            completion = trajectory_completion(slot.task)
+            if completion:
+                self.trajectories[action] = TrajectoryCheck(ctx, slot, self.joints, self.joint_units)
+                self.completions[action] = completion
+            elif slot.task.get("completion") is not None:
+                self.completions[action] = Completion.model_validate(slot.task["completion"])
+        if self.trajectories:
+            # Typed action/fall telemetry is shared even when the Scene phase enum is device-specific.
+            self.state_property = None
+        self.motion_error = None
         self.waypoints = {
             name: value.model_dump(mode="json")
             for name, value in Locations.model_validate(ctx.config.locations).waypoints.items()
@@ -347,6 +439,7 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
 
     def _on_action_start(self, inv, ctx, slot):
         self.last_completed = None
+        self.motion_error = None
         self.dwell = 0.
         self.smoothed_command = [0., 0., 0.]
         self.target_waypoint = inv.params.get("waypoint")
@@ -373,7 +466,17 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         if completion.mode == "phase_clip":
             motion = self.active_slot.task["referenceMotion"]
             duration = motion["frames"][-1]["time"] * (completion.cycles if motion["loop"] else 1)
-            reached = ctx.sim_time - self.started + 1e-9 >= duration
+            elapsed = ctx.sim_time - self.started
+            reached = elapsed + 1e-9 >= duration
+            tracker = self.trajectories.get(self.handle.action)
+            if tracker:
+                criteria = completion.trajectory
+                error = tracker.error(ctx.physics, p, q, elapsed, criteria)
+                if not reached and error > 1.:
+                    self.motion_error = error
+                reached = (reached and error <= 1. and calm
+                           and tilt <= completion.uprightTiltDeg
+                           and tracker.joints_stationary(ctx.physics, criteria))
         elif completion.mode == "posture_recovery":
             reached = not self.fallen and tilt <= completion.uprightTiltDeg and calm
         elif completion.mode == "waypoint_nav":
@@ -395,6 +498,8 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         completion = self.completions.get(inv.action)
         if completion is not None and completion.mode != "posture_recovery" and self.fallen:
             return "robot_fallen", "Base height or tilt left the commissioned range"
+        if self.motion_error is not None:
+            return "motion_tracking_failed", "Measured pose left the pinned trajectory tolerance"
         return None
 
     def _action_completed(self, inv, ctx, slot):
@@ -405,6 +510,7 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
             slot.model.inference_calls > self.start_inferences
             and self.dwell + 1e-9 >= completion.dwellSeconds
             and not self.fallen
+            and self.motion_error is None
         )
 
     def _clear_action(self, ctx):

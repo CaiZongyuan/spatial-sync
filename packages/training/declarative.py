@@ -196,6 +196,16 @@ class LayerA(Data):
         return self
 
 
+class TrajectoryTolerance(Data):
+    hingeRad: Annotated[float, Field(gt=0, le=.2)] = .05
+    slideM: Annotated[float, Field(gt=0, le=.04)] = .008
+    rootPositionM: Annotated[float, Field(gt=0, le=.10)] = .025
+    rootOrientationRad: Annotated[float, Field(gt=0, le=.5)] = .18
+    bodyLocalM: Annotated[float, Field(gt=0, le=.06)] = .018
+    terminalHingeRadPerSec: Annotated[float, Field(gt=0, le=1)] = .35
+    terminalSlideMPerSec: Annotated[float, Field(gt=0, le=.2)] = .04
+
+
 class Completion(Data):
     mode: Literal["phase_clip", "posture_recovery", "command_track", "waypoint_nav"]
     dwellSeconds: Positive = 0.25
@@ -205,10 +215,24 @@ class Completion(Data):
     maxSpeed: Positive = 0.06
     maxAngularSpeed: Positive = 0.50
     trackingTolerance: Positive = 0.1
+    trajectory: TrajectoryTolerance | None = Field(default=None, exclude_if=lambda value: value is None)
     cycles: int = Field(default=1, ge=1, le=1000)
 
     @model_validator(mode="after")
     def tilt_limits(self):
+        if self.trajectory is not None and self.mode != "phase_clip":
+            raise ValueError("Trajectory tolerances require phase_clip")
         if self.uprightTiltDeg >= self.maxTiltDeg:
             raise ValueError("Upright tilt must be less than maximum tilt")
         return self
+
+
+
+def trajectory_completion(task):
+    """Canonical immutable criteria for Asset-pinned motion. Inline legacy clips retain their contract."""
+    if not task.get("referenceMotionRef"):
+        return None
+    completion = Completion.model_validate(task.get("completion") or {"mode": "phase_clip"})
+    if completion.mode != "phase_clip":
+        raise ValueError("A pinned Reference Motion requires phase_clip completion")
+    return completion.model_copy(update={"trajectory": completion.trajectory or TrajectoryTolerance()})

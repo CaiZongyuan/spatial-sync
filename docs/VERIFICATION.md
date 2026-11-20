@@ -990,3 +990,30 @@ and isolated native observation replay are distinct from training a Policy and
 measuring its held-out evaluation. Submit a fresh Goal when the reference identity
 changes. The first human approval fixes that identity together with the Goal
 Suite's evaluation conditions and sealed trials.
+
+For an Asset-pinned imitation Goal, the Suite fixes the trajectory tolerances
+and terminal dwell with the Reference Motion digest. Evaluation starts from
+the seeded, zero-step state and resumes after the action enters the pipeline.
+The generic policy host compares measured joint positions, root pose, and
+mapped body-local points with targets on the shared simulation-time clock.
+Once the clip ends, the host requires continuous within-tolerance tracking,
+upright posture and bounded root and joint velocities for the declared dwell.
+An out-of-tolerance trajectory fails with `motion_tracking_failed`.
+
+The 4.9-second Microduck squat probe includes a 0.4-second hold. It uses
+a 0.05 rad hinge tolerance, 25 mm root position tolerance, 0.18 rad root
+orientation tolerance and 18 mm local-point tolerance. The CPU tracking
+controller measured peak errors of 0.0345 rad at the joints, 14.5 mm at the
+root, 0.154 rad in root orientation and 3.9 mm at the mapped points. The knee
+excursion exceeds 0.15 rad. The held phase needs 0.25 seconds of terminal
+dwell, with 0.06 m/s root linear, 0.50 rad/s root angular and 0.35 rad/s
+hinge velocity limits.
+
+The fit bounds maximum explicit bend residual at 0.18 rad and measures
+tangential slip from each supporting collision vertex's first contact.
+`report.keypointTargets` identifies each measured error's path and target
+source. The source values are `source_landmark`, `planted_support`,
+`asset_nominal` and `authored_keyframe`. A nominal head target identifies
+the robot's Asset pose. Explicit keyframe keys must map to a published body
+or site. The two Python gateway CI shards install FFmpeg and FFprobe to
+exercise the actual video admission path and generated fixtures.

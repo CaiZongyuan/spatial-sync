@@ -200,7 +200,8 @@ class Session:
                 raise ValueError("Initial source snapshot is not a complete Manifest sample")
             # Prepare the initial policy before exposing the candidate revision.
             # Creation is exclusive; reload already holds command_lock.
-            policy_change = await self._observer_policy_change(candidate, "RUNNING", False)
+            initial_state = "PAUSED" if getattr(candidate, "initially_paused", False) else "RUNNING"
+            policy_change = await self._observer_policy_change(candidate, initial_state, False)
             self.source = candidate
             self._revision_number += 1
             self.manifest = manifest
@@ -229,7 +230,7 @@ class Session:
                 self.pipeline.table = InvocationTable(evicted_lookup=self._recorded_invocation)
             self._body_stream_ids = body_ids
             self._frame = self._complete_frame = None
-            self.state, self.error = "RUNNING", None
+            self.state, self.error = initial_state, None
             self._auto_paused = False
             self._cache_frame(self._source_frame(initial_frame))
             if policy_change:

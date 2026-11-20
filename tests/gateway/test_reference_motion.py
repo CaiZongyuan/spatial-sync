@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import io
 import json
@@ -109,7 +110,7 @@ def keyframes(assets):
     }
 
 
-def test_reference_keyframes_task_and_exact_transfer(tmp_path):
+def test_reference_keyframes_task_and_exact_transfer(tmp_path, monkeypatch):
     settings = remote_settings()
     app = create_app(settings)
     with TestClient(app) as client:
@@ -124,6 +125,23 @@ def test_reference_keyframes_task_and_exact_transfer(tmp_path):
         invalid["keyframes"]["frames"][1]["joints"] = [20.0] * 14
         response = client.post(URL, headers=OPERATOR, json=invalid)
         assert response.status_code == 422 and response.json()["detail"]["code"] == "reference_joint_speed"
+        typo = copy.deepcopy(request)
+        for frame in typo["keyframes"]["frames"]:
+            frame["bodyLocal"] = {"/Asset/does-not-exist": [50.0, 0.0, 0.0]}
+        rejected = client.post(URL, headers=OPERATOR, json=typo)
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["code"] == "reference_keyframe_keypoint_invalid"
+
+        yaw = copy.deepcopy(request)
+        initial, final = yaw["keyframes"]["frames"]
+        channel = yaw["keyframes"]["jointKeys"].index("/Asset/joints/left_hip_yaw")
+        final["time"] = .5
+        final["joints"] = initial["joints"].copy()
+        final["joints"][channel] += .5
+        rejected = client.post(URL, headers=OPERATOR, json=yaw)
+        assert rejected.status_code == 422
+        assert rejected.json()["detail"]["maxFootSlipM"] >= .0228
+
         published = client.post(URL, headers=OPERATOR, json=request)
         assert published.status_code == 201, published.text
         reference = published.json()
@@ -140,6 +158,29 @@ def test_reference_keyframes_task_and_exact_transfer(tmp_path):
         body = imitation_request(reference)
         path = "/api/v1/tasks/reference-motion"
         assert (client.post(path, headers=VIEWER, json=body)).status_code == 403
+        from pxr import Gf, UsdGeom
+
+        from packages.library.structural import USDGraph
+
+        compose = USDGraph.compose
+
+        def displaced_site(graph, filename):
+            stage = compose(graph, filename)
+            point = stage.GetPrimAtPath(ROBOT + "/ankle_left/left_foot") if stage else None
+            if point:
+                original = UsdGeom.XformCache().GetLocalToWorldTransform(point).ExtractTranslation()
+                stage.SetEditTarget(stage.GetSessionLayer())
+                UsdGeom.Xformable(point).AddTranslateOp(opSuffix="witness").Set(Gf.Vec3d(.1, 0, 0))
+                displaced = UsdGeom.XformCache().GetLocalToWorldTransform(point).ExtractTranslation()
+                assert (displaced - original).GetLength() == pytest.approx(.1)
+            return stage
+
+        with monkeypatch.context() as substitute:
+            substitute.setattr(USDGraph, "compose", displaced_site)
+            rejected = client.post(path, headers=OPERATOR, json=body)
+            assert rejected.status_code == 422
+            assert "calibrated Asset coordinates" in rejected.text
+
         published = client.post(path, headers=OPERATOR, json=body)
         assert published.status_code == 201, published.text
         task = published.json()
@@ -156,6 +197,8 @@ def test_reference_keyframes_task_and_exact_transfer(tmp_path):
             ),
         )
         assert plan.status_code == 201, plan.text
+        frozen = plan.json()["goalSuite"]["trajectoryCompletion"]
+        assert frozen["mode"] == "phase_clip" and frozen["trajectory"]["hingeRad"] == .05
         node = register(client, "reference-probe")
         requested = client.post(
             "/api/v1/jobs",
@@ -262,3 +305,45 @@ def assert_policy_archive(client, manager, task, ref, temporary):
         assert hashlib.sha256(actual).hexdigest() == ref["sha256"]
         assert json.loads(actual)["source"] == ref["source"]
         assert json.loads(archive.read(manifest["referenceMotion"])) == ref["motion"]
+
+
+def test_straight_dominant_leg_requires_drive_even_with_other_knee_mapped():
+    import math
+
+    from packages.info.plans import PlanError
+    from packages.motion.reference_contract import ReferenceRequest
+    from packages.motion.retarget import build_reference
+
+    app = create_app(remote_settings())
+    with TestClient(app):
+        asset = app.state.manager.library_assets.resolve("robot/microduck@1")
+        frames = []
+        for time in (0., .5, 1.):
+            alpha = time * math.pi / 2
+            bend = .4 * time
+            positions = {
+                "rightHip": (0., -.1, 0.),
+                "rightKnee": (.3 * math.sin(alpha), -.1, -.3 * math.cos(alpha)),
+                "rightAnkle": (.6 * math.sin(alpha), -.1, -.6 * math.cos(alpha)),
+                "leftHip": (0., .1, 0.),
+                "leftKnee": (0., .1, -.3),
+                "leftAnkle": (.3 * math.sin(bend), .1, -.3 - .3 * math.cos(bend)),
+            }
+            for side in ("left", "right"):
+                for name, height in (("Shoulder", .6), ("Elbow", .4), ("Wrist", .2)):
+                    positions[side + name] = (0., .2 if side == "left" else -.2, height)
+            frames.append({"timeSeconds": time, "joints": {
+                name: {"position": values} for name, values in positions.items()
+            }})
+        request = ReferenceRequest.model_validate({
+            "asset": asset.id, "assetContentHash": asset.content_hash,
+            "clip": {"id": "motion-clip/" + "0" * 64 + "@1", "sha256": "0" * 64},
+            "mapping": MAPPING | {"bends": {
+                "leftLeg": {"joint": "/Asset/joints/left_knee", "gain": -.1},
+            }},
+        })
+        with pytest.raises(PlanError) as caught:
+            build_reference(asset, request, {"frames": frames})
+        assert caught.value.detail["code"] == "reference_unmapped_active_limb"
+        assert caught.value.detail["limb"] == "rightLeg"
+        assert caught.value.detail["excursionRad"] == pytest.approx(math.pi / 2)

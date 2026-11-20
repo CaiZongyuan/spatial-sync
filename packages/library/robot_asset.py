@@ -19,7 +19,7 @@ def scene_robot_asset(scene, entity, stage, graph):
     return referenced[0] if len(referenced) == 1 else None
 
 
-def asset_coordinates_match(stage, robot, graph, asset):
+def asset_coordinates_match(stage, robot, graph, asset, *, mapped_points=()):
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
     source = Usd.Stage.Open(graph.layer(asset, asset["metadata"]["stage"]))
@@ -36,6 +36,18 @@ def asset_coordinates_match(stage, robot, graph, asset):
     # Compare in the asset frame so the Scene may translate and rotate the robot.
     scene_to_asset = placement.GetInverse()
     source_to_asset = poses.GetLocalToWorldTransform(source_prim).GetInverse()
+    for path in mapped_points:
+        expected = source.GetPrimAtPath(path)
+        actual = stage.GetPrimAtPath(Sdf.Path(path).ReplacePrefix(source_root, scene_root))
+        if (not expected or not actual or not actual.IsA(UsdGeom.Xformable)
+                or actual.GetTypeName() != expected.GetTypeName()
+                or any(actual.HasAPI(api) != expected.HasAPI(api)
+                       for api in (UsdPhysics.RigidBodyAPI, UsdPhysics.CollisionAPI))
+                or not Gf.IsClose(
+                    poses.GetLocalToWorldTransform(actual) * scene_to_asset,
+                    poses.GetLocalToWorldTransform(expected) * source_to_asset, 1e-6,
+                )):
+            return False
     joint_coordinates = ("physics:axis", "physics:jointEnabled", "physics:localPos0", "physics:localPos1")
     for expected in Usd.PrimRange(source_prim, Usd.TraverseInstanceProxies()):
         if expected.IsA(UsdPhysics.Joint):

@@ -169,11 +169,13 @@ class TaskMetadata(Schema):
         if self.referenceMotionRef is not None:
             if self.declarative is None or self.referenceMotion is None:
                 raise ValueError("Reference Motion pins require declarative Task frames")
+            completion = self.completion or Completion(mode="phase_clip")
+            if completion.mode != "phase_clip":
+                raise ValueError("A pinned Reference Motion requires phase_clip completion")
             duration = self.referenceMotion.frames[-1].time
-            if self.completion and self.completion.mode == "phase_clip":
-                if self.referenceMotion.loop:
-                    duration *= self.completion.cycles
-                duration += self.completion.dwellSeconds
+            if self.referenceMotion.loop:
+                duration *= completion.cycles
+            duration += completion.dwellSeconds
             if self.declarative.episodeSeconds < duration:
                 raise ValueError("Episode must cover the Reference Motion and completion dwell")
         if self.completion is not None:

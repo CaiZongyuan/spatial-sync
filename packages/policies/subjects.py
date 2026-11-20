@@ -22,6 +22,7 @@ from packages.programs.subjects import fixed_bindings as simulation_fixed_bindin
 from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
+from packages.training.declarative import trajectory_completion
 
 from .library import PolicyLibrary, digest, read_json
 from .observations import (
@@ -237,6 +238,44 @@ def _candidate(manager, requested):
     return manager.policies.resolve(policy["id"])
 
 
+def _reference_placement(scene, robot, points=()):
+    from pxr import UsdGeom, UsdPhysics
+
+    payload = scene.runtime_payload()
+    graph = USDGraph(payload["package"], payload["assets"], payload["expectedAssets"])
+    stage = graph.compose(scene.metadata["stage"])
+    prim = stage.GetPrimAtPath(robot) if stage and not graph.errors else None
+    if not prim:
+        raise _invalid("Cannot resolve the fixed Reference Motion placement")
+    transforms = UsdGeom.XformCache()
+    placement = transforms.GetLocalToWorldTransform(prim)
+    rotation = placement.ExtractRotationQuat()
+    scale = UsdGeom.GetStageMetersPerUnit(stage)
+    sites = {}
+    for key in points:
+        point = stage.GetPrimAtPath(robot + key.removeprefix("/Asset"))
+        if not point:
+            raise _invalid("Mapped Reference Motion point is missing")
+        if point.HasAPI(UsdPhysics.RigidBodyAPI):
+            continue
+        body = point.GetParent()
+        while body and body.GetPath().HasPrefix(prim.GetPath()) and not body.HasAPI(UsdPhysics.RigidBodyAPI):
+            body = body.GetParent()
+        if not body or not body.GetPath().HasPrefix(prim.GetPath()):
+            raise _invalid("Mapped Reference Motion site requires a rigid owner")
+        body_inverse = transforms.GetLocalToWorldTransform(body).GetInverse()
+        local = transforms.GetLocalToWorldTransform(point) * body_inverse
+        sites[key] = {
+            "body": str(body.GetPath()),
+            "offset": [float(v) * scale for v in local.ExtractTranslation()],
+        }
+    return {
+        "p": [float(x) * scale for x in placement.ExtractTranslation()],
+        "q": [*map(float, rotation.GetImaginary()), float(rotation.GetReal())],
+        "sites": sites,
+    }
+
+
 def resolve_policy_subject(manager, requested, suite, scene):
     """No Source starts here. The caller persists this descriptor before reserving one."""
     suite.verify()
@@ -271,9 +310,28 @@ def resolve_policy_subject(manager, requested, suite, scene):
     base = bindings.get(task["robot"])
     if base is None or base["type"] != interface:
         raise _invalid("Policy target is absent or has a different interface")
-    program_cls = policy_program_for(interface, base.get("program"))
-    base_config = base["config"]
     completion = task.get("completion") or {}
+    pinned_completion = trajectory_completion(task)
+    base_config = base["config"]
+    program_cls = policy_program_for(interface, base.get("program"))
+    if pinned_completion:
+        goal = suite.metadata.get("goalSuite")
+        if goal is not None and (
+            goal.get("referenceMotionRef") != task["referenceMotionRef"]
+            or goal.get("trajectoryCompletion") != pinned_completion.model_dump(mode="json")
+        ):
+            raise _invalid("Goal Suite does not freeze these motion criteria", "evaluation_plan_mismatch")
+        program_cls = policy_programs()["embodied.policy"]
+        # Evaluate only the fixed action. Other Scene policies keep their own host contracts.
+        base_config = {key: value for key, value in base_config.items() if key not in (
+            "policies", "policy", "commandParams",
+        )}
+        base_config.update(
+            baseBody=task["declarative"]["baseBody"],
+            referencePlacement=_reference_placement(
+                scene, task["robot"], task["referenceMotion"]["frames"][0].get("bodyLocal") or {},
+            ),
+        )
     if program_cls.id == "embodied.policy" and completion.get("mode") == "waypoint_nav":
         # A posture Reference need not expose locations in its Program config.
         base_config = base_config | {"locations": base_config.get("locations") or scene.locations}

@@ -22,6 +22,7 @@ from packages.library.transactions import sync_directory
 from packages.policies.observations import ObservationSpec
 from packages.protocol.schema import MAX_SESSION_SEED
 from packages.sim_runtime.trial import BUCKETS
+from packages.training.declarative import trajectory_completion
 from packages.training.schema import TrialPerturbation
 
 PREFIX = "suite/goal-bound-"
@@ -132,6 +133,7 @@ class GoalSuites:
                 raise ValueError("Goal Suite parameters must use the pinned Task coverage")
         if math.prod(map(len, overrides.values())) > plan.evaluation.episodes:
             raise ValueError("Goal Suite episode count must cover the requested parameter combinations")
+        completion = trajectory_completion(task)
         return {
             "id": suite_identity(plan.goalId, task["implements"]),
             "goalId": plan.goalId, "implements": task["implements"],
@@ -141,7 +143,10 @@ class GoalSuites:
             "baseParameters": base_params, "parameterCoverage": overrides,
             "perturbation": trial,
             "timeoutSeconds": task["declarative"]["episodeSeconds"],
-            **({"referenceMotionRef": task["referenceMotionRef"]} if task.get("referenceMotionRef") else {}),
+            **({
+                "referenceMotionRef": task["referenceMotionRef"],
+                "trajectoryCompletion": completion.model_dump(mode="json"),
+            } if completion else {}),
         }
 
     def seal(self, approval, review, task_record):

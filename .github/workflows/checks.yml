@@ -41,6 +41,13 @@ jobs:
           node-version: 22
       - uses: pnpm/action-setup@v4
         if: matrix.lane == 'core'
+      - name: Install FFmpeg for media gateway tests
+        if: matrix.lane == 'gateway'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - name: Install frozen Python dependencies from PyPI
         run: |
           uv export --frozen --group dev --no-emit-project --output-file "$RUNNER_TEMP/spatial-requirements.txt" > /dev/null

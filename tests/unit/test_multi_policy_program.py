@@ -639,3 +639,56 @@ def test_embodied_policy_per_action_command_params_and_physical_joint_limits(tmp
     )
     bad_host = HostCore(catalog, registry, physics=tight_port, source="sim", fact_hz=20.0)
     assert bad_host.invoke(req("s-bad", "stabilize")).status == "rejected"
+
+
+@pytest.mark.parametrize("behavior", ["tracking", "static", "moving-terminal"])
+def test_pinned_phase_clip_checks_physical_trace_and_terminal_dwell(behavior):
+    from types import SimpleNamespace
+
+    from packages.programs.embodied import ReferencePlacement, TrajectoryCheck
+    from packages.training.declarative import trajectory_completion
+
+    key = "/World/Lab/Bot"
+    base, joint = key + "/base", key + "/hinge"
+    class StandingPort(FakeEmbodiedPort):
+        def body_linear_velocity(self, key, *, frame):
+            return (0., 0., 0.)
+
+        def body_angular_velocity(self, key, *, frame):
+            return self.ang_vel[key]
+
+    port = StandingPort([joint], {base: {"p": [0., 0., .2], "q": [0., 0., 0., 1.]}})
+
+    task = {
+        "referenceMotionRef": {"id": "fixture"},
+        "completion": {"mode": "phase_clip", "dwellSeconds": .25},
+        "referenceMotion": {"loop": False, "jointKeys": ["/Asset/hinge"], "frames": [
+            {"time": 0., "position": [0., 0., .2], "orientation": [0., 0., 0., 1.], "joints": [0.]},
+            {"time": 1., "position": [0., 0., .2], "orientation": [0., 0., 0., 1.], "joints": [.15]},
+            {"time": 1.4, "position": [0., 0., .2], "orientation": [0., 0., 0., 1.], "joints": [.15]},
+        ]},
+    }
+    slot = SimpleNamespace(task=task, model=SimpleNamespace(inference_calls=2))
+    config = SimpleNamespace(referencePlacement=ReferencePlacement())
+    ctx = SimpleNamespace(key=key, config=config, physics=port, sim_time=0.)
+    program = EmbodiedPolicyProgram()
+    program.handle = SimpleNamespace(action="squat")
+    program.active_slot = slot
+    program.base_body = base
+    program.completions = {"squat": trajectory_completion(task)}
+    program.trajectories = {"squat": TrajectoryCheck(ctx, slot, {joint: joint}, {joint: "rad"})}
+    program.motion_error = None
+    program.started = program.dwell = program.start_inferences = 0.
+    for step in range(90):
+        ctx.sim_time = step * .02
+        port.q[joint] = .15 * min(ctx.sim_time, 1.) if behavior != "static" else 0.
+        port.qd[joint] = .8 if behavior == "moving-terminal" else 0.
+        program._tick_robot(ctx, .02)
+        if ctx.sim_time < 1.4:
+            assert not program._action_completed(program.handle, ctx, slot)
+    assert program._action_completed(program.handle, ctx, slot) == (behavior == "tracking")
+    fault = program._fault_failure(program.handle, ctx, slot)
+    if behavior == "static":
+        assert fault[0] == "motion_tracking_failed"
+    else:
+        assert fault is None
