@@ -49,6 +49,7 @@ class Body:
     inertia: np.ndarray | None = None
     shapes: list[Shape] = field(default_factory=list)
     sites: dict = field(default_factory=dict)
+    estimated_inertia: bool = False
 
 
 @dataclass

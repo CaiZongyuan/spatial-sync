@@ -261,7 +261,7 @@ def bake(robot, recipe, output):
         api.CreateDiagonalInertiaAttr(translation(moments))
         api.CreatePrincipalAxesAttr(rotation(axes))
         total_mass += mass
-        if inferred:
+        if inferred or body.estimated_inertia:
             estimated.append(path)
         if joint:
             joint_path = "/Asset/joints/" + joint_names[joint.name]

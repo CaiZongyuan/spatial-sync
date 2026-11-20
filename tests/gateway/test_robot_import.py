@@ -279,6 +279,55 @@ def test_fixed_mjcf_keeps_world_welded_parent_contact_eligibility(tmp_path, monk
     assert checks["P8"]["status"] == "pass"
 
 
+def test_mjcf_inferred_inertia_uses_recipe_density_and_keeps_authored_mass(client):
+    model = b"""<mujoco><default><default class="authored"><geom density="1000"/></default></default>
+    <worldbody><body name="base"><geom type="box" size=".15 .12 .1"/>
+      <body name="tip" pos=".4 0 0"><joint name="motor-a" range="-1 1"/>
+        <geom size=".05" class="authored"/>
+      </body>
+      <body name="authored_link" pos="0 .4 0"><joint name="motor-b" range="-1 1"/>
+        <inertial mass=".5" pos="0 0 0" diaginertia=".005 .005 .005"/>
+        <geom size=".05"/>
+      </body>
+    </body></worldbody></mujoco>"""
+    reply = upload(client, files("probe.xml", model))
+    assert reply.status_code == 200, reply.text
+    item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    expected = 250 * 8 * .15 * .12 * .1 + 1000 * 4 * math.pi * .05**3 / 3 + .5
+    assert item["metadata"]["physics"] == {
+        "collision": "authored", "massKg": pytest.approx(expected), "massSource": "estimated",
+    }
+    provenance = client.get(item["files"]["provenance.json"]).json()
+    assert set(provenance["estimatedMassPrims"]) == {"/Asset/links/base", "/Asset/links/tip"}
+    assert client.get(item["files"]["source/probe.xml"]).content == model
+
+
+@pytest.mark.parametrize(("setting", "expected"), [
+    ('joint:stiffness="5" springref=".3"', "joint springs"),
+    ('flag:damper="disable"', "disables authored joint damping"),
+    ('flag:actuation="disable"', "disables the joint actuator"),
+])
+def test_mjcf_unsupported_dynamics_fail_before_publication(client, setting, expected):
+    import mujoco
+
+    kind, value = setting.split(":", 1)
+    option = f"<option><flag {value}/></option>" if kind == "flag" else ""
+    joint = value if kind == "joint" else ""
+    model = f"""<mujoco><compiler angle="radian"/>{option}
+    <worldbody><body name="base"><geom type="box" size=".1 .1 .1" mass="2"/>
+      <body name="tip" pos=".3 0 0"><joint name="motor-a" damping="4" range="-1 1" {joint}/>
+        <geom size=".05" mass=".25"/>
+      </body></body></worldbody>
+    <actuator><position joint="motor-a" kp="10"/></actuator></mujoco>"""
+    assert mujoco.MjModel.from_xml_string(model).nu == 1
+    reply = upload(client, files("probe.xml", model.encode()))
+    assert reply.status_code == 422, reply.text
+    problem = reply.json()["detail"]["problems"][0]
+    assert problem["path"] == "motor-a"
+    assert expected in problem["message"]
+    assert client.get("/api/v1/library/assets/robot/calibration-probe/1").status_code == 404
+
+
 @pytest.mark.parametrize(("joint_limit", "damping"), [(True, 0), (True, 4), (False, 4)])
 def test_mjcf_actuator_force_limit_preserves_applied_torque(client, tmp_path, joint_limit, damping):
     import mujoco

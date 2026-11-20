@@ -1324,6 +1324,7 @@ COMMANDS = (
             Argument("id", ("robot/name@rev",), str, "Exact robot Asset version"),
             Argument("recipe", ("recipe.json",), str, "Complete local calibration recipe"),
         ),
+        mcp_name="library_calibrate",
         actor=True,
     ),
     Command(

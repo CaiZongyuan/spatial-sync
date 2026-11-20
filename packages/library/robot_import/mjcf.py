@@ -1,5 +1,7 @@
 """Read MuJoCo's compiled rigid-body representation after archive preflight."""
 
+import xml.etree.ElementTree as ET
+
 import numpy as np
 import trimesh
 
@@ -9,12 +11,13 @@ from packages.library.common import LibraryError
 from packages.library.robot_import.model import Body, Joint, Robot, Shape, transform
 
 
-def load(source, entry, standing_key):
+def load(source, entry, recipe):
     xml, assets = source.mjcf(entry)
-    return compiled(xml, entry, assets=assets, standing_key=standing_key)
+    density = recipe.density * (recipe.metersPerUnit or 1.)**3
+    return compiled(xml, entry, assets=assets, standing_key=recipe.standingKey, density=density)
 
 
-def compiled(xml, entry, *, assets=None, standing_key=None, usd_colliders=None):
+def compiled(xml, entry, *, assets=None, standing_key=None, usd_colliders=None, density=None):
     try:
         import mujoco
     except ImportError as exc:
@@ -22,10 +25,56 @@ def compiled(xml, entry, *, assets=None, standing_key=None, usd_colliders=None):
             "robot_import_unavailable", "Robot import requires MuJoCo (simulation extra)", 503,
         ) from exc
     try:
-        model = mujoco.MjModel.from_xml_string(xml, assets or {})
+        if density is None:
+            model = mujoco.MjModel.from_xml_string(xml, assets or {})
+            estimated = set()
+        else:
+            model, estimated = compile_with_density(mujoco, xml, assets, density)
     except ValueError as exc:
         raise invalid(str(exc), path=entry) from exc
-    return from_model(model, entry, standing_key=standing_key, usd_colliders=usd_colliders or {})
+    return from_model(
+        model, entry, standing_key=standing_key, usd_colliders=usd_colliders or {}, estimated=estimated,
+    )
+
+
+def compile_with_density(mujoco, xml, assets, density):
+    document = ET.fromstring(xml)
+    defaults = document.find("default")
+    if defaults is None:
+        defaults = ET.SubElement(document, "default")
+    geom_default = defaults.find("geom")
+    if geom_default is None:
+        geom_default = ET.SubElement(defaults, "geom")
+
+    marker = None
+    if "density" not in geom_default.attrib:
+        # Use a distinct default in the parser to trace implicit density
+        # through native class and childclass inheritance, including 1000.
+        authored = {float(node.get("density")) for node in document.iter("geom") if "density" in node.attrib}
+        marker = 1001.
+        while marker in authored:
+            marker += 1.
+        geom_default.set("density", str(marker))
+
+    spec = mujoco.MjSpec.from_string(ET.tostring(document, encoding="unicode"), assets=assets)
+    low, high = spec.compiler.inertiagrouprange
+    inference = spec.compiler.inertiafromgeom
+    estimated = set()
+    for index, body in enumerate(spec.bodies):
+        inferred = index != 0 and (
+            inference == mujoco.mjtInertiaFromGeom.mjINERTIAFROMGEOM_TRUE
+            or (inference == mujoco.mjtInertiaFromGeom.mjINERTIAFROMGEOM_AUTO and not body.explicitinertial)
+        )
+        if inferred:
+            estimated.add(index)
+        for geom in body.geoms:
+            if marker is None or geom.density != marker:
+                continue
+            geom.density = 1000.
+            if inferred and low <= geom.group <= high and np.isnan(geom.mass):
+                # An implicit visual contributes no collision volume.
+                geom.density = density if geom.contype or geom.conaffinity else 0.
+    return spec.compile(), estimated
 
 
 def geom_shape(model, index, path, usd_collider):
@@ -72,7 +121,7 @@ def geom_shape(model, index, path, usd_collider):
     )
 
 
-def from_model(model, entry, *, standing_key, usd_colliders):
+def from_model(model, entry, *, standing_key, usd_colliders, estimated):
     import mujoco
 
     if model.ntendon or model.neq or model.nflex or model.npair:
@@ -109,6 +158,8 @@ def from_model(model, entry, *, standing_key, usd_colliders):
             raise invalid("Actuator is not a standard position drive", path=path)
         if model.actuator_damping[index] != 0 or np.any(model.actuator_dampingpoly[index]):
             raise invalid("Passive actuator transmission damping is unsupported", path=path)
+        if model.opt.disableactuator & (1 << int(model.actuator_group[index])):
+            raise invalid("MJCF disables the actuator group", path=path)
         force = None
         if model.actuator_forcelimited[index]:
             lower, upper = model.actuator_forcerange[index]
@@ -129,7 +180,10 @@ def from_model(model, entry, *, standing_key, usd_colliders):
     bodies, joints, colliders = {}, [], {}
     fixed = True
     for index, name in names.items():
+        if model.body_gravcomp[index] != 0.:
+            raise invalid("MJCF body gravity compensation is outside the canonical USD subset", path=name)
         body = bodies[name] = Body(name, transform(model.body_pos[index], model.body_quat[index]))
+        body.estimated_inertia = index in estimated
         body.mass = float(model.body_mass[index]) or None
         if body.mass is not None:
             body.center = model.body_ipos[index].copy()
@@ -167,6 +221,8 @@ def from_model(model, entry, *, standing_key, usd_colliders):
         address, dof = model.jnt_qposadr[joint_id], model.jnt_dofadr[joint_id]
         if model.jnt_margin[joint_id] != 0:
             raise invalid("MJCF limit activation margin is outside the canonical USD subset", path=joint_name)
+        if model.jnt_stiffness[joint_id] != 0 or np.any(model.jnt_stiffnesspoly[joint_id]):
+            raise invalid("MJCF joint springs are outside the canonical USD subset", path=joint_name)
         joint = Joint(
             joint_name, kind, names[parent], name, model.jnt_axis[joint_id], model.jnt_pos[joint_id],
         )
@@ -180,6 +236,13 @@ def from_model(model, entry, *, standing_key, usd_colliders):
         passive_damping = float(model.dof_damping[dof])
         if not np.isfinite(passive_damping) or passive_damping < 0 or np.any(model.dof_dampingpoly[dof]):
             raise invalid("Joint requires finite nonnegative linear passive damping", path=joint_name)
+        disabled = model.opt.disableflags
+        if passive_damping and disabled & mujoco.mjtDisableBit.mjDSBL_DAMPER:
+            raise invalid("MJCF disables authored joint damping", path=joint_name)
+        if joint_id in actuators and disabled & mujoco.mjtDisableBit.mjDSBL_ACTUATION:
+            raise invalid("MJCF disables the joint actuator", path=joint_name)
+        if model.dof_frictionloss[dof] and disabled & mujoco.mjtDisableBit.mjDSBL_FRICTIONLOSS:
+            raise invalid("MJCF disables authored joint friction loss", path=joint_name)
         if model.jnt_actfrclimited[joint_id]:
             lower, upper = model.jnt_actfrcrange[joint_id]
             if not np.isfinite([lower, upper]).all() or lower != -upper or upper <= 0:

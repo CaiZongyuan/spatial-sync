@@ -6,6 +6,7 @@ import subprocess
 import sys
 import sysconfig
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -32,6 +33,35 @@ sys.argv[:] = ["infer.py", "samples.json"]
 runpy.run_path("infer.py", run_name="__main__")
 """
     return [sys.executable, "-I", "-S", "-c", isolated, sysconfig.get_path("purelib"), str(root)]
+
+
+def test_standalone_policy_applies_solver_control_range_before_source_inverse(tmp_path):
+    runner = Path(policy_exports.__file__).parent
+    for source, target in (
+        ("export_runner.py", "infer.py"),
+        ("motion.py", "motion.py"),
+        ("action_contract.py", "action_contract.py"),
+    ):
+        (tmp_path / target).write_bytes((runner / source).read_bytes())
+    (tmp_path / "model.onnx").write_bytes(model_bytes())
+    observation = observation_spec()
+    key = observation["action"]["jointKeys"][0]
+    manifest = {
+        "model": {"path": "model.onnx", "input": {"name": "observations"}},
+        "observation": observation,
+        "actuators": [{"physicalLimits": [-.45, .65], "controlRange": [.05, .35]}],
+        "sourceCalibration": {"status": "verified", "joints": [
+            {"sourceName": "motor-a", "sign": -1, "zeroOffset": .25},
+        ]},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    (tmp_path / "samples.json").write_text(json.dumps([{"state": {"joints": {key: {"q": .4}}}}]))
+    result = subprocess.run(standalone_command(tmp_path), cwd=tmp_path, capture_output=True,
+                            text=True, check=True, timeout=15)
+    row, = json.loads(result.stdout)
+    assert row["raw"] == pytest.approx([.8])
+    assert row["targets"] == pytest.approx([.35])
+    assert row["sourceTargets"] == {"motor-a": pytest.approx(-.10)}
 
 
 @pytest.mark.parametrize("name, command", [

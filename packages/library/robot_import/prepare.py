@@ -48,7 +48,7 @@ def prepare(root, target, *, recipe_json=None, base=None):
         elif suffix in (".xml", ".mjcf"):
             from packages.library.robot_import import mjcf
 
-            robot = mjcf.load(source, entry, recipe.standingKey)
+            robot = mjcf.load(source, entry, recipe)
         elif suffix in (".usd", ".usda", ".usdc"):
             from packages.library.robot_import import usd
 

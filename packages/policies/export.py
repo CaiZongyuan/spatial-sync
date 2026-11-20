@@ -66,6 +66,8 @@ def _physical(scene, task, action):
             armature=joint.armature,
             physicalLimits=[joint.lower, joint.upper] if joint.limited else [None, None],
         )
+        if joint.target_range is not None:
+            channel["controlRange"] = list(joint.target_range)
     from packages.sim_runtime.usd_settings import authored_settings
 
     dt, _ = authored_settings(stage)
@@ -370,6 +372,7 @@ def policy_export(manager, identifier):
                 "maxDelta-from-measured",
                 "declared-limits",
                 "physical-limits",
+                *(["solver-control-range"] if any("controlRange" in channel for channel in channels) else []),
                 "source-joint-transform",
             ],
             "control": {

@@ -186,6 +186,8 @@ dressing: false                          # true：整个素材只作布景
   旋转关节用 rad，移动关节用 m。该范围要求正的驱动刚度，由两侧 MuJoCo 位置执行器夹紧。
   URDF 和 MJCF 的线性关节被动阻尼写入 Newton 识别的 `newton:damping`，
   与 USD DriveAPI 的阻尼分开施加。
+  有效的关节弹簧和禁用源阻尼或执行器的配置会得到定位诊断。MJCF 的惯量若由几何计算，
+  未声明质量或密度的碰撞体使用标定密度，来源记录列出估算惯量的刚体。
 - `rpyDegrees` 是绕固定 X、Y、Z 轴的旋转，`translationM` 是规范平移。
   `metersPerUnit` 用于纠正源长度单位，`scale` 修正机器人几何尺寸并以恒定密度缩放质量和惯量。
   移动关节的源行程和零位以换算后的米表示。可用 `fixedBase` 声明固定安装，
@@ -193,6 +195,7 @@ dressing: false                          # true：整个素材只作布景
   `excludePairs` 使用源连杆名，`sites` 使用源连杆名和局部米制位姿，
   `implements` 沿用 Asset Binding Template 和规范局部 Prim Path。
 - `lw asset calibrate robot/example@1 recipe.json --json` 用保留的原始源和完整配方烘焙新版本。
+  MCP 的 `library_calibrate` 使用同一精确版本和客户端配方路径。
   HTTP 入口为 `POST /api/v1/library/assets/robot/example/1/calibrate`，请求正文为配方 JSON。
   发布包保留源字节、原始许可证、来源哈希、配方与基础 Asset 版本固定信息。
 - `joint-calibration.json` 随精确 Asset 版本发布。位置满足
