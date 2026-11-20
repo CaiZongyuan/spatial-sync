@@ -36,6 +36,16 @@ class Evaluation(Schema):
         return self
 
 
+class TrialPerturbation(Schema):
+    jointPositionRadians: float = Field(default=0.025, ge=0.01, le=0.1)
+    jointPositionMeters: float = Field(default=0.005, ge=0.001, le=0.05)
+
+
+class PlanEvaluation(Evaluation):
+    episodes: int = Field(default=30, ge=1, le=100000)
+    perturbation: TrialPerturbation | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class LoopBudget(Schema):
     gpuHours: float = Field(ge=0)
     episodes: int = Field(ge=1)
@@ -220,7 +230,7 @@ class TrainingPlan(Schema):
     hyperparameters: dict[str, JsonValue] = Field(default_factory=dict)
     jobs: Jobs
     budget: PlanBudget
-    evaluation: Evaluation
+    evaluation: PlanEvaluation
     rationale: Text
     hypotheses: list[Hypothesis] = Field(min_length=1)
     notebookRead: list[Text]

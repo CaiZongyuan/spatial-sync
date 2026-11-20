@@ -80,6 +80,20 @@ def test_an_accepted_label_cannot_override_the_strict_wilson_rule(tmp_path):
     assert error.value.detail["decision"]["referenceScore"] == 0.8
 
 
+def test_goal_baseline_becomes_reference_only_on_commit_and_retains_strict_wilson(tmp_path):
+    store = EvaluationStore(tmp_path)
+    initial = result(store, "eval-initial", CANDIDATE, 8, decision="baseline_candidate")
+    assert store.reference(initial["key"]) is None
+    assert accepted_train_evidence(store, CANDIDATE, SCENE, initial=True).prior_reference is None
+    store.is_initial_reference = lambda row: row["evaluationId"] == initial["evaluationId"]
+    assert store.reference(initial["key"]) == initial
+    improved = CANDIDATE | {"id": "policy/probe@2", "contentHash": "c" * 64}
+    result(store, "eval-later", improved, 10, reference=initial["evaluationId"])
+    with pytest.raises(PlanError) as error:
+        accepted_train_evidence(store, improved, SCENE, initial=True)
+    assert error.value.detail["decision"]["label"] == "rejected"
+
+
 @pytest.mark.parametrize("fault", ["unknown", "foreign-reference", "partial", "different-material"])
 def test_unknown_foreign_partial_or_different_candidate_is_not_promotion_evidence(tmp_path, fault):
     store, reference, candidate = accepted_pair(tmp_path)

@@ -128,13 +128,14 @@ class ApprovalStore:
                 return record.approvalId, event
         return None
 
-    def decide(self, approval_id, decision: Decision, actor, note=""):
+    def decide(self, approval_id, decision: Decision, actor, note="", *, details=None):
         record = self.records[approval_id]
         status = {"approve": "approved", "deny": "denied", "revoke": "revoked"}[decision]
         return self._save(
             record.model_copy(
                 update={
                     "status": status,
+                    "details": record.details if details is None else details,
                     "decisions": [
                         *record.decisions,
                         ApprovalDecision(

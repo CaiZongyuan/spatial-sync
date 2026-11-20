@@ -250,6 +250,14 @@ def resolve_policy_subject(manager, requested, suite, scene):
         raise _invalid("Policy evaluation requires the fixed Newton Suite Scene")
     policy, package = _candidate(manager, requested)
     task = read_json(package / "task.json")
+    if task.get("declarative") or suite.metadata.get("goalSuite"):
+        job = manager.jobs.get(policy["jobId"])
+        plan = manager.training_plans.get(job["planId"], job["planRevision"])
+        frozen = manager.training_plans.document(plan).get("goalSuite") or {}
+        if (frozen or suite.metadata.get("goalSuite")) and (
+            frozen.get("id"), frozen.get("contentHash")
+        ) != (suite.id, suite.content_hash):
+            raise _invalid("Policy Job has a different Goal Suite", "evaluation_plan_mismatch")
     interface, action = suite.task["implements"].rsplit(".", 1)
     if (
         policy["scene"] != scene.id

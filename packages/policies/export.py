@@ -70,14 +70,14 @@ def _physical(scene, task, action):
 
     dt, _ = authored_settings(stage)
     dt = (scene.metadata.get("simulation") or {}).get("physicsDt", dt)
-    asset = _robot_asset(scene, task["robot"], stage, graph)
+    asset = scene_robot_asset(scene, task["robot"], stage, graph)
     coordinates_match = False
     if asset and controls_match and "joint-calibration.json" not in asset["files"]:
         coordinates_match = _asset_coordinates_match(stage, task["robot"], graph, asset)
     return channels, dt, asset, coordinates_match
 
 
-def _robot_asset(scene, entity, stage, graph):
+def scene_robot_asset(scene, entity, stage, graph):
     target = stage.GetPrimAtPath(entity)
     authored = next((item for item in scene.bindings["entities"] if item.get("key") == entity), {})
     template = authored.get("template")

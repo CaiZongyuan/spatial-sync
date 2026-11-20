@@ -40,6 +40,11 @@ class NotebookService:
             raise PlanError("plan_not_approved", "Select the current approved Plan revision", status=409)
         task = self.manager.tasks.show(plan["task"])
         metadata = task["task"]
+        bound = plan.get("goalSuite")
+        if (bound or suite.metadata.get("goalSuite")) and (
+            not bound or (bound["id"], bound.get("contentHash")) != (suite.id, suite.content_hash)
+        ):
+            raise PlanError("evaluation_plan_mismatch", "Select the Plan's frozen Goal Suite", status=409)
         if (
             metadata["scene"] != scene.id
             or metadata["robot"] != suite.task["robot"]

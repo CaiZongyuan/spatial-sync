@@ -50,6 +50,7 @@ class EvaluationStore:
         self.rows = []
         self.on_change = on_change
         self._reference_lock = threading.RLock()
+        self.is_initial_reference = lambda row: False
 
     @contextmanager
     def reference_guard(self):
@@ -102,7 +103,8 @@ class EvaluationStore:
                 row
                 for row in reversed(self.rows)
                 if row["key"] == key
-                and row["decision"] in ("baseline", "accepted")
+                and (row["decision"] in ("baseline", "accepted")
+                     or row["decision"] == "baseline_candidate" and self.is_initial_reference(row))
                 and comparison_identity(row) == requested
             ),
             None,

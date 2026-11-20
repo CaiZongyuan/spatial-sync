@@ -538,6 +538,15 @@ partial first header: it must become incomplete without inventing samples.
 
 ## Real physics and browser checks
 
+For a declarative Task, submit a Training Plan with the requested Goal and an
+evaluation count of at least 30 per split. The approval shows the immutable
+robot Asset, success conditions, parameter coverage and the initial joint
+perturbation. Read the committed Suite with `lw suite show <suite/name@revision>`
+after approval. Its public projection contains train cases. The Controller
+promotion review runs the sealed split and the first successful human
+publication establishes the initial Reference. Exercise freeze, reuse and
+restart with `.venv/bin/python -m pytest -q tests/gateway/test_goal_suites.py`.
+
 ```powershell
 uv run --no-sync python tools/smoke_newton.py --device cpu
 uv run --no-sync python tools/smoke_newton_source.py --scene robot-and-tubes --device cpu --crash

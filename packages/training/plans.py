@@ -22,6 +22,7 @@ class StoredTrainingPlan(BaseModel):
     approvalId: str | None = None
     changes: list[dict] = Field(default_factory=list)
     goalContext: dict | None = None
+    goalSuite: dict | None = None
     # The shared attention journal supports plans that have no session context.
     sessionId: None = None
     sceneRevision: None = None
@@ -40,6 +41,7 @@ class TrainingPlanStore:
         self.additional_in_use = lambda identity, revision: False
         self.validation_estimate = lambda approval_id: {}
         self.loop_budgets = None
+        self.goal_suites = None
 
     def startup(self):
         if self.path.exists():
@@ -95,6 +97,9 @@ class TrainingPlanStore:
                 "approvalId": record.approvalId, "approvalStatus": approval.status if approval else None,
                 "approvalMode": "human", "changes": record.changes}
         document.update(self.validation_estimate(record.approvalId))
+        if record.goalSuite is not None:
+            review = approval.details.get("goalSuite") if approval else None
+            document["goalSuite"] = review or record.goalSuite
         if record.goalContext is not None:
             from copy import deepcopy
 
@@ -150,19 +155,22 @@ class TrainingPlanStore:
                           if isinstance(exc, ValidationError) else [{"message": str(exc)}])
                 raise PlanError("invalid_plan", "Invalid training plan", status=422, errors=errors) from exc
             fresh = plan.model_dump(mode="json", by_alias=True)
+            if task.get("declarative") and plan.program is None and fresh["budget"]["episodes"] is None:
+                fresh["budget"]["episodes"] = 2 * plan.evaluation.episodes
             goal_context = self.loop_budgets.prepare(fresh, task_snapshot) if self.loop_budgets else None
             if self.loop_budgets is not None:
                 from packages.training.dispatch import require_goal_owner
 
                 require_goal_owner(self.loop_budgets.manager, fresh["goalId"], "embodied")
             plan = TrainingPlan.model_validate(fresh)
+            goal_suite = self.goal_suites.prepare(plan, task_snapshot) if self.goal_suites else None
             old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
             changes = [{"field": key, "before": old.get(key), "after": item}
                        for key, item in fresh.items()
                        if key not in ("id", "revision", "status", "previous") and old.get(key) != item]
             plan.status = "submitted"
             record = StoredTrainingPlan(plan=plan, requestedBy=actor, createdAtMs=time.time() * 1000,
-                                        changes=changes, goalContext=goal_context)
+                                        changes=changes, goalContext=goal_context, goalSuite=goal_suite)
             self._save(record)
             try:
                 approval = self.approvals.submit(subject="plan", subject_id=plan.id, requester=actor,
@@ -170,6 +178,8 @@ class TrainingPlanStore:
                                                  details={"revision": plan.revision,
                                                           "plan": plan.model_dump(mode="json", by_alias=True),
                                                           "changes": changes,
+                                                          **({"goalSuite": goal_suite}
+                                                             if goal_suite is not None else {}),
                                                           **({"loopBudget": goal_context["review"]}
                                                              if goal_context is not None else {})})
             except OSError as exc:
@@ -216,5 +226,24 @@ class TrainingPlanStore:
                         raise ApprovalConflict("Frozen program/Task is unavailable or differs") from exc
                 if self.loop_budgets is not None:
                     self.loop_budgets.require_fresh_approval(record)
+                if record.goalSuite is not None:
+                    if actor.kind != "user":
+                        raise ApprovalConflict("A human decision is required for a Goal Suite")
+                    from packages.library.archive import import_lock
+
+                    with import_lock(self.goal_suites.manager.library_assets.roots["user"]):
+                        task = self.tasks.show(record.plan.task)
+                        fresh = self.goal_suites.prepare(record.plan, task)
+                        if fresh is None or not all(
+                            fresh.get(key) == value for key, value in record.goalSuite.items()
+                        ):
+                            raise PlanError(
+                                "goal_suite_changed", "Goal Suite proposal changed since submission"
+                            )
+                        suite, origin = self.goal_suites.seal(current, fresh, task)
+                        details = current.details | {"goalSuite": suite, "goalSuiteOrigin": origin}
+                        self.approvals.decide(approval.approvalId, decision, actor, note, details=details)
+                    self._notify(record)
+                    return
             self.approvals.decide(approval.approvalId, decision, actor, note)
             self._notify(record)

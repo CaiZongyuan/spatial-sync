@@ -108,7 +108,7 @@ def test_fenced_checkpoint_resume_reprices_remaining_work_and_sums_attempts(tmp_
     if managed:
         task_bytes, task_doc, joint = declarative_archive(directory)
         observation = (directory / "obs_spec.yaml").read_bytes()
-        evaluation = {"evaluation": {"scene": task_doc["scene"], "episodes": 1, "threshold": 1}}
+        evaluation = {"evaluation": {"scene": task_doc["scene"], "episodes": 30, "threshold": 1}}
     else:
         task_bytes = task_archive(_build_mjlab_task_package(directory))
         task_doc, joint, observation, evaluation = None, None, None, {}

@@ -312,6 +312,9 @@ class EvaluationService:
                 422, {"code": "unsupported_subject", "message": "Script adapter is unavailable"}
             )
         suite = self.suites.resolve(body.suite)
+        goal_suite = suite.metadata.get("goalSuite")
+        if goal_suite and not body.subject.startswith(("policy/", "checkpoint/", "job-")):
+            raise HTTPException(422, {"code": "goal_suite_requires_policy"})
         if suite.metadata["layer"] != "embodied":
             raise HTTPException(
                 422, {"code": "agent_runner_unavailable", "message": "Agent SDK execution is not available"}
@@ -362,6 +365,10 @@ class EvaluationService:
             candidate = simulation_subject.candidateIdentity.model_dump(mode="json")
             if policy:
                 job = self.manager.jobs.get(simulation_subject.candidateIdentity.jobId)
+                if goal_suite and body.planId is None:
+                    body = body.model_copy(
+                        update={"planId": job["planId"], "planRevision": job["planRevision"]},
+                    )
                 rate = job.get("metrics", {}).get("trainSuccess")
                 record["trainingSuccess"] = rate if type(rate) in (int, float) and 0 <= rate <= 1 else None
         record["identitySnapshot"] = await self.freeze_identity(
@@ -642,6 +649,8 @@ class EvaluationService:
                     scene_version=selected.id,
                     evaluation_id=identifier,
                     **({"private_evaluation": True} if split == "test" else {}),
+                    **({"trial": suite.metadata["goalSuite"]["perturbation"]}
+                       if "goalSuite" in suite.metadata else {}),
                     **execution_context,
                 )
                 if attempt is not None:
@@ -707,6 +716,8 @@ class EvaluationService:
                 None if reference is None else reference["score"],
                 split=split,
             )
+            if decision == "baseline" and suite.metadata.get("goalSuite"):
+                decision = "baseline_candidate"
             if not record.get("comparisonIdentity"):
                 decision = "reported"
             row = {
@@ -1039,7 +1050,12 @@ def install_evaluation_routes(app, service, role_for):
             raise HTTPException(
                 422, {"code": "invalid_comparison", "message": "Provide compare and against together"}
             )
-        result = {"rows": [public_score(row, rows) for row in rows]}
+        result = {"rows": [
+            public_score(row | {"decision": "baseline"}, rows)
+            if row["decision"] == "baseline_candidate" and service.store.is_initial_reference(row)
+            else public_score(row, rows)
+            for row in rows
+        ]}
         if compare is not None:
             selected = [
                 next((row for row in rows if row["evaluationId"] == identifier), None)

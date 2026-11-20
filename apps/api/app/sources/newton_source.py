@@ -60,9 +60,13 @@ class NewtonSource:
         self._info_store, self._info_latest = None, None
         self._invocations = OrderedDict()
         self._starting = True
+        self.trial = None
 
     def configure_scene(self, scene_package):
         self.scene_package = scene_package
+
+    def configure_trial(self, trial):
+        self.trial = dict(trial)
 
     def configure_evaluation(self, policy_subject):
         if self._process is not None or self._closed:
@@ -104,6 +108,8 @@ class NewtonSource:
         if self.policy_subject is not None:
             arguments += (self.policy_subject,)
         worker_context = {}
+        if self.trial is not None:
+            worker_context["trial"] = self.trial
         if self.simulation_subject is not None:
             worker_context["simulation_subject"] = self.simulation_subject
         if self.deployment_permit is not None:

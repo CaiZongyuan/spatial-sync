@@ -179,7 +179,7 @@ class ReferenceInspection:
         if self.suites is not None:
             try:
                 self.suites.refresh()
-                for suite in self.suites.versions.values():
+                for suite in self.suites.all_versions():
                     suite.verify()
                     scene = self.scenes.resolve(suite.metadata["scene"])
                     if scene.content_hash != suite.metadata["sceneContentHash"]:
