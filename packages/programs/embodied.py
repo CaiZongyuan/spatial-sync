@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from copy import copy
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -18,7 +20,7 @@ from packages.programs.policy_base import (
 )
 from packages.programs.waypoint_guidance import slot_command_bounds, waypoint_command, wrap_pi
 from packages.protocol.math import compose_pose, normalize_quaternion, rotate_vector
-from packages.training.declarative import Completion, trajectory_completion
+from packages.training.declarative import Completion, clip_seconds, trajectory_completion
 
 
 def _orientation_angles(q):
@@ -249,6 +251,7 @@ class TrajectoryCheck:
         keys = [scene_key(key) for key in self.motion["jointKeys"]]
         self.joints = [(joints[key], units[key]) for key in keys]
         self.points = {}
+        self.reset()
         for key in (self.motion["frames"][0].get("bodyLocal") or {}):
             site = placement.sites.get(key)
             if site:
@@ -260,6 +263,33 @@ class TrajectoryCheck:
                 self.points[key] = (ctx.physics.site_pose, ctx.physics.bind_site(scene_key(key)), None)
             else:
                 self.points[key] = (ctx.physics.body_pose, index, None)
+
+    def reset(self):
+        self.first_steady_sample = None
+
+    def sample(self, ctx, root, elapsed, completion):
+        position, orientation = ctx.physics.body_pose(root)
+        tilt = _orientation_angles(orientation)[0]
+        self.fallen = tilt > completion.maxTiltDeg or float(position[2]) < completion.minHeight
+        criteria = completion.trajectory
+        error = self.error(ctx.physics, position, orientation, elapsed, criteria)
+        terminal = elapsed >= clip_seconds(self.motion, completion)
+        self.failed = not terminal and error > 1.
+        steady = False
+        if terminal and error <= 1. and not self.fallen and tilt <= completion.uprightTiltDeg:
+            linear = ctx.physics.body_linear_velocity(root, frame="body")
+            angular = ctx.physics.body_angular_velocity(root, frame="body")
+            steady = (
+                math.hypot(*linear) <= completion.maxSpeed
+                and math.hypot(*angular) <= completion.maxAngularSpeed
+                and self.joints_stationary(ctx.physics, criteria)
+            )
+        if not steady:
+            self.first_steady_sample = None
+            return 0.
+        if self.first_steady_sample is None:
+            self.first_steady_sample = ctx.sim_time
+        return ctx.sim_time - self.first_steady_sample
 
     def error(self, physics, position, orientation, elapsed, criteria):
         pose = motion_observations(self.motion, elapsed)["reference_motion_frame"]
@@ -294,7 +324,29 @@ class TrajectoryCheck:
         )
 
 
+class PostureFallback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    program: Literal["biped.posture", "embodied.posture"]
+    config: dict
+
+    def program_class(self):
+        if self.program == "biped.posture":
+            from packages.programs.biped.posture import BipedPostureProgram
+
+            return BipedPostureProgram
+        return EmbodiedPostureProgram
+
+    @model_validator(mode="after")
+    def validate_binding(self):
+        self.config = self.program_class().Config.model_validate(self.config).model_dump(mode="json")
+        return self
+
+
 class EmbodiedPolicyConfig(MultiPolicyConfig):
+    postureFallback: PostureFallback | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     referencePlacement: ReferencePlacement | None = Field(
         default=None, exclude_if=lambda value: value is None,
     )
@@ -324,6 +376,51 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
     id, type, tick_priority = "embodied.policy", None, 10
     Config = EmbodiedPolicyConfig
 
+    def init(self, ctx):
+        self.fallback = None
+        self.fallback_selected = False
+        super().init(ctx)
+        if ctx.config.postureFallback is not None:
+            binding = ctx.config.postureFallback
+            program = binding.program_class()
+            self.fallback_ctx = copy(ctx)
+            self.fallback_ctx.config = program.Config.model_validate(binding.config)
+            self.fallback = program()
+            self.fallback.init(self.fallback_ctx)
+            self.fallback_selected = True
+
+    def _uses_fallback(self, action):
+        return self.fallback is not None and action not in self.slots and (
+            action not in self.stop_actions or self.fallback_selected
+        )
+
+    def accept(self, inv, ctx):
+        if self._uses_fallback(inv.action):
+            if not self.fallback_selected and hasattr(self.fallback, "fallen"):
+                self.fallback.fallen = self.fallen
+            return self.fallback.accept(inv, self.fallback_ctx)
+        return super().accept(inv, ctx)
+
+    def start(self, inv, ctx):
+        if self._uses_fallback(inv.action):
+            self.fallback_selected = True
+            self.fallback.start(inv, self.fallback_ctx)
+            return
+        self.fallback_selected = False
+        super().start(inv, ctx)
+
+    def cancel(self, inv, ctx):
+        if self._uses_fallback(inv.action):
+            self.fallback.cancel(inv, self.fallback_ctx)
+            return
+        super().cancel(inv, ctx)
+
+    def tick(self, ctx, dt):
+        if self.fallback_selected:
+            self.fallback.tick(self.fallback_ctx, dt)
+        else:
+            super().tick(ctx, dt)
+
     def _init_robot(self, ctx):
         self.state_property = _detect_state_property(ctx, self.state_property)
         self.completions = {}
@@ -335,9 +432,6 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
                 self.completions[action] = completion
             elif slot.task.get("completion") is not None:
                 self.completions[action] = Completion.model_validate(slot.task["completion"])
-        if self.trajectories:
-            # Typed action/fall telemetry is shared even when the Scene phase enum is device-specific.
-            self.state_property = None
         self.motion_error = None
         self.waypoints = {
             name: value.model_dump(mode="json")
@@ -446,7 +540,11 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         if self.target_waypoint is not None:
             self.current_waypoint = None
         self._facts(ctx)
-        super()._on_action_start(inv, ctx, slot)
+        tracker = self.trajectories.get(inv.action)
+        if tracker is None:
+            super()._on_action_start(inv, ctx, slot)
+        else:
+            tracker.reset()
 
     def _tick_robot(self, ctx, dt):
         if not self.completions:
@@ -458,25 +556,21 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         self.fallen = tilt > limits.maxTiltDeg or float(p[2]) < limits.minHeight
         if completion is None:
             return
+        tracker = self.trajectories.get(self.handle.action)
+        if tracker:
+            self.dwell = tracker.sample(ctx, self.base_body, ctx.sim_time - self.started, completion)
+            self.fallen = tracker.fallen
+            if tracker.failed:
+                self.motion_error = True
+            return
         speed = ctx.physics.body_linear_velocity(self.base_body, frame="body")
         angular = ctx.physics.body_angular_velocity(self.base_body, frame="body")
         calm = (
             math.hypot(*speed) <= completion.maxSpeed and math.hypot(*angular) <= completion.maxAngularSpeed
         )
         if completion.mode == "phase_clip":
-            motion = self.active_slot.task["referenceMotion"]
-            duration = motion["frames"][-1]["time"] * (completion.cycles if motion["loop"] else 1)
-            elapsed = ctx.sim_time - self.started
-            reached = elapsed + 1e-9 >= duration
-            tracker = self.trajectories.get(self.handle.action)
-            if tracker:
-                criteria = completion.trajectory
-                error = tracker.error(ctx.physics, p, q, elapsed, criteria)
-                if not reached and error > 1.:
-                    self.motion_error = error
-                reached = (reached and error <= 1. and calm
-                           and tilt <= completion.uprightTiltDeg
-                           and tracker.joints_stationary(ctx.physics, criteria))
+            duration = clip_seconds(self.active_slot.task["referenceMotion"], completion)
+            reached = ctx.sim_time - self.started + 1e-9 >= duration
         elif completion.mode == "posture_recovery":
             reached = not self.fallen and tilt <= completion.uprightTiltDeg and calm
         elif completion.mode == "waypoint_nav":
@@ -506,9 +600,10 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         completion = self.completions.get(inv.action)
         if completion is None:
             return super()._action_completed(inv, ctx, slot)
+        dwell = self.dwell if inv.action in self.trajectories else self.dwell + 1e-9
         return (
             slot.model.inference_calls > self.start_inferences
-            and self.dwell + 1e-9 >= completion.dwellSeconds
+            and dwell >= completion.dwellSeconds
             and not self.fallen
             and self.motion_error is None
         )

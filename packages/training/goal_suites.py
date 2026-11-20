@@ -20,6 +20,7 @@ from packages.library.structural import USDGraph
 from packages.library.suites import load_suite
 from packages.library.transactions import sync_directory
 from packages.policies.observations import ObservationSpec
+from packages.policies.subjects import fixed_bindings, validate_trajectory_deadline
 from packages.protocol.schema import MAX_SESSION_SEED
 from packages.sim_runtime.trial import BUCKETS
 from packages.training.declarative import trajectory_completion
@@ -134,6 +135,11 @@ class GoalSuites:
         if math.prod(map(len, overrides.values())) > plan.evaluation.episodes:
             raise ValueError("Goal Suite episode count must cover the requested parameter combinations")
         completion = trajectory_completion(task)
+        if completion:
+            binding = fixed_bindings(scene, "newton")[task["robot"]]
+            validate_trajectory_deadline(
+                scene, task, binding, completion, task["declarative"]["episodeSeconds"],
+            )
         return {
             "id": suite_identity(plan.goalId, task["implements"]),
             "goalId": plan.goalId, "implements": task["implements"],

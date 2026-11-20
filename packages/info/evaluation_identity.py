@@ -142,7 +142,11 @@ def freeze_identity(identifier, suite, scene, subject, directory, *, candidate=N
             registry = program_registry(suite.metadata["source"])
             goal = suite.metadata.get("goalSuite") or {}
             pinned = candidate["kind"] == "policy" and goal.get("trajectoryCompletion")
-            program_id = "embodied.policy" if pinned else targets[0]["program"]
+            program_id = targets[0]["program"]
+            if pinned:
+                from packages.policies.subjects import trajectory_program_id
+
+                program_id = trajectory_program_id(program_id)
             program = registry[program_id]
             selected = Path(inspect.getsourcefile(program)).resolve().relative_to(root.resolve()).as_posix()
             raw = original[selected]

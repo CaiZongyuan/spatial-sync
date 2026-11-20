@@ -227,7 +227,6 @@ class Completion(Data):
         return self
 
 
-
 def trajectory_completion(task):
     """Canonical immutable criteria for Asset-pinned motion. Inline legacy clips retain their contract."""
     if not task.get("referenceMotionRef"):
@@ -236,3 +235,8 @@ def trajectory_completion(task):
     if completion.mode != "phase_clip":
         raise ValueError("A pinned Reference Motion requires phase_clip completion")
     return completion.model_copy(update={"trajectory": completion.trajectory or TrajectoryTolerance()})
+
+
+
+def clip_seconds(motion, completion):
+    return motion["frames"][-1]["time"] * (completion.cycles if motion["loop"] else 1)

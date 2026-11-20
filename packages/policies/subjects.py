@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from packages.info.program import program_supports_type
-from packages.library.common import LibraryError, document
+from packages.library.common import LibraryError, document, load_entity_types
 from packages.library.python_stages import resources as python_resources
 from packages.library.structural import USDGraph, usd_resources
 from packages.programs.subjects import (
@@ -22,7 +22,8 @@ from packages.programs.subjects import fixed_bindings as simulation_fixed_bindin
 from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
-from packages.training.declarative import trajectory_completion
+from packages.protocol.schema import ActionDefinition
+from packages.training.declarative import clip_seconds, trajectory_completion
 
 from .library import PolicyLibrary, digest, read_json
 from .observations import (
@@ -238,6 +239,25 @@ def _candidate(manager, requested):
     return manager.policies.resolve(policy["id"])
 
 
+def trajectory_program_id(base_program):
+    return "biped.policy" if base_program == "biped.policy" else "embodied.policy"
+
+
+def validate_trajectory_deadline(scene, task, binding, completion, timeout):
+    """Reject an impossible Goal before spending a training or evaluation allocation."""
+    interface, action = task["implements"].rsplit(".", 1)
+    program = policy_programs()[trajectory_program_id(binding["program"])]
+    host_limit = binding["config"].get("maxSeconds", program.Config.model_fields["maxSeconds"].default)
+    types = load_entity_types() | scene.entity_types()
+    action_limit = ActionDefinition.model_validate(types[interface]["actions"][action]).timeoutSeconds
+    limit = min(timeout, host_limit, action_limit)
+    required = clip_seconds(task["referenceMotion"], completion) + completion.dwellSeconds
+    if required >= limit:
+        raise ValueError(
+            f"Reference Motion and terminal dwell require {required:g} s before the {limit:g} s deadline"
+        )
+
+
 def _reference_placement(scene, robot, points=()):
     from pxr import UsdGeom, UsdPhysics
 
@@ -310,6 +330,7 @@ def resolve_policy_subject(manager, requested, suite, scene):
     base = bindings.get(task["robot"])
     if base is None or base["type"] != interface:
         raise _invalid("Policy target is absent or has a different interface")
+    spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
     completion = task.get("completion") or {}
     pinned_completion = trajectory_completion(task)
     base_config = base["config"]
@@ -321,11 +342,29 @@ def resolve_policy_subject(manager, requested, suite, scene):
             or goal.get("trajectoryCompletion") != pinned_completion.model_dump(mode="json")
         ):
             raise _invalid("Goal Suite does not freeze these motion criteria", "evaluation_plan_mismatch")
-        program_cls = policy_programs()["embodied.policy"]
-        # Evaluate only the fixed action. Other Scene policies keep their own host contracts.
-        base_config = {key: value for key, value in base_config.items() if key not in (
-            "policies", "policy", "commandParams",
-        )}
+        try:
+            validate_trajectory_deadline(
+                scene, task, base, pinned_completion, suite.task["timeoutSeconds"],
+            )
+        except (ValueError, KeyError) as exc:
+            raise _invalid(str(exc), "evaluation_motion_deadline") from exc
+        program_cls = policy_programs()[trajectory_program_id(base["program"])]
+        if base_config.get("baseBody") not in (None, task["declarative"]["baseBody"]):
+            raise _invalid("Reference Motion pelvis differs from the existing Program baseBody")
+        base_config = dict(base_config)
+        # A shorthand policy names its action in its own immutable Task.
+        if existing := base_config.pop("policy", None):
+            _, old_package = manager.policies.resolve(existing)
+            old_action = read_json(old_package / "task.json")["implements"].rsplit(".", 1)[1]
+            base_config["policies"] = {old_action: existing}
+        if base_config.get("commandParams") and not any(
+            term.source == "command" for term in spec.observations
+        ):
+            base_config["commandParams"] = {
+                name: params for name, params in base_config["commandParams"].items() if name != action
+            }
+        if base["program"] in ("biped.posture", "embodied.posture"):
+            base_config["postureFallback"] = {"program": base["program"], "config": base["config"]}
         base_config.update(
             baseBody=task["declarative"]["baseBody"],
             referencePlacement=_reference_placement(
@@ -339,7 +378,6 @@ def resolve_policy_subject(manager, requested, suite, scene):
         config = program_cls.apply_policy_override(base_config, action, policy["id"])
     except (ValidationError, ValueError) as exc:
         raise _invalid("Policy binding configuration is invalid for target Program") from exc
-    spec = ObservationSpec.model_validate(document(package / "obs_spec.yaml"))
     _validate_scene_action_channels(scene, program_cls, config, spec)
     replacement = base | {"program": program_cls.id, "config": config}
     candidate = {name: policy[name] for name in CandidateIdentity.model_fields if name in policy}

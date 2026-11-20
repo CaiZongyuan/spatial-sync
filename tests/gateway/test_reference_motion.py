@@ -307,7 +307,8 @@ def assert_policy_archive(client, manager, task, ref, temporary):
         assert json.loads(archive.read(manifest["referenceMotion"])) == ref["motion"]
 
 
-def test_straight_dominant_leg_requires_drive_even_with_other_knee_mapped():
+@pytest.mark.parametrize("mixed_motion", [False, True], ids=["straight", "swing-with-flexion"])
+def test_dominant_leg_requires_mapping_for_its_motion(mixed_motion):
     import math
 
     from packages.info.plans import PlanError
@@ -321,10 +322,12 @@ def test_straight_dominant_leg_requires_drive_even_with_other_knee_mapped():
         for time in (0., .5, 1.):
             alpha = time * math.pi / 2
             bend = .4 * time
+            distal = alpha + (bend if mixed_motion else 0.)
             positions = {
                 "rightHip": (0., -.1, 0.),
                 "rightKnee": (.3 * math.sin(alpha), -.1, -.3 * math.cos(alpha)),
-                "rightAnkle": (.6 * math.sin(alpha), -.1, -.6 * math.cos(alpha)),
+                "rightAnkle": (.3 * (math.sin(alpha) + math.sin(distal)), -.1,
+                               -.3 * (math.cos(alpha) + math.cos(distal))),
                 "leftHip": (0., .1, 0.),
                 "leftKnee": (0., .1, -.3),
                 "leftAnkle": (.3 * math.sin(bend), .1, -.3 - .3 * math.cos(bend)),
@@ -335,15 +338,42 @@ def test_straight_dominant_leg_requires_drive_even_with_other_knee_mapped():
             frames.append({"timeSeconds": time, "joints": {
                 name: {"position": values} for name, values in positions.items()
             }})
+        side, gain = ("right", .1) if mixed_motion else ("left", -.1)
         request = ReferenceRequest.model_validate({
             "asset": asset.id, "assetContentHash": asset.content_hash,
             "clip": {"id": "motion-clip/" + "0" * 64 + "@1", "sha256": "0" * 64},
             "mapping": MAPPING | {"bends": {
-                "leftLeg": {"joint": "/Asset/joints/left_knee", "gain": -.1},
+                side + "Leg": {"joint": f"/Asset/joints/{side}_knee", "gain": gain},
             }},
         })
         with pytest.raises(PlanError) as caught:
             build_reference(asset, request, {"frames": frames})
-        assert caught.value.detail["code"] == "reference_unmapped_active_limb"
-        assert caught.value.detail["limb"] == "rightLeg"
-        assert caught.value.detail["excursionRad"] == pytest.approx(math.pi / 2)
+        detail = caught.value.detail
+        assert detail["limb"] == "rightLeg"
+        if mixed_motion:
+            assert detail["code"] == "reference_unmapped_limb_swing"
+            assert detail["swingRad"] == pytest.approx(math.pi / 2)
+            assert detail["bendRad"] == pytest.approx(.4)
+        else:
+            assert detail["code"] == "reference_unmapped_active_limb"
+            assert detail["excursionRad"] == pytest.approx(math.pi / 2)
+
+
+
+def test_pinned_plan_rejects_motion_longer_than_selected_host():
+    app = create_app(remote_settings())
+    with TestClient(app) as client:
+        request = keyframes(app.state.manager.library_assets)
+        request["keyframes"]["frames"][-1]["time"] = 22.
+        published = client.post(URL, headers=OPERATOR, json=request)
+        assert published.status_code == 201, published.text
+        recipe = imitation_request(published.json())
+        recipe["task"]["declarative"]["episodeSeconds"] = 25.
+        task = client.post("/api/v1/tasks/reference-motion", headers=OPERATOR, json=recipe)
+        assert task.status_code == 201, task.text
+        plan = client.post("/api/v1/plans", headers=OPERATOR, json=training_plan(
+            task.json()["id"],
+            evaluation={"scene": recipe["task"]["scene"], "episodes": 30, "threshold": 24},
+        ))
+        assert plan.status_code == 422
+        assert "20" in plan.json()["detail"]["message"]

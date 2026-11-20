@@ -209,7 +209,7 @@ def build_reference(asset, request, clip):
             if name in targets
             and (name not in ("pelvis", "trunk") or (name == "trunk" and targets[name] != targets["pelvis"]))
         ]
-        signals, activity = {}, {}
+        signals, activity, mixed = {}, {}, {}
         for limb, (first, middle, last) in LIMBS.items():
             vectors = np.array(
                 [[frame[middle] - frame[first], frame[last] - frame[middle]] for frame in landmarks]
@@ -224,7 +224,10 @@ def build_reference(asset, request, clip):
             # Proximal swing and joint flexion are independent. Measuring the distal
             # direction as well would count the same flexion against the limb twice.
             swing = swings[:, 0]
-            activity[limb] = max(bend, float(swing.max()))
+            excursion = float(swing.max())
+            activity[limb] = max(bend, excursion)
+            if bend >= 0.22:
+                mixed[limb] = (bend, excursion)
             signals[limb] = angles if bend >= 0.22 else swing
         minimum = max(0.22, 0.85 * max(activity.values()))
         active = [limb for limb, amplitude in activity.items() if amplitude >= minimum]
@@ -252,6 +255,13 @@ def build_reference(asset, request, clip):
                     excursionRad=activity[limb],
                 )
         for limb, bend in bends.items():
+            if limb in mixed and mixed[limb][1] >= minimum:
+                flexion, swing = mixed[limb]
+                reject(
+                    "reference_unmapped_limb_swing",
+                    "A bend driver cannot represent a separate dominant proximal swing",
+                    limb=limb, bendRad=flexion, swingRad=swing,
+                )
             if bend.joint not in qpos or joints[bend.joint].kind != "hinge":
                 reject("reference_mapping_invalid", "A bend driver must be an actuated hinge", limb=limb)
         if any(key not in qpos for key in request.mapping.auxiliaryJoints):
