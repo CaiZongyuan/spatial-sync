@@ -31,23 +31,61 @@ class ConfinedRobotUSD(USDGraph):
             self.active.remove(filename)
 
 
-def collider_density(prim, body_densities):
+def mass_fields(prim):
+    api = UsdPhysics.MassAPI(prim)
+    if not api:
+        return {}
+    path = str(prim.GetPath())
+    fields = {}
+    for name, attr in (("mass", api.GetMassAttr()), ("density", api.GetDensityAttr())):
+        value = attr.Get() or 0.
+        if not math.isfinite(value) or value < 0:
+            raise invalid(f"USD {name} must be finite and nonnegative", path=path)
+        if value:
+            fields[name] = value
+    center = api.GetCenterOfMassAttr().Get()
+    if center is not None and tuple(center) != (-math.inf,) * 3:
+        if not all(math.isfinite(value) for value in center):
+            raise invalid("USD centerOfMass must be finite", path=path)
+        fields["centerOfMass"] = center
+    diagonal = api.GetDiagonalInertiaAttr().Get()
+    if diagonal is not None and tuple(diagonal) != (0., 0., 0.):
+        if not all(math.isfinite(value) and value > 0 for value in diagonal):
+            raise invalid("USD diagonalInertia must contain finite positive moments", path=path)
+        fields["diagonalInertia"] = diagonal
+    axes = api.GetPrincipalAxesAttr().Get()
+    if axes is not None:
+        if not all(math.isfinite(value) for value in (axes.GetReal(), *axes.GetImaginary())):
+            raise invalid("USD principalAxes must be finite", path=path)
+        if any(axes.GetImaginary()):
+            fields["principalAxes"] = axes
+    return fields
+
+
+def collider_density(prim, bodies):
     path = prim.GetPath()
-    if str(path) not in body_densities and prim.HasAPI(UsdPhysics.MassAPI):
-        api = UsdPhysics.MassAPI(prim)
-        if api.GetMassAttr().Get() not in (None, 0.):
-            raise invalid("USD collider mass is outside the supported robot import subset", path=str(path))
-        density = api.GetDensityAttr().Get() or 0.
-        if not math.isfinite(density) or density < 0:
-            raise invalid("USD collider density must be finite and nonnegative", path=str(path))
-        if density:
-            return density
+    owner = path
+    while not owner.IsAbsoluteRootPath() and str(owner) not in bodies:
+        owner = owner.GetParentPath()
+    body_fields = bodies.get(str(owner), {})
+    if path != owner:
+        fields = mass_fields(prim)
+        unsupported = fields.keys() - {"density"}
+        # A collider's COM and mass can still change the inferred inertia or COM.
+        if "diagonalInertia" in body_fields:
+            unsupported -= {"diagonalInertia", "principalAxes"}
+            if "centerOfMass" in body_fields:
+                unsupported.discard("centerOfMass")
+                if "mass" in body_fields:
+                    unsupported.discard("mass")
+        if unsupported:
+            names = ", ".join(sorted(unsupported))
+            raise invalid(f"USD collider {names} cannot be preserved by robot import", path=str(path))
+        if "density" in fields:
+            return fields["density"]
 
     # OpenUSD resolves density from the collider, the rigid body, then the bound physics material.
-    owner = path
-    while not owner.IsAbsoluteRootPath() and str(owner) not in body_densities:
-        owner = owner.GetParentPath()
-    if body_densities.get(str(owner), 0.):
+    if "density" in body_fields:
         return None
     material, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial("physics")
     api = UsdPhysics.MaterialAPI(material.GetPrim()) if material else None
@@ -80,49 +118,29 @@ def load(source, entry, meters_per_unit=None):
         xml.find("worldbody/body").attrib.pop("mocap", None)
     meters, kilograms = units
     density_scale = kilograms / meters**3
-    body_densities = {}
-    for path in derived.body_names_by_path:
-        api = UsdPhysics.MassAPI(stage.GetPrimAtPath(path))
-        density = (api.GetDensityAttr().Get() or 0.) if api else 0.
-        if not math.isfinite(density) or density < 0:
-            raise invalid("USD density must be finite and nonnegative", path=path)
-        body_densities[path] = density
+    bodies = {path: mass_fields(stage.GetPrimAtPath(path)) for path in derived.body_names_by_path}
     colliders = {}
     for path, name in derived.collider_names_by_path.items():
         prim = stage.GetPrimAtPath(path)
         mesh = UsdPhysics.MeshCollisionAPI(prim)
         approximation = mesh.GetApproximationAttr().Get() if mesh else None
         contact = bound_contact_material(prim)
-        density = collider_density(prim, body_densities)
+        density = collider_density(prim, bodies)
         colliders[name] = (approximation == "convexHull", contact[1] if contact else 0.,
                            density * density_scale if density else None)
     robot = mjcf.compiled(ET.tostring(xml, encoding="unicode"), entry, usd_colliders=colliders)
     robot.up = str(UsdGeom.GetStageUpAxis(stage))
     body_paths = {name: path for path, name in derived.body_names_by_path.items()}
     for name, body in robot.bodies.items():
-        path = body_paths[name]
-        prim = stage.GetPrimAtPath(path)
-        if not prim.HasAPI(UsdPhysics.MassAPI):
-            body.mass = body.center = body.inertia = None
-            continue
-        mass = UsdPhysics.MassAPI(prim)
-        weight = mass.GetMassAttr().Get() or 0.
-        if not math.isfinite(weight) or weight < 0:
-            raise invalid("USD mass must be finite and nonnegative", path=path)
-        if weight == 0:
+        fields = bodies[body_paths[name]]
+        if "mass" not in fields:
             body.mass = None
-        center = mass.GetCenterOfMassAttr().Get()
-        if center is None or tuple(center) == (-math.inf,) * 3:
+        if "centerOfMass" not in fields:
             body.center = None
-        elif not all(math.isfinite(value) for value in center):
-            raise invalid("USD center of mass must be finite", path=path)
-        diagonal = mass.GetDiagonalInertiaAttr().Get()
-        if diagonal is None or tuple(diagonal) == (0., 0., 0.):
+        if "diagonalInertia" not in fields:
             body.inertia = None
-        elif not all(math.isfinite(value) and value > 0 for value in diagonal):
-            raise invalid("USD principal moments must be finite and positive", path=path)
-        if density := body_densities[path]:
-            body.density = density * density_scale
+        if "density" in fields:
+            body.density = fields["density"] * density_scale
     source_joints = {joint.name: joint for joint in derived.joints}
     for joint in robot.joints:
         if joint.name in source_joints:

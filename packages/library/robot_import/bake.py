@@ -50,8 +50,6 @@ def custom(prim, name, value):
 
 
 def solid_mesh(shape, path):
-    if shape.kind != "mesh":
-        return shape.surface()
     mesh = shape.collision_hull.copy() if shape.convex else shape.mesh.copy()
     if not shape.convex:
         mesh.merge_vertices()
@@ -66,6 +64,45 @@ def solid_mesh(shape, path):
     return mesh
 
 
+def collision_mass(shape, length, path):
+    if shape.kind == "mesh":
+        mesh = solid_mesh(shape, path)
+        mesh.apply_transform(shape.pose)
+        mesh.apply_scale(length)
+        return mesh.mass_properties
+
+    size = np.asarray(shape.size) * length
+    if not np.isfinite(size).all() or np.any(size <= 0):
+        raise invalid("Geometry dimensions must be positive and finite", path=path)
+    match shape.kind:
+        case "box":
+            volume = float(np.prod(size))
+            squared = size**2
+            inertia = np.diag(volume / 12 * (np.roll(squared, 1) + np.roll(squared, -1)))
+        case "sphere":
+            radius, = size
+            volume = 4 / 3 * math.pi * radius**3
+            inertia = trimesh.inertia.sphere_inertia(volume, radius)
+        case "cylinder" | "capsule":
+            radius, height = size
+            volume = math.pi * radius**2 * height
+            inertia = trimesh.inertia.cylinder_inertia(volume, radius, height)
+            if shape.kind == "capsule":
+                cap_volume = 4 / 3 * math.pi * radius**3
+                inertia += trimesh.inertia.sphere_inertia(cap_volume, radius)
+                # Translate the two hemispheres by half the cylindrical length.
+                transverse_shift = cap_volume * (height**2 / 4 + 3 * radius * height / 8)
+                inertia += np.diag((transverse_shift, transverse_shift, 0.))
+                volume += cap_volume
+        case _:
+            raise invalid(f"Unsupported collision geometry {shape.kind}", path=path)
+    basis = shape.pose[:3, :3]
+    return trimesh.triangles.MassProperties(
+        density=1., mass=volume, volume=volume, center_mass=shape.pose[:3, 3] * length,
+        inertia=basis @ inertia @ basis.T,
+    )
+
+
 def inertial(body, density, length, kilograms, path):
     mass = body.mass * kilograms if body.mass is not None else None
     center = body.center * length if body.center is not None else None
@@ -76,11 +113,8 @@ def inertial(body, density, length, kilograms, path):
         parts = []
         for shape in body.shapes:
             if shape.collision:
-                mesh = solid_mesh(shape, path)
-                mesh.apply_transform(shape.pose)
-                mesh.apply_scale(length)
                 weight = shape.density / bulk_density if shape.density is not None else 1.
-                parts.append((mesh.mass_properties, weight))
+                parts.append((collision_mass(shape, length, path), weight))
         # Relative density retains the uniform-density calculation when there are no overrides.
         volume = sum(part.volume * weight for part, weight in parts)
         if estimated and volume <= 0:

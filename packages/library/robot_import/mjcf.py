@@ -33,7 +33,7 @@ def compiled(xml, entry, *, assets=None, standing_key=None, usd_colliders=None, 
     except ValueError as exc:
         raise invalid(str(exc), path=entry) from exc
     return from_model(
-        model, entry, standing_key=standing_key, usd_colliders=usd_colliders or {}, estimated=estimated,
+        model, entry, standing_key=standing_key, usd_colliders=usd_colliders, estimated=estimated,
     )
 
 
@@ -141,17 +141,26 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
     roots = [index for index in names if model.body_parentid[index] == 0]
     if len(roots) != 1:
         raise invalid("Expected exactly one MJCF robot root", path=entry)
+    # USD-derived MJCF already encodes the canonical contact material, including restitution.
+    defaults = mujoco.MjSpec().default.geom if usd_colliders is None else None
+    usd_geometry = usd_colliders or {}
     for index in range(model.ngeom):
         body = int(model.geom_bodyid[index])
         if body == 0 and model.geom_type[index] != mujoco.mjtGeom.mjGEOM_PLANE:
             raise invalid("An MJCF robot archive can only include a world floor plane", path=entry)
+        if defaults is None or not (model.geom_contype[index] or model.geom_conaffinity[index]):
+            continue
+        path = f"{names.get(body, 'world')}/{model.geom(index).name or str(index)}"
         dimension, priority = int(model.geom_condim[index]), int(model.geom_priority[index])
-        if (dimension != 3 or priority != 0) and (model.geom_contype[index] or model.geom_conaffinity[index]):
-            geom = model.geom(index).name or str(index)
+        if dimension != 3 or priority != 0:
             raise invalid(
                 f"MJCF contact condim={dimension}, priority={priority} cannot map to USD sliding friction",
-                path=f"{names.get(body, 'world')}/{geom}",
+                path=path,
             )
+        for field in ("margin", "gap", "solref", "solimp", "solmix"):
+            value = getattr(model, f"geom_{field}")[index]
+            if not np.array_equal(value, getattr(defaults, field)):
+                raise invalid(f"MJCF contact {field} differs from the supported default", path=path)
     if standing_key is not None:
         identifier = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, standing_key)
         if identifier < 0:
@@ -207,7 +216,7 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
             body.inertia = mujoco_link_inertia(model, index)
         for geom in range(model.body_geomadr[index], model.body_geomadr[index] + model.body_geomnum[index]):
             geom_name = model.geom(geom).name
-            shape = geom_shape(model, geom, f"{name}/{geom_name or geom}", usd_colliders.get(geom_name))
+            shape = geom_shape(model, geom, f"{name}/{geom_name or geom}", usd_geometry.get(geom_name))
             body.shapes.append(shape)
             if shape.collision:
                 colliders.setdefault(name, []).append(geom)

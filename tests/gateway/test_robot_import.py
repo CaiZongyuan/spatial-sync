@@ -425,6 +425,11 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     ("material", 1.536, 1 / 15),
     ("shadowed", .512, .05),
     ("equal", .512, .05),
+    ("centerOfMass", None, None),
+    ("diagonalInertia", None, None),
+    ("principalAxes", None, None),
+    ("sentinels", 1.28, .08),
+    ("body-fields", 1.8, .02),
 ])
 def test_usd_robot_import_preserves_effective_collider_density(
     client, tmp_path, density_source, expected_mass, expected_center,
@@ -458,9 +463,25 @@ def test_usd_robot_import_preserves_effective_collider_density(
         material = UsdShade.Material.Define(stage, "/Robot/Material")
         UsdPhysics.MaterialAPI.Apply(material.GetPrim()).CreateDensityAttr(.004)
         UsdShade.MaterialBindingAPI.Apply(heavy.GetPrim()).Bind(material, materialPurpose="physics")
-    UsdPhysics.MassAPI.Apply(heavy.GetPrim()).CreateDensityAttr({
-        "collider": .004, "equal": .001, "material": 0., "shadowed": 0.,
-    }[density_source])
+    collider_mass = UsdPhysics.MassAPI.Apply(heavy.GetPrim())
+    collider_mass.CreateDensityAttr({"equal": .001, "material": 0., "shadowed": 0.}.get(density_source, .004))
+    if density_source in ("centerOfMass", "body-fields"):
+        collider_mass.CreateCenterOfMassAttr(Gf.Vec3f(1, 0, 0))
+    if density_source in ("diagonalInertia", "body-fields"):
+        collider_mass.CreateDiagonalInertiaAttr(Gf.Vec3f(2, 2.5, 3))
+    if density_source in ("principalAxes", "body-fields"):
+        collider_mass.CreatePrincipalAxesAttr(Gf.Quatf(.70710678, Gf.Vec3f(0, 0, .70710678)))
+    if density_source == "sentinels":
+        collider_mass.CreateMassAttr(0.)
+        collider_mass.CreateCenterOfMassAttr(Gf.Vec3f(-math.inf))
+        collider_mass.CreateDiagonalInertiaAttr(Gf.Vec3f(0))
+        collider_mass.CreatePrincipalAxesAttr(Gf.Quatf(0))
+    if density_source == "body-fields":
+        collider_mass.CreateMassAttr(.75)
+        body_mass = UsdPhysics.MassAPI(arm)
+        body_mass.CreateMassAttr(3.6)
+        body_mass.CreateCenterOfMassAttr(Gf.Vec3f(2, 0, 0))
+        body_mass.CreateDiagonalInertiaAttr(Gf.Vec3f(8, 9, 10))
     joint = UsdPhysics.RevoluteJoint.Define(stage, "/Robot/hinge")
     joint.CreateBody0Rel().SetTargets(["/Robot/base"])
     joint.CreateBody1Rel().SetTargets(["/Robot/arm"])
@@ -471,6 +492,13 @@ def test_usd_robot_import_preserves_effective_collider_density(
     manifest["calibration"] = {"density": 1000.}
     package["robot.json"] = json.dumps(manifest).encode()
     reply = upload(client, package)
+    if expected_mass is None:
+        assert reply.status_code == 422, reply.text
+        problem, = reply.json()["detail"]["problems"]
+        assert problem["path"] == "/Robot/arm/heavy"
+        assert density_source in problem["message"]
+        assert client.get("/api/v1/library/assets/robot/calibration-probe/1").status_code == 404
+        return
     assert reply.status_code == 200, reply.text
     item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
     path = tmp_path / "readback.usda"
@@ -481,21 +509,29 @@ def test_usd_robot_import_preserves_effective_collider_density(
     body = model.body(derived.body_names_by_path["/Asset/links/arm"]).id
     assert model.body_mass[body] == pytest.approx(expected_mass)
     assert model.body_ipos[body] == pytest.approx([expected_center, 0., 0.])
-    cube_inertia = expected_mass * .08**2 / 6
-    transverse = cube_inertia + expected_mass * expected_center * (.10 - expected_center)
-    assert model.body_inertia[body] == pytest.approx([cube_inertia, transverse, transverse])
+    if density_source == "body-fields":
+        assert model.body_inertia[body] == pytest.approx([.0004, .00045, .0005])
+    else:
+        cube_inertia = expected_mass * .08**2 / 6
+        transverse = cube_inertia + expected_mass * expected_center * (.10 - expected_center)
+        assert model.body_inertia[body] == pytest.approx([cube_inertia, transverse, transverse])
 
 
-@pytest.mark.parametrize(("condim", "priority", "override", "field"), [
-    (3, 0, False, None),
-    (1, 0, False, "condim=1"),
-    (4, 0, False, "condim=4"),
-    (6, 0, False, "condim=6"),
-    (3, 1, False, "priority=1"),
-    (3, 0, True, "override"),
+@pytest.mark.parametrize(("condim", "priority", "override", "parameters", "field"), [
+    (3, 0, False, 'margin="0" gap="0" solref=".02 1" solimp=".9 .95 .001 .5 2" solmix="1"', None),
+    (1, 0, False, "", "condim=1"),
+    (4, 0, False, "", "condim=4"),
+    (6, 0, False, "", "condim=6"),
+    (3, 1, False, "", "priority=1"),
+    (3, 0, True, "", "override"),
+    (3, 0, False, 'margin=".05"', "margin"),
+    (3, 0, False, 'gap=".01"', "gap"),
+    (3, 0, False, 'solref=".03 .75"', "solref"),
+    (3, 0, False, 'solimp=".6 .8 .002 .5 2"', "solimp"),
+    (3, 0, False, 'solmix=".1"', "solmix"),
 ])
 def test_mjcf_robot_import_requires_supported_contact_friction(
-    client, tmp_path, condim, priority, override, field,
+    client, tmp_path, condim, priority, override, parameters, field,
 ):
     import mujoco
 
@@ -504,10 +540,11 @@ def test_mjcf_robot_import_requires_supported_contact_friction(
     flag = "enable" if override else "disable"
     source = f"""<mujoco>
       <option o_friction=".21 .22 .3 .2 .2"><flag override="{flag}"/></option>
-      <default><geom condim="{condim}" priority="{priority}" friction=".8 .3 .2"/></default>
+      <default><geom condim="{condim}" priority="{priority}" friction=".8 .3 .2" {parameters}/></default>
       <worldbody><body name="base"><freejoint/>
         <geom name="base-box" type="box" size=".1 .1 .1" mass="2"/>
-        <geom name="visual" size=".05" condim="6" priority="2" contype="0" conaffinity="0" mass="0"/>
+        <geom name="visual" size=".05" condim="6" priority="2" contype="0" conaffinity="0" mass="0"
+              margin=".05" gap=".02"/>
         <body name="tip" pos=".3 0 0"><joint name="motor-a"/>
           <geom size=".05" condim="3" priority="0" mass=".25"/>
         </body>
@@ -537,6 +574,44 @@ def test_mjcf_robot_import_requires_supported_contact_friction(
     box, = [name for prim, name in derived.collider_names_by_path.items() if "/base/" in prim]
     assert model.geom(box).condim[0] == 3
     assert model.geom(box).friction[0] == pytest.approx(.8)
+
+
+@pytest.mark.parametrize(("geometry", "volume", "moment_factors"), [
+    ('<box size=".08 .10 .12"/>', .08 * .10 * .12, (.002033333333, .001733333333, .001366666667)),
+    ('<sphere radius=".04"/>', .000256 * math.pi / 3, (.00064, .00064, .00064)),
+    ('<cylinder radius=".04" length=".12"/>', .000192 * math.pi, (.0016, .0016, .0008)),
+    ('<capsule radius=".04" length=".12"/>', (.000192 + .000256 / 3) * math.pi,
+     (.002966153846, .002966153846, .000750769231)),
+])
+def test_robot_import_estimates_analytic_inertia(client, tmp_path, geometry, volume, moment_factors):
+    import numpy as np
+
+    from apps.node.usd_mjcf import derive_usd_mjcf, mujoco_link_inertia
+
+    original = b'<link name="tip"><collision><geometry><box size=".1 .1 .1"/></geometry></collision></link>'
+    replacement = (
+        f'<link name="tip"><collision><origin xyz=".03 .02 .01" rpy="0 {math.pi / 4} 0"/>'
+        f'<geometry>{geometry}</geometry></collision></link>'
+    ).encode()
+    archive = files(model=URDF.replace(original, replacement))
+    manifest = json.loads(archive["robot.json"])
+    manifest["calibration"] = {"density": 2000., "scale": 1.5}
+    archive["robot.json"] = json.dumps(manifest).encode()
+    reply = upload(client, archive)
+    assert reply.status_code == 200, reply.text
+    item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    path = tmp_path / "readback.usda"
+    path.write_bytes(client.get(item["files"]["asset.usda"]).content)
+    derived = derive_usd_mjcf(path)
+    model = derived.to_mjmodel()
+    index = model.body(derived.body_names_by_path["/Asset/links/tip"]).id
+    mass = volume * 2000 * 1.5**3
+    assert model.body_mass[index] == pytest.approx(mass)
+    assert model.body_ipos[index] == pytest.approx([.045, .03, .015])
+    ix, iy, iz = moment_factors
+    expected = np.array([[(ix + iz) / 2, 0., (iz - ix) / 2],
+                         [0., iy, 0.], [(iz - ix) / 2, 0., (ix + iz) / 2]])
+    np.testing.assert_allclose(mujoco_link_inertia(model, index), mass * 1.5**2 * expected, atol=1e-8)
 
 
 def test_policy_export_checks_scene_coordinates_of_explicit_calibration(client, tmp_path):
