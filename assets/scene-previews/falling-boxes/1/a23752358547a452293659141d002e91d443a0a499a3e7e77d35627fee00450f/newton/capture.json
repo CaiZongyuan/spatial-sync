@@ -5,7 +5,7 @@
   "templateAssets": [],
   "libraryAssets": [],
   "source": "newton",
-  "capturedAt": "2026-11-20T12:00:00.641254+00:00",
+  "capturedAt": "2026-11-20T13:10:52.753244+00:00",
   "simTime": 0.0,
   "runtime": {
     "python": "3.13.14",
@@ -161,7 +161,7 @@
     },
     {
       "path": "packages/policies/subjects.py",
-      "sha256": "106fc6d1bb28e3e4947240f64912a87a4677cadb8db78260f1c7903f47b02a6f"
+      "sha256": "02d59febd5508dad01b1ed61e91fbd98748f8e4375fec1f9b114d86d745a3029"
     },
     {
       "path": "packages/programs/biped/__init__.py",
@@ -169,7 +169,7 @@
     },
     {
       "path": "packages/programs/biped/policy.py",
-      "sha256": "4e66e74e9943f2446adc3beb075894bdc63e52d38beb207592a4d88089af3d00"
+      "sha256": "705a93e470b545a7df5de269b2e8cb474be52d0f8ea223e22fc3210734d5ebb2"
     },
     {
       "path": "packages/programs/biped/posture.py",
@@ -189,7 +189,7 @@
     },
     {
       "path": "packages/programs/embodied.py",
-      "sha256": "b0d6c794431540a374c020359aa7c9e8f4239d173fe66e35bd171091508c94eb"
+      "sha256": "8211e1012216d6504c3aef8b93dff119af99b8cbce980cda6a8e72578aaa2c44"
     },
     {
       "path": "packages/programs/joint_drive.py",
@@ -349,7 +349,7 @@
     },
     {
       "path": "packages/training/declarative.py",
-      "sha256": "008eeec39e7ee5aed81f73be185a8ecf21f27b8e8655022c3548ed7a61fa72fd"
+      "sha256": "352dce17c8551408b5875a294bb45e40f5aa44780ddfa35f35d063cf1f7095ca"
     },
     {
       "path": "packages/training/reward_state.py",
@@ -379,10 +379,10 @@
     "state": "state.json"
   },
   "files": {
-    "manifest.json": "7aee5e8e3eaed2610a53a2345910e313c6c4305c00281d2df715d80b48c7ab7c",
-    "catalog.json": "aaa93ae54dc53168aa4d0b2f154a7ac38b06bc97cc8f6e91b2f08d6bdf21a74d",
-    "state.json": "483fcef97a967d2271519a96b9919264221b7d97f9b04614c6581ef3b6c924b8",
-    "snapshot.bin": "1e6a6e17aaee4cfc053286a53d312f312be59cb979772e94fa1023e2149659ba"
+    "manifest.json": "c21de9ed29a507de8c9ba4de96d8646e8d3e9d0e331ef6a238012eebd2f21e61",
+    "catalog.json": "be4f129140d37a536081b0b84f4e3cc0c58a73c17ff0994274005912fd109c0c",
+    "state.json": "b613e11cfb438eecc320ee84fbf90b08a2d5f29548af02d6ed567d6b61e6724c",
+    "snapshot.bin": "5034dd48d1bac5be34fb2d1724ff2662c89bb3701b759227752e994e36adedcf"
   },
   "counts": {
     "physicalEntities": 3,
