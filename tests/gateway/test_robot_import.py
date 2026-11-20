@@ -420,33 +420,111 @@ def test_usd_import_preserves_si_joint_dynamics_and_partial_inertia(client, tmp_
     assert data.qfrc_passive.tolist() == pytest.approx([-1e-5 * 180 / math.pi, -.3])
 
 
-@pytest.mark.parametrize("condim", [3, 4, 6])
-def test_mjcf_robot_import_requires_supported_contact_friction(client, tmp_path, condim):
+@pytest.mark.parametrize(("density_source", "expected_mass", "expected_center"), [
+    ("collider", 1.28, .08),
+    ("material", 1.536, 1 / 15),
+    ("shadowed", .512, .05),
+    ("equal", .512, .05),
+])
+def test_usd_robot_import_preserves_effective_collider_density(
+    client, tmp_path, density_source, expected_mass, expected_center,
+):
+    from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
+
+    from apps.node.usd_mjcf import derive_usd_mjcf
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageMetersPerUnit(stage, .01)
+    UsdGeom.SetStageUpAxis(stage, "Z")
+    UsdPhysics.SetStageKilogramsPerUnit(stage, .5)
+    root = UsdGeom.Xform.Define(stage, "/Robot").GetPrim()
+    stage.SetDefaultPrim(root)
+    UsdPhysics.ArticulationRootAPI.Apply(root)
+    for name, x in (("base", 0), ("arm", 30)):
+        link = UsdGeom.Xform.Define(stage, f"/Robot/{name}")
+        link.AddTranslateOp().Set(Gf.Vec3d(x, 0, 10))
+        UsdPhysics.RigidBodyAPI.Apply(link.GetPrim())
+        shape = UsdGeom.Cube.Define(stage, f"/Robot/{name}/box")
+        shape.CreateSizeAttr(8)
+        UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
+    arm = stage.GetPrimAtPath("/Robot/arm")
+    if density_source != "material":
+        UsdPhysics.MassAPI.Apply(arm).CreateDensityAttr(.001)
+    heavy = UsdGeom.Cube.Define(stage, "/Robot/arm/heavy")
+    heavy.CreateSizeAttr(8)
+    heavy.AddTranslateOp().Set(Gf.Vec3d(10, 0, 0))
+    UsdPhysics.CollisionAPI.Apply(heavy.GetPrim())
+    if density_source in ("material", "shadowed"):
+        material = UsdShade.Material.Define(stage, "/Robot/Material")
+        UsdPhysics.MaterialAPI.Apply(material.GetPrim()).CreateDensityAttr(.004)
+        UsdShade.MaterialBindingAPI.Apply(heavy.GetPrim()).Bind(material, materialPurpose="physics")
+    UsdPhysics.MassAPI.Apply(heavy.GetPrim()).CreateDensityAttr({
+        "collider": .004, "equal": .001, "material": 0., "shadowed": 0.,
+    }[density_source])
+    joint = UsdPhysics.RevoluteJoint.Define(stage, "/Robot/hinge")
+    joint.CreateBody0Rel().SetTargets(["/Robot/base"])
+    joint.CreateBody1Rel().SetTargets(["/Robot/arm"])
+    joint.CreateLocalPos0Attr(Gf.Vec3f(30, 0, 0))
+
+    package = files("density.usda", stage.GetRootLayer().ExportToString().encode())
+    manifest = json.loads(package["robot.json"])
+    manifest["calibration"] = {"density": 1000.}
+    package["robot.json"] = json.dumps(manifest).encode()
+    reply = upload(client, package)
+    assert reply.status_code == 200, reply.text
+    item = client.get("/api/v1/library/assets/robot/calibration-probe/1").json()
+    path = tmp_path / "readback.usda"
+    path.write_bytes(client.get(item["files"]["asset.usda"]).content)
+    assert client.get(item["files"]["source/density.usda"]).content == package["density.usda"]
+    derived = derive_usd_mjcf(path)
+    model = derived.to_mjmodel()
+    body = model.body(derived.body_names_by_path["/Asset/links/arm"]).id
+    assert model.body_mass[body] == pytest.approx(expected_mass)
+    assert model.body_ipos[body] == pytest.approx([expected_center, 0., 0.])
+    cube_inertia = expected_mass * .08**2 / 6
+    transverse = cube_inertia + expected_mass * expected_center * (.10 - expected_center)
+    assert model.body_inertia[body] == pytest.approx([cube_inertia, transverse, transverse])
+
+
+@pytest.mark.parametrize(("condim", "priority", "override", "field"), [
+    (3, 0, False, None),
+    (1, 0, False, "condim=1"),
+    (4, 0, False, "condim=4"),
+    (6, 0, False, "condim=6"),
+    (3, 1, False, "priority=1"),
+    (3, 0, True, "override"),
+])
+def test_mjcf_robot_import_requires_supported_contact_friction(
+    client, tmp_path, condim, priority, override, field,
+):
     import mujoco
 
     from apps.node.usd_mjcf import derive_usd_mjcf
 
+    flag = "enable" if override else "disable"
     source = f"""<mujoco>
-      <default><geom condim="{condim}" friction=".8 .3 .2"/></default>
+      <option o_friction=".21 .22 .3 .2 .2"><flag override="{flag}"/></option>
+      <default><geom condim="{condim}" priority="{priority}" friction=".8 .3 .2"/></default>
       <worldbody><body name="base"><freejoint/>
         <geom name="base-box" type="box" size=".1 .1 .1" mass="2"/>
-        <geom name="visual" size=".05" condim="6" contype="0" conaffinity="0" mass="0"/>
+        <geom name="visual" size=".05" condim="6" priority="2" contype="0" conaffinity="0" mass="0"/>
         <body name="tip" pos=".3 0 0"><joint name="motor-a"/>
-          <geom size=".05" condim="3" mass=".25"/>
+          <geom size=".05" condim="3" priority="0" mass=".25"/>
         </body>
       </body></worldbody>
     </mujoco>""".encode()
     native = mujoco.MjModel.from_xml_string(source.decode())
     box = native.geom("base-box").id
     assert native.geom_condim[box] == condim
+    assert native.geom_priority[box] == priority
     assert native.geom_friction[box] == pytest.approx([.8, .3, .2])
     reply = upload(client, files("probe.xml", source))
     url = "/api/v1/library/assets/robot/calibration-probe/1"
-    if condim > 3:
+    if field:
         assert reply.status_code == 422, reply.text
         problem, = reply.json()["detail"]["problems"]
-        assert problem["path"] == "base/base-box"
-        assert f"condim={condim}" in problem["message"]
+        assert problem["path"] == ("option/flag:override" if override else "base/base-box")
+        assert field in problem["message"]
         assert client.get(url).status_code == 404
         return
     assert reply.status_code == 200, reply.text

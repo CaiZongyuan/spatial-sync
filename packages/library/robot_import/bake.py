@@ -72,25 +72,30 @@ def inertial(body, density, length, kilograms, path):
     inertia = body.inertia * kilograms * length**2 if body.inertia is not None else None
     estimated = mass is None or inertia is None
     if estimated or center is None:
+        bulk_density = body.density if body.density is not None else density
         parts = []
         for shape in body.shapes:
             if shape.collision:
                 mesh = solid_mesh(shape, path)
                 mesh.apply_transform(shape.pose)
                 mesh.apply_scale(length)
-                parts.append(mesh.mass_properties)
-        volume = sum(part.volume for part in parts)
+                weight = shape.density / bulk_density if shape.density is not None else 1.
+                parts.append((mesh.mass_properties, weight))
+        # Relative density retains the uniform-density calculation when there are no overrides.
+        volume = sum(part.volume * weight for part, weight in parts)
         if estimated and volume <= 0:
             raise invalid("Missing inertia requires volumetric collision geometry", path=path)
         if center is None and volume > 0:
-            center = sum((part.volume * part.center_mass for part in parts), np.zeros(3)) / volume
+            center = sum((weight * part.volume * part.center_mass for part, weight in parts),
+                         np.zeros(3)) / volume
         if mass is None:
-            mass = (body.density if body.density is not None else density) * volume
+            mass = bulk_density * volume
         if inertia is None:
             inertia = np.zeros((3, 3))
-            for part in parts:
+            for part, weight in parts:
                 offset = part.center_mass - center
-                inertia += part.inertia + part.mass * (offset @ offset * np.eye(3) - np.outer(offset, offset))
+                shift = part.mass * (offset @ offset * np.eye(3) - np.outer(offset, offset))
+                inertia += weight * (part.inertia + shift)
             inertia *= mass / volume
     if center is None:
         center = np.zeros(3)

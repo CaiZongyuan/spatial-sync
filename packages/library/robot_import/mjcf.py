@@ -85,8 +85,8 @@ def geom_shape(model, index, path, usd_collider):
     collision = bool(model.geom_contype[index] or model.geom_conaffinity[index])
     pose = transform(model.geom_pos[index], model.geom_quat[index])
     mesh, hull = None, None
-    restitution = usd_collider[1] if usd_collider else 0.
-    convex = collision and kind == "mesh" and (usd_collider is None or usd_collider[0])
+    use_hull, restitution, density = usd_collider if usd_collider is not None else (True, 0., None)
+    convex = collision and kind == "mesh" and use_hull
     if kind == "mesh":
         mesh_id = model.geom_dataid[index]
         vertex, count = model.mesh_vertadr[mesh_id], model.mesh_vertnum[mesh_id]
@@ -117,7 +117,7 @@ def geom_shape(model, index, path, usd_collider):
     return Shape(
         kind, tuple(size), pose, collision, not collision or model.geom_group[index] < 3,
         tuple(color), float(model.geom_friction[index, 0]), mesh, convex=convex,
-        restitution=restitution, collision_hull=hull,
+        restitution=restitution, collision_hull=hull, density=density,
     )
 
 
@@ -133,6 +133,8 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
             raise invalid(
                 "Disabled MJCF option is outside the canonical USD subset", path=f"option/flag:{option}",
             )
+    if model.opt.enableflags & mujoco.mjtEnableBit.mjENBL_OVERRIDE:
+        raise invalid("MJCF contact override is unsupported", path="option/flag:override")
     if model.nbody > 129 or model.ngeom > 4096:
         raise invalid("Compiled MJCF exceeds the robot size budget", path=entry)
     names = {index: model.body(index).name or f"link_{index}" for index in range(1, model.nbody)}
@@ -143,11 +145,11 @@ def from_model(model, entry, *, standing_key, usd_colliders, estimated):
         body = int(model.geom_bodyid[index])
         if body == 0 and model.geom_type[index] != mujoco.mjtGeom.mjGEOM_PLANE:
             raise invalid("An MJCF robot archive can only include a world floor plane", path=entry)
-        dimension = int(model.geom_condim[index])
-        if dimension > 3 and (model.geom_contype[index] or model.geom_conaffinity[index]):
+        dimension, priority = int(model.geom_condim[index]), int(model.geom_priority[index])
+        if (dimension != 3 or priority != 0) and (model.geom_contype[index] or model.geom_conaffinity[index]):
             geom = model.geom(index).name or str(index)
             raise invalid(
-                f"MJCF condim={dimension} requires unsupported torsional or rolling contact friction",
+                f"MJCF contact condim={dimension}, priority={priority} cannot map to USD sliding friction",
                 path=f"{names.get(body, 'world')}/{geom}",
             )
     if standing_key is not None:

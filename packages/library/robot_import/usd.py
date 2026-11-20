@@ -3,7 +3,7 @@
 import math
 import xml.etree.ElementTree as ET
 
-from pxr import UsdGeom, UsdPhysics
+from pxr import UsdGeom, UsdPhysics, UsdShade
 
 from apps.node.usd_mjcf import bound_contact_material, derive_usd_mjcf
 from packages.library.archive import invalid
@@ -31,6 +31,32 @@ class ConfinedRobotUSD(USDGraph):
             self.active.remove(filename)
 
 
+def collider_density(prim, body_densities):
+    path = prim.GetPath()
+    if str(path) not in body_densities and prim.HasAPI(UsdPhysics.MassAPI):
+        api = UsdPhysics.MassAPI(prim)
+        if api.GetMassAttr().Get() not in (None, 0.):
+            raise invalid("USD collider mass is outside the supported robot import subset", path=str(path))
+        density = api.GetDensityAttr().Get() or 0.
+        if not math.isfinite(density) or density < 0:
+            raise invalid("USD collider density must be finite and nonnegative", path=str(path))
+        if density:
+            return density
+
+    # OpenUSD resolves density from the collider, the rigid body, then the bound physics material.
+    owner = path
+    while not owner.IsAbsoluteRootPath() and str(owner) not in body_densities:
+        owner = owner.GetParentPath()
+    if body_densities.get(str(owner), 0.):
+        return None
+    material, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial("physics")
+    api = UsdPhysics.MaterialAPI(material.GetPrim()) if material else None
+    density = (api.GetDensityAttr().Get() or 0.) if api else 0.
+    if not math.isfinite(density) or density < 0:
+        raise invalid("USD physics material density must be finite and nonnegative", path=str(path))
+    return density or None
+
+
 def load(source, entry, meters_per_unit=None):
     graph = ConfinedRobotUSD(source)
     stage = graph.compose(entry)
@@ -52,20 +78,27 @@ def load(source, entry, meters_per_unit=None):
     xml = ET.fromstring(derived.mjcf_xml)
     if derived.fixed_base:
         xml.find("worldbody/body").attrib.pop("mocap", None)
+    meters, kilograms = units
+    density_scale = kilograms / meters**3
+    body_densities = {}
+    for path in derived.body_names_by_path:
+        api = UsdPhysics.MassAPI(stage.GetPrimAtPath(path))
+        density = (api.GetDensityAttr().Get() or 0.) if api else 0.
+        if not math.isfinite(density) or density < 0:
+            raise invalid("USD density must be finite and nonnegative", path=path)
+        body_densities[path] = density
     colliders = {}
     for path, name in derived.collider_names_by_path.items():
         prim = stage.GetPrimAtPath(path)
-        if path not in derived.body_names_by_path and prim.HasAPI(UsdPhysics.MassAPI):
-            if UsdPhysics.MassAPI(prim).GetMassAttr().Get() not in (None, 0.):
-                raise invalid("USD collider mass is outside the supported robot import subset", path=path)
         mesh = UsdPhysics.MeshCollisionAPI(prim)
         approximation = mesh.GetApproximationAttr().Get() if mesh else None
         contact = bound_contact_material(prim)
-        colliders[name] = (approximation == "convexHull", contact[1] if contact else 0.)
+        density = collider_density(prim, body_densities)
+        colliders[name] = (approximation == "convexHull", contact[1] if contact else 0.,
+                           density * density_scale if density else None)
     robot = mjcf.compiled(ET.tostring(xml, encoding="unicode"), entry, usd_colliders=colliders)
     robot.up = str(UsdGeom.GetStageUpAxis(stage))
     body_paths = {name: path for path, name in derived.body_names_by_path.items()}
-    meters, kilograms = units
     for name, body in robot.bodies.items():
         path = body_paths[name]
         prim = stage.GetPrimAtPath(path)
@@ -88,11 +121,8 @@ def load(source, entry, meters_per_unit=None):
             body.inertia = None
         elif not all(math.isfinite(value) and value > 0 for value in diagonal):
             raise invalid("USD principal moments must be finite and positive", path=path)
-        density = mass.GetDensityAttr().Get() or 0.
-        if not math.isfinite(density) or density < 0:
-            raise invalid("USD density must be finite and nonnegative", path=path)
-        if density > 0:
-            body.density = density * kilograms / meters**3
+        if density := body_densities[path]:
+            body.density = density * density_scale
     source_joints = {joint.name: joint for joint in derived.joints}
     for joint in robot.joints:
         if joint.name in source_joints:

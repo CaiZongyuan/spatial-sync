@@ -24,6 +24,7 @@ class Shape:
     convex: bool = False
     restitution: float = 0.
     collision_hull: trimesh.Trimesh | None = None
+    density: float | None = None
 
     def surface(self):
         match self.kind:
