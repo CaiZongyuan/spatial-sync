@@ -399,6 +399,8 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
             if not self.fallback_selected and hasattr(self.fallback, "fallen"):
                 self.fallback.fallen = self.fallen
             return self.fallback.accept(inv, self.fallback_ctx)
+        if self.fallback_selected:
+            self.fallen = getattr(self.fallback, "fallen", self.fallen)
         return super().accept(inv, ctx)
 
     def start(self, inv, ctx):
@@ -406,6 +408,8 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
             self.fallback_selected = True
             self.fallback.start(inv, self.fallback_ctx)
             return
+        if self.fallback_selected:
+            self.fallen = getattr(self.fallback, "fallen", self.fallen)
         self.fallback_selected = False
         super().start(inv, ctx)
 
@@ -619,7 +623,14 @@ class EmbodiedPolicyProgram(MultiPolicyProgram):
         self._clear_action(ctx)
 
     def _set_fault_state(self, ctx, code, message):
-        super()._set_fault_state(ctx, code, message)
+        pinned_biped = (
+            ctx.entity_type == "biped/v1" and self._last_slot is not None
+            and self._last_slot.action in self.trajectories
+        )
+        if pinned_biped:
+            self._telemetry(ctx, phase="fallen" if self.fallen else "idle")
+        else:
+            super()._set_fault_state(ctx, code, message)
         self._clear_action(ctx)
 
     def _on_action_complete(self, inv, ctx, slot):

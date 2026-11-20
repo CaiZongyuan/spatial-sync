@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import math
 import threading
 import time
 import uuid
@@ -31,7 +30,7 @@ from packages.info.store import StateStore
 from packages.library.archive import import_lock
 from packages.library.assets import AssetLibrary
 from packages.library.common import LibraryError
-from packages.library.reports import measured_physics_dt
+from packages.library.reports import qualified_scene_physics_dt
 from packages.library.scenes import SceneLibrary
 from packages.library.tasks import TaskLibrary
 from packages.protocol.internal import InformationClock, SessionOptions
@@ -1219,24 +1218,14 @@ class SessionManager:
                     selected = self.library.resolve(scene_version or scene_id, launch=True, source=source)
                     selected_source = source or selected.metadata["sources"][0]
                     session_options = options
-                    report = selected.report()
-                    scene_dt = (selected.metadata.get("simulation") or {}).get("physicsDt")
-                    if scene_dt is None:
-                        scene_dt = report.get("authoredPhysicsDt")
-                    measured_dt = (
-                        measured_physics_dt(report) if selected_source == "newton" else None)
-                    if selected_source == "newton" and scene_dt is not None and (
-                        measured_dt is None or not math.isclose(
-                            scene_dt, measured_dt, rel_tol=1e-7, abs_tol=1e-12)
-                    ):
-                        raise LibraryError("scene_clock_unqualified",
-                                           "Revalidate this Scene's physics clock before launch", 409)
-                    if scene_dt is None:
-                        scene_dt = measured_dt
-                    if (selected_source == "newton" and scene_dt is not None
-                            and "physicsDt" not in options.model_fields_set):
-                        session_options = SessionOptions.model_validate(
-                            options.model_dump() | {"physicsDt": scene_dt})
+                    if selected_source == "newton":
+                        try:
+                            scene_dt = qualified_scene_physics_dt(selected.metadata, selected.report())
+                        except ValueError as exc:
+                            raise LibraryError("scene_clock_unqualified", str(exc), 409) from exc
+                        if scene_dt is not None and "physicsDt" not in options.model_fields_set:
+                            session_options = SessionOptions.model_validate(
+                                options.model_dump() | {"physicsDt": scene_dt})
                     if simulation_subject is not None:
                         fixed = simulation_subject["evaluationScene"]
                         if (selected_source != "newton" or selected.id != fixed["id"]

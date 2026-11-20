@@ -360,20 +360,29 @@ def test_dominant_leg_requires_mapping_for_its_motion(mixed_motion):
 
 
 
-def test_pinned_plan_rejects_motion_longer_than_selected_host():
+@pytest.mark.parametrize(
+    "duration,dwell,expected",
+    [(22.4, .25, 422), (19.74901, .25001, 422), (19.70, .25001, 201)],
+)
+def test_pinned_plan_respects_sampled_host_deadline(duration, dwell, expected):
     app = create_app(remote_settings())
     with TestClient(app) as client:
         request = keyframes(app.state.manager.library_assets)
-        request["keyframes"]["frames"][-1]["time"] = 22.
+        request["keyframes"]["frames"][-1]["time"] = duration - .4
         published = client.post(URL, headers=OPERATOR, json=request)
         assert published.status_code == 201, published.text
         recipe = imitation_request(published.json())
         recipe["task"]["declarative"]["episodeSeconds"] = 25.
+        recipe["task"]["completion"]["dwellSeconds"] = dwell
         task = client.post("/api/v1/tasks/reference-motion", headers=OPERATOR, json=recipe)
         assert task.status_code == 201, task.text
         plan = client.post("/api/v1/plans", headers=OPERATOR, json=training_plan(
             task.json()["id"],
             evaluation={"scene": recipe["task"]["scene"], "episodes": 30, "threshold": 24},
         ))
-        assert plan.status_code == 422
-        assert "20" in plan.json()["detail"]["message"]
+        assert plan.status_code == expected, plan.text
+        if expected == 422:
+            message = plan.json()["detail"]["message"]
+            assert "20 s deadline" in message
+            if duration == 19.74901:
+                assert "20.016 s at sampled control times" in message

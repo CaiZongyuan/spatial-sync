@@ -1,6 +1,7 @@
 """Freeze policy identity separately from the fixed evaluation world and its bindings."""
 
 import math
+from fractions import Fraction
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from packages.info.program import program_supports_type
 from packages.library.common import LibraryError, document, load_entity_types
 from packages.library.python_stages import resources as python_resources
+from packages.library.reports import qualified_scene_physics_dt
 from packages.library.structural import USDGraph, usd_resources
 from packages.programs.subjects import (
     BindingTarget,
@@ -22,6 +24,7 @@ from packages.programs.subjects import fixed_bindings as simulation_fixed_bindin
 from packages.programs.subjects import (
     validate_base_catalog as validate_simulation_base,
 )
+from packages.protocol.internal import SessionOptions
 from packages.protocol.schema import ActionDefinition
 from packages.training.declarative import clip_seconds, trajectory_completion
 
@@ -251,10 +254,32 @@ def validate_trajectory_deadline(scene, task, binding, completion, timeout):
     types = load_entity_types() | scene.entity_types()
     action_limit = ActionDefinition.model_validate(types[interface]["actions"][action]).timeoutSeconds
     limit = min(timeout, host_limit, action_limit)
-    required = clip_seconds(task["referenceMotion"], completion) + completion.dwellSeconds
-    if required >= limit:
+    options = SessionOptions()
+    physics_dt = qualified_scene_physics_dt(scene.metadata, scene.report()) or options.physicsDt
+    physics_step = Fraction(str(physics_dt))
+    control_period = max(physics_step, 1 / Fraction(str(options.controlHz)))
+    tick_epsilon = Fraction("1e-10")  # Newton's program-loop scheduling tolerance.
+    clock_margin = Fraction("1e-9")  # Keep exact boundaries clear of accumulated float roundoff.
+
+    def sample_at_or_after(time):
+        step = max(1, math.ceil(time / physics_step))
+        previous_step = (step - 1) * physics_step
+        control_tick = math.floor((previous_step + tick_epsilon) / control_period) + 1
+        control_step = math.ceil((control_tick * control_period - tick_epsilon) / physics_step)
+        return max(step, control_step) * physics_step
+
+    # The evaluator arms the invocation at time zero and resumes into the first control sample.
+    started = sample_at_or_after(physics_step)
+    clip = Fraction(str(clip_seconds(task["referenceMotion"], completion)))
+    terminal_sample = sample_at_or_after(started + clip + clock_margin)
+    completion_sample = sample_at_or_after(
+        terminal_sample + Fraction(str(completion.dwellSeconds)) + clock_margin
+    )
+    required = completion_sample - started
+    if required >= Fraction(str(limit)):
         raise ValueError(
-            f"Reference Motion and terminal dwell require {required:g} s before the {limit:g} s deadline"
+            f"Reference Motion and terminal dwell require {float(required):g} s at sampled control times "
+            f"before the {limit:g} s deadline"
         )
 
 

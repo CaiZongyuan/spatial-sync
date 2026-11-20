@@ -1000,6 +1000,17 @@ Once the clip ends, the host requires continuous within-tolerance tracking,
 upright posture and bounded root and joint velocities for the declared dwell.
 An out-of-tolerance trajectory fails with `motion_tracking_failed`.
 
+Plan admission and frozen Suite evaluation use the same validated Scene
+timestep as the Newton launch. They project the clip end and the subsequent
+dwell onto the ordinary evaluator's control samples, starting at the first
+sample after resume. The completion sample must fall strictly before the
+shortest limit imposed by the Task or Suite, the Program, and the EntityType
+action. The calculation keeps exact sample boundaries clear of floating-point
+roundoff. For the Microduck Scene at 2 ms and 60 Hz, a 19.74901-second clip
+with 0.25001 seconds of dwell needs 20.016 seconds of simulated action time.
+A 19.70-second clip with that dwell needs 19.982 seconds and fits the 20-second
+Program limit.
+
 The 4.9-second Microduck squat probe includes a 0.4-second hold. It uses
 a 0.05 rad hinge tolerance, 25 mm root position tolerance, 0.18 rad root
 orientation tolerance and 18 mm local-point tolerance. The CPU tracking

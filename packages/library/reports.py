@@ -144,6 +144,19 @@ def measured_physics_dt(report):
     return value
 
 
+def qualified_scene_physics_dt(metadata, report):
+    """Select the Newton clock qualified for this Scene version."""
+    declared = (metadata.get("simulation") or {}).get("physicsDt")
+    if declared is None:
+        declared = report.get("authoredPhysicsDt")
+    measured = measured_physics_dt(report)
+    if declared is None:
+        return measured
+    if measured is None or not math.isclose(declared, measured, rel_tol=1e-7, abs_tol=1e-12):
+        raise ValueError("Revalidate this Scene's physics clock before launch")
+    return declared
+
+
 def pinned_assets(version, kind):
     """A known exact dependency is immutable across all bound, durable validation receipts."""
     subject = f"{kind}:{version.id}"
