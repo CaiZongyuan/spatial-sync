@@ -32,7 +32,9 @@ def test_imported_measurement_matches_exact_scope_and_retains_conservative_sampl
         assert digest in profile["evidence"] and len(profile["key"]) == 64
 
 
-@pytest.mark.parametrize("mutation", [None, "legacy_schema", "entry", "compiler", "versions"])
+@pytest.mark.parametrize(
+    "mutation", [None, "legacy_schema", "entry", "compiler", "versions", "initialization"],
+)
 def test_modern_measurement_cannot_be_rebound_to_current_runtime(mutation):
     from tests.gateway.test_remote_training_nodes import MJLAB_VERSIONS
 
@@ -63,6 +65,8 @@ def test_modern_measurement_cannot_be_rebound_to_current_runtime(mutation):
         node["compilerHash"] = "c" * 64
     if mutation == "versions":
         node["trainerVersions"] = MJLAB_VERSIONS | {"torch": "2.9.1+cu128"}
+    if mutation == "initialization":
+        receipt["initialization"] = {"schema": "lw.reference-actor-init/1", "sha256": "f" * 64}
     raw = json.dumps(receipt).encode()
     if mutation:
         with pytest.raises(ValueError, match="does not match"):

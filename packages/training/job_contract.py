@@ -74,6 +74,7 @@ class ValidationTiming(Schema):
         min_length=VALIDATION_ITERATIONS - 1, max_length=VALIDATION_ITERATIONS - 1
     )
     peakMemoryMb: float | None = Field(default=None, gt=0)
+    initialization: dict | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class JobReport(Schema):

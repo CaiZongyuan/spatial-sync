@@ -26,6 +26,8 @@ def identity(job, lease):
     }
     fixed.update({key: job.get(key, []) for key in ("demonstrationSets", "demonstrationRecordings")})
     fixed.update({key: job["plan"][key] for key in ("model", "algorithm", "hyperparameters")})
+    if init := job["plan"].get("initialization"):
+        fixed["initializationSha256"] = init["sha256"]
     return {
         "schemaVersion": 1,
         "jobId": job["jobId"],

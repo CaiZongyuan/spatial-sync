@@ -5,14 +5,23 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import onnx
 
 from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.observation_capture import canonical_hash, code_hash
 from packages.info.plans import PlanError
+from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent, extract_package, package_files, relative_path
 from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, document
-from packages.training.runtime import PINS
+from packages.training.reference_initialization import MAX_STATISTIC, NORMALIZATION_EPSILON
+from packages.training.reference_initialization import receipt as initialization_receipt
+from packages.training.runtime import (
+    INITIALIZATION_R1_COMPILER,
+    INITIALIZATION_R2_COMPILER,
+    PINS,
+    PRE_INITIALIZATION_COMPILER,
+)
 
 from .consistency import compare_observations
 from .library import digest, read_json
@@ -24,6 +33,12 @@ from .native_evidence import (
     validate_witnesses,
 )
 from .observations import ObservationSpec
+
+PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65e6382eebd27046a"
+INITIALIZATION_R1_VERIFIER = "2cd813677830ff3ed0abc451dafe3e5875559df6220a376c30786971547ba8e1"
+INITIALIZATION_R2_VERIFIER = "a125d3b416cd51ba528874383d0d9cb382ac7ed0d3249d92c920ac6e6af4b061"
+INITIALIZATION_R3_VERIFIER = "64c14c450a8a26f6bdb1d620af25013474c7ad6321687ea4ce70d98606c83386"
+INITIALIZATION_R4_VERIFIER = "cd6e40733f44f6c0ddb00405ffd2989f2ddc329bdd94946345269b2f8f700b77"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -49,6 +64,120 @@ def compatible_legacy_verifier(current):
         )
     }
     return current | {"files": files | LEGACY_VERIFIER_FILES}
+
+
+def _normalizer_row(state, field, width, lower):
+    value = state.get(field)
+    if (not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], list)
+            or len(value[0]) != width
+            or any(type(number) not in (int, float) or not lower <= number <= MAX_STATISTIC
+                   for number in value[0])):
+        raise ValueError("Native normalizer state differs from the approved frozen statistics")
+    return value
+
+
+def verify_initialized_normalizer(plan, versions, state):
+    init = plan.get("initialization")
+    if init is None:
+        return
+    if not json_equal(versions.get("initialization"), initialization_receipt(plan)):
+        raise ValueError("Native source lacks the approved managed initialization receipt")
+    settings = init["normalization"]
+    mean = np.array([settings["mean"]], dtype=np.float32)
+    variance = np.array([settings["variance"]], dtype=np.float32)
+    width = mean.shape[1]
+    std = np.array(_normalizer_row(state, "_std", width, 0), dtype=np.float32)
+    expected_std = np.sqrt(variance)
+    if (
+        type(state.get("count")) is not int or state["count"] != settings["count"]
+        or _normalizer_row(state, "_mean", width, -MAX_STATISTIC) != mean.tolist()
+        or _normalizer_row(state, "_var", width, 0) != variance.tolist()
+        or not np.all(np.abs(std - expected_std) <= np.spacing(expected_std))
+    ):
+        raise ValueError("Native normalizer state differs from the approved frozen statistics")
+    return mean, std + np.float32(NORMALIZATION_EPSILON)
+
+
+def _verify_exported_normalizer(model, normalization, widths):
+    """Match the pinned RSL exporter from raw input through the action output."""
+    graph = model.graph
+    initializers = {tensor.name: tensor for tensor in graph.initializer}
+    error = "ONNX action path differs from the reviewed normalized actor"
+    if ([(op.domain, op.version) for op in model.opset_import] != [("", 18)]
+            or len(graph.input) != 1 or len(graph.output) != 1
+            or graph.input[0].name in initializers or len(initializers) != len(graph.initializer)
+            or graph.sparse_initializer or model.functions):
+        raise ValueError(error)
+    if any(tensor.data_location == onnx.TensorProto.EXTERNAL or tensor.external_data
+           for tensor in initializers.values()):
+        raise LibraryError(
+            "observation_evidence_invalid",
+            "Managed initialization qualification requires embedded tensors",
+            422,
+        )
+    if any(tensor.data_type != onnx.TensorProto.FLOAT or tensor.data_location != onnx.TensorProto.DEFAULT
+           for tensor in initializers.values()):
+        raise ValueError(error)
+    attr = onnx.AttributeProto
+    affine_defaults = {"alpha": (attr.FLOAT, 1.0), "beta": (attr.FLOAT, 1.0),
+                       "transA": (attr.INT, 0), "transB": (attr.INT, 0)}
+    gemm = affine_defaults | {"transB": (attr.INT, 1)}
+    elu = {"alpha": (attr.FLOAT, 1.0)}
+    defaults = {"Gemm": affine_defaults, "Elu": elu}
+    inputs, first, second, output = widths
+    schema = (
+        ("Sub", ((1, inputs),), {}),
+        ("Div", ((1, inputs),), {}),
+        ("Gemm", ((first, inputs), (first,)), gemm),
+        ("Elu", (), elu),
+        ("Gemm", ((second, first), (second,)), gemm),
+        ("Elu", (), elu),
+        ("Gemm", ((output, second), (output,)), gemm),
+    )
+    value = graph.input[0].name
+    defined = {value, *initializers}
+    aliases = set()
+    used_constants = set()
+    constants = initializers.copy()
+    steps = iter(schema)
+    for node in graph.node:
+        if (node.domain or node.overload or len(node.output) != 1
+                or not node.output[0] or node.output[0] in defined):
+            raise ValueError(error)
+        output_name = node.output[0]
+        defined.add(output_name)
+        if node.op_type == "Identity":
+            if len(node.input) != 1 or node.attribute or node.input[0] not in constants:
+                raise ValueError(error)
+            constants[output_name] = constants[node.input[0]]
+            used_constants.add(node.input[0])
+            aliases.add(output_name)
+            continue
+        step = next(steps, None)
+        if step is None:
+            raise ValueError(error)
+        operator, shapes, attributes = step
+        if (node.op_type != operator or len(node.input) != 1 + len(shapes)
+                or node.input[0] != value or len(node.attribute) > len(attributes)):
+            raise ValueError(error)
+        actual = {item.name: (item.type, onnx.helper.get_attribute_value(item)) for item in node.attribute}
+        if len(actual) != len(node.attribute) or defaults.get(operator, {}) | actual != attributes:
+            raise ValueError(error)
+        for name, shape in zip(node.input[1:], shapes, strict=True):
+            tensor = constants.get(name)
+            if tensor is None or tuple(tensor.dims) != shape:
+                raise ValueError(error)
+            used_constants.add(name)
+            array = onnx.numpy_helper.to_array(tensor)
+            if operator in ("Sub", "Div"):
+                expected = normalization[0 if operator == "Sub" else 1]
+                if not np.array_equal(array, expected):
+                    raise ValueError(error)
+            elif not np.isfinite(array).all():
+                raise ValueError(error)
+        value = output_name
+    if next(steps, None) is not None or value != graph.output[0].name or aliases - used_constants:
+        raise ValueError(error)
 
 
 class NativeProfiles:
@@ -92,8 +221,14 @@ class NativeProfiles:
 
 def declarative_profile(task, spec, job, runtime):
     """Use the managed compiler and reviewed trainer, with layout from pinned Task data."""
+    allowed = {compiler_hash(), INITIALIZATION_R2_COMPILER}
+    init = job["plan"].get("initialization")
+    if not init:
+        allowed.add(PRE_INITIALIZATION_COMPILER)
+    if not init or "fitActionAbsMax" not in init:
+        allowed.add(INITIALIZATION_R1_COMPILER)
     if (not runtime or runtime.get("entry") != "mjlab:managed"
-            or runtime.get("compilerHash") != compiler_hash()):
+            or runtime.get("compilerHash") not in allowed):
         raise LibraryError("observation_source_unverified", "Unreviewed declarative compiler identity", 409)
     versions = runtime["trainerVersions"]
     expected = PINS["mjlab"] | {"rsl_rl": "5.0.1"}
@@ -138,6 +273,9 @@ class NativeCaptureVerifier:
     def _facts(self, policy, job, report, envelope, receipt, profile, provider):
         self.evidence._validate_source(policy, job, receipt)
         self.evidence._validate_source(policy, job, envelope)
+        normalization = verify_initialized_normalizer(
+            job["plan"], receipt.source.versions, receipt.normalizerState,
+        )
         if job["kind"] == "checkpoint_finalize":
             if getattr(receipt, "finalizedCheckpointSha256", None) != job["checkpointRef"].split("/", 1)[1]:
                 raise ValueError("Native receipt refers to a different source checkpoint")
@@ -147,7 +285,8 @@ class NativeCaptureVerifier:
             document(self.evidence.manager.policies.resolve(policy["id"])[1] / "obs_spec.yaml")
         )
         package = self.evidence.manager.policies.resolve(policy["id"])[1]
-        graph = onnx.load_model(str(package / policy["onnx"]), load_external_data=False)
+        model = onnx.load_model(str(package / policy["onnx"]), load_external_data=False)
+        graph = model.graph
         export = read_json(package / "artifacts/export.json")
         if (
             (profile.compilerHash is not None and receipt.iteration != export["iteration"])
@@ -163,12 +302,15 @@ class NativeCaptureVerifier:
             or receipt.samplesSha256 != report["artifact"]["sha256"]
             or receipt.sampleCount != len(envelope.samples)
             or receipt.normalizerStateSha256 != canonical_hash(receipt.normalizerState)
-            or len(graph.graph.input) != 1
-            or graph.graph.input[0].name != profile.inputName
+            or len(graph.input) != 1
+            or graph.input[0].name != profile.inputName
         ):
             raise ValueError(
                 "Actual native source, export boundary or material differs from the reviewed profile"
             )
+        if normalization is not None:
+            widths = (spec.size, *job["plan"]["model"]["actor"], len(spec.action.jointKeys))
+            _verify_exported_normalizer(model, normalization, widths)
         task = read_json(package / "task.json")
         sample_count = validate_witnesses(
             receipt, envelope, task=task if profile.compilerHash else None
@@ -269,7 +411,17 @@ class NativeCaptureVerifier:
         job = self.evidence.manager.jobs.get(policy["jobId"])
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
-        compatible = [current]
+        retained_verifiers = [
+            INITIALIZATION_R4_VERIFIER, INITIALIZATION_R3_VERIFIER, INITIALIZATION_R2_VERIFIER,
+        ]
+        init = job["plan"].get("initialization")
+        if not init or "fitActionAbsMax" not in init:
+            retained_verifiers.append(INITIALIZATION_R1_VERIFIER)
+        if not init:
+            retained_verifiers.append(PRE_INITIALIZATION_VERIFIER)
+        compatible = [current, *(current | {"files": current["files"] | {
+            "packages/policies/qualification.py": sha,
+        }} for sha in retained_verifiers)]
         if receipt.afterLearn and not profile.compilerHash:
             earlier = compatible_legacy_verifier(current)
             compatible.append(earlier)

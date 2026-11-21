@@ -7,17 +7,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from apps.node import native_observation_capture as native
-from apps.node.observation_capture import code_hash
+from apps.node.observation_capture import canonical_hash, code_hash
 from packages.library.archive import extract_package
 from packages.policies.native_evidence import NativeProfile
 from packages.training.inputs import pack_package
+from packages.training.reference_initialization import receipt as initialization_receipt
 from tests.fixtures.policy import artifact_archive, observation_spec
 from tests.gateway.test_policies import uploaded_job
 from tests.gateway.test_training_jobs import NODE
 from tests.unit import test_native_observation_capture as controlled
 
 
-def native_inputs(client, tmp_path, monkeypatch, registry=None):
+def native_inputs(client, tmp_path, monkeypatch, registry=None, *, initialization=None,
+                  normalizer_state=None, model=None, external=None):
     package = tmp_path / "task"
     package.mkdir()
     (package / "native_provider.py").write_bytes(Path(controlled.__file__).read_bytes())
@@ -28,9 +30,14 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
     def artifacts(job):
         output = tmp_path / "output"
         output.mkdir()
-        extract_package(io.BytesIO(artifact_archive(job)), output)
+        extract_package(io.BytesIO(artifact_archive(job, model=model, external=external)), output)
         versions = json.loads((output / "versions.json").read_bytes())
         versions["versions"]["rsl_rl"] = "5.4.1"  # Match approved dispatch; the profile stays controlled.
+        if initialization is not None:
+            # Inject the retained initialized Plan at the controlled qualification boundary.
+            stored = client.app.state.manager.jobs.get(job["jobId"])
+            stored["plan"] = stored["plan"] | {"initialization": initialization}
+            versions["initialization"] = initialization_receipt(stored["plan"])
         (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
         export = json.loads((output / "export.json").read_bytes())
         runner, env = controlled.Runner(), controlled.Environment()
@@ -81,6 +88,11 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None):
                 runner.alg.act(controlled.Tensor([[index / 12800]]))
         assert capture.error is None
         proof = capture.publish(output, export, versions)
+        if normalizer_state is not None:
+            proof.update(
+                normalizerState=normalizer_state, normalizerStateSha256=canonical_hash(normalizer_state),
+            )
+            (output / "observations/native-capture.json").write_text(json.dumps(proof), encoding="utf-8")
         wrong = deepcopy(proof)
         wrong["witnesses"][-1]["nativeInputSha256"] = "f" * 64
         (output / "observations/wrong-native.json").write_text(json.dumps(wrong), encoding="utf-8")

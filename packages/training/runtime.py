@@ -9,6 +9,11 @@ import re
 from pathlib import Path
 
 MJLAB_ENTRY = ("-m", "lw_mjlab_launcher")
+PRE_INITIALIZATION_COMPILER = "7948750d98b8750488bd71a3522dc70accb892c87768882c21b74ae6aa265356"
+INITIALIZATION_R1_COMPILER = "4d85344fc6c5fd781cf081a3dcb0ae7776cd0eafc32e2f1f03b56e9a46bd8da6"
+INITIALIZATION_R2_COMPILER = "335d7c03abd4f916a03b3e103f51256b1d053e6ee244ee56ccc92bcd8eb4a547"
+INITIALIZED_CHECKPOINT_MIGRATION_HEADER = "X-Initialized-Checkpoint-Migration"
+INITIALIZED_CHECKPOINT_MIGRATION_VERSION = "1"
 MJLAB_DISTRIBUTIONS = {
     "mjlab": "mjlab", "mujoco": "mujoco", "mujoco_warp": "mujoco-warp",
     "warp": "warp-lang", "torch": "torch", "rsl_rl": "rsl-rl-lib",
@@ -115,7 +120,29 @@ def profile_key(plan, task_hash, hardware, gpu_id):
         "taskContentHash": task_hash, "hardware": hardware, "gpuId": gpu_id,
         **{key: plan[key] for key in ("algorithm", "model", "hyperparameters")},
     }
+    if init := plan.get("initialization"):
+        value["initializationSha256"] = init["sha256"]
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def requires_initialized_checkpoint_migration(source, target, plan):
+    return source != target and plan.get("initialization") is not None
+
+
+def compatible_checkpoint_runtime(source, target, plan, current_compiler, *, migration_version=None):
+    if source == target:
+        return True
+    if requires_initialized_checkpoint_migration(source, target, plan):
+        if migration_version != INITIALIZED_CHECKPOINT_MIGRATION_VERSION:
+            return False
+        historical = (INITIALIZATION_R2_COMPILER,)
+    else:
+        historical = (PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER, INITIALIZATION_R2_COMPILER)
+    return bool(
+        target and source.get("backend") == "mjlab" and source.get("entry") == "mjlab:managed"
+        and source.get("compilerHash") in historical
+        and target == source | {"compilerHash": current_compiler}
+    )
 
 
 def runtime_profile_key(plan, task_hash, node, resource, runtime):

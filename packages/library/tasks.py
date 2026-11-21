@@ -89,6 +89,10 @@ class TaskLibrary:
         path = self._versions()[identifier] / "package" / relative_path(record["task"]["observation"])
         return ObservationSpec.model_validate(document(path))
 
+    def observation_bytes(self, record):
+        package = self._versions()[record["id"]] / "package"
+        return (package / relative_path(record["task"]["observation"])).read_bytes()
+
     def export(self, identifier):
         self.show(identifier)
         package = self._versions()[identifier] / "package"

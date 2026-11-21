@@ -31,7 +31,8 @@ from packages.training import checkpoint_format
 from packages.training import runtime as training_runtime
 from packages.training.checkpoints import identity as checkpoint_identity
 from packages.training.inputs import pack_package
-from packages.training.schema import TaskMetadata
+from packages.training.reference_initialization import require_initialization
+from packages.training.schema import TaskMetadata, TrainingPlan
 
 GATEWAY_CREDENTIALS = {"LW_TOKEN", "SPATIAL_NODE_TOKEN", "SPATIAL_OPERATOR_TOKEN", "SPATIAL_VIEWER_TOKEN"}
 
@@ -392,7 +393,12 @@ class OwnedRun:
                     if (
                         source["url"] != expected_url
                         or source["inputsSha256"] != inputs["checkpointIdentity"]["inputsSha256"]
-                        or source["runtime"] != inputs.get("runtimeIdentity")
+                        or not training_runtime.compatible_checkpoint_runtime(
+                            source["runtime"], inputs.get("runtimeIdentity"), inputs["plan"], compiler_hash(),
+                            migration_version=self.node.headers.get(
+                                training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_HEADER,
+                            ),
+                        )
                         or source["iteration"] != self.assignment.get("startIteration")
                     ):
                         raise ValueError("Checkpoint source does not match the leased dispatch")
@@ -428,6 +434,17 @@ class OwnedRun:
                     task_root = Path(task_package["directory"])
                     inputs["task"] = declared.model_dump(mode="json")
                     declarative_files(inputs["task"], task_root)
+                if inputs["plan"].get("initialization") is not None:
+                    # The leased Plan carries lifecycle projections alongside the authoring fields.
+                    plan = inputs["plan"]
+                    fields = {key: plan[key] for key in TrainingPlan.model_fields if key in plan}
+                    normalized = TrainingPlan.model_validate(fields).model_dump(mode="json")
+                    if not (declarative and (portable or validation)
+                            and inputs.get("compilerHash") == compiler_hash()):
+                        raise ValueError("Managed initialization requires the exact portable mjlab runtime")
+                    observation = (task_root / relative_path(inputs["task"]["observation"])).read_bytes()
+                    require_initialization(normalized, inputs["task"], job["taskContentHash"],
+                                           observation, yaml.safe_load(observation))
                 demonstration_inputs = []
                 for reference in job.get("demonstrationSets", []):
                     dataset = next(item for item in inputs["packages"]
@@ -471,7 +488,6 @@ class OwnedRun:
                     shutil.copyfile(source, bridge / ("lw_" + name))
                 shutil.copyfile(training_runtime.__file__, bridge / "lw_training_runtime.py")
                 if portable:
-                    shutil.copyfile(checkpoint_format.__file__, bridge / "lw_checkpoint_format.py")
                     shutil.copyfile(Path(__file__).with_name("checkpoint_runner.py"),
                                     bridge / "lw_checkpoint_runner.py")
                 leased_compiler = inputs.get("compilerHash")
@@ -1015,9 +1031,10 @@ def run_node(args):
         capabilities["trainingEntries"] = {backend: entry for backend, entry in entries.items() if entry}
     if "mjlab" in (capabilities.get("trainerVersions") or {}):
         capabilities["compilerHash"] = compiler_hash()
-    if mjlab_versions.get("rsl_rl") == "5.0.1" and (
+    managed_checkpoint_runtime = mjlab_versions.get("rsl_rl") == "5.0.1" and (
         capabilities.get("trainingEntries") or {}
-    ).get("mjlab") == "mjlab:managed":
+    ).get("mjlab") == "mjlab:managed"
+    if managed_checkpoint_runtime:
         capabilities["checkpointVersion"] = 1
     capabilities.pop("poseRuntime", None)
     pose_command = None
@@ -1046,6 +1063,10 @@ def run_node(args):
         token=token,
         pose_command=pose_command,
     )
+    if managed_checkpoint_runtime:
+        node.headers[training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_HEADER] = (
+            training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_VERSION
+        )
     node.capabilities_path = capabilities_path
     asyncio.run(node.run())
 

@@ -11,8 +11,10 @@ import time
 import uuid
 from copy import deepcopy
 
+from apps.node.mjlab_launcher import compiler_hash
 from packages.info.approvals import ApprovalConflict
 from packages.info.plans import PlanError
+from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent
 from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
@@ -22,11 +24,17 @@ from packages.training.finalization import finalization_profile
 from packages.training.inputs import publish_attempt_artifacts
 from packages.training.job_contract import VALIDATION_ITERATIONS, VALIDATION_TIMEOUT
 from packages.training.node_telemetry import NodeTelemetryHistory
+from packages.training.reference_initialization import receipt as initialization_receipt
+from packages.training.reference_initialization import validate_plan_initialization
 from packages.training.runtime import (
+    INITIALIZATION_R2_COMPILER,
+    INITIALIZED_CHECKPOINT_MIGRATION_VERSION,
     RuntimeMismatch,
+    compatible_checkpoint_runtime,
     job_backend,
     legacy_local,
     reported_versions,
+    requires_initialized_checkpoint_migration,
     runtime_profile_key,
     training_runtime,
 )
@@ -259,6 +267,8 @@ class TrainingJobs:
             "gpuId": job["resourceId"] if job["executionDevice"] == "cuda" else None,
         }
         value.setdefault("attempts", [])
+        if initialization := (job.get("versions") or {}).get("initialization"):
+            value["initialization"] = initialization
         if job["kind"] == "motion_preprocess" and job["status"] != "succeeded":
             value.update(motionClip=None, artifacts=[])
         if job["reason"] == "pending_approval":
@@ -327,6 +337,10 @@ class TrainingJobs:
             raise PlanError("invalid_job", "Training device must be explicitly cpu or cuda", status=422)
         task = self.manager.tasks.show(plan["task"])
         self.manager.tasks.require_execution(task)
+        try:
+            validate_plan_initialization(plan, task, self.manager.tasks)
+        except (OSError, ValueError) as exc:
+            raise PlanError("invalid_job", str(exc), status=422) from exc
         scene = self.manager.library.resolve(task["task"]["scene"])
         backend = task["task"].get("mjlab") or task["task"].get("isaaclab") or {}
         is_mjlab = task["task"].get("mjlab") is not None
@@ -475,8 +489,6 @@ class TrainingJobs:
         return {}
 
     def require_layer_b_validation(self, record, task):
-        from apps.node.mjlab_launcher import compiler_hash
-
         self._require_available()
         estimate = self.validation_estimate(record.approvalId)
         job = self.records.get(estimate.get("validationJobId"))
@@ -668,6 +680,21 @@ class TrainingJobs:
         candidates = []
         task = self.manager.tasks.show(job["task"])["task"] if job.get("backend") is None else None
         backend = job_backend(job, task)
+        managed_init = job["plan"].get("initialization") is not None
+        current_compiler = compiler_hash() if managed_init or source else None
+        if source and managed_init and source["runtime"].get("compilerHash") == INITIALIZATION_R2_COMPILER:
+            source_lease = {"leaseId": source["leaseId"], "runtimeIdentity": source["runtime"]}
+            if checkpoints.identity(job, source_lease)["inputsSha256"] != source["inputsSha256"]:
+                job["reason"] = "checkpoint_inputs_mismatch"
+                return
+            try:
+                task_snapshot = self.manager.tasks.show(job["task"])
+                if task_snapshot["contentHash"] != job["taskContentHash"]:
+                    raise ValueError("Checkpoint Task content changed")
+                validate_plan_initialization(job["plan"], task_snapshot, self.manager.tasks)
+            except (LibraryError, OSError, ValueError):
+                job["reason"] = "invalid_job"
+                return
         for node in self.nodes.values():
             if node["id"] != "local" and not self.manager.settings.remote:
                 continue
@@ -683,7 +710,15 @@ class TrainingJobs:
             except RuntimeMismatch as error:
                 reason = error.code
                 continue
-            if source and (node.get("checkpointVersion") != 1 or runtime != source["runtime"]):
+            if managed_init and (
+                not runtime or runtime["compilerHash"] != current_compiler
+                or node.get("checkpointVersion") != 1
+            ):
+                reason = "initialization_runtime_unsupported"
+                continue
+            if source and (node.get("checkpointVersion") != 1 or not compatible_checkpoint_runtime(
+                    source["runtime"], runtime, job["plan"], current_compiler,
+                    migration_version=node.get("initializedCheckpointMigrationVersion"))):
                 reason = "checkpoint_runtime_mismatch"
                 continue
             for resource in resources:
@@ -824,6 +859,15 @@ class TrainingJobs:
         return (
             lease["quarantined"] or self._offline(node, now)
             or self._dispatch_timeout(lease, now) is not None
+            or self._migration_unsupported(lease, node.get("initializedCheckpointMigrationVersion"))
+        )
+
+    def _migration_unsupported(self, lease, migration_version):
+        source = lease.get("resumeCheckpoint")
+        return source is not None and migration_version != INITIALIZED_CHECKPOINT_MIGRATION_VERSION and (
+            requires_initialized_checkpoint_migration(
+                source["runtime"], lease["runtimeIdentity"], self.records[lease["jobId"]]["plan"],
+            )
         )
 
     def _expire_leases(self, node, now):
@@ -836,6 +880,8 @@ class TrainingJobs:
                 if node["id"] == "local" and lease["quarantined"]:
                     continue
                 timeout = self._dispatch_timeout(lease, now)
+                if self._migration_unsupported(lease, node.get("initializedCheckpointMigrationVersion")):
+                    timeout = "checkpoint_runtime_mismatch"
                 if offline or lease["quarantined"] or timeout:
                     reason = "node_lost" if offline else timeout or "validation_timeout"
                     self._fence_lease(node, resource, reason, now)
@@ -954,6 +1000,7 @@ class TrainingJobs:
             return
         if (
             timing is None or timing.numEnvs != job["plan"]["hyperparameters"]["num_envs"]
+            or not json_equal(timing.initialization, initialization_receipt(job["plan"]))
             or report.iteration != VALIDATION_ITERATIONS
             or report.elapsedSeconds is None
             or not timing.setupSeconds + timing.warmupSeconds + sum(timing.samplesSeconds)
@@ -986,6 +1033,8 @@ class TrainingJobs:
         estimate = self._estimate(job, profile)
         if node.get("compilerHash"):
             job["validationCompilerHash"] = node["compilerHash"]
+        if timing.initialization is not None:
+            job["initialization"] = timing.initialization
         job.update(estimate, profile=profile, validationEstimate={
             **estimate, "validationJobId": job["jobId"], "profileKey": profile["key"],
         })
@@ -1032,7 +1081,7 @@ class TrainingJobs:
             "complete": len(self.read_logs(job["jobId"])) == report.tailEnd,
         }
 
-    def heartbeat(self, body, identity="local", *, owner_instance=None):
+    def heartbeat(self, body, identity="local", *, owner_instance=None, migration_version=None):
         self._require_available()
         now = self.clock()
         node = self.nodes.get(identity)
@@ -1094,6 +1143,7 @@ class TrainingJobs:
                 or lease["leaseId"] != report.leaseId
                 or job["nodeId"] != identity
                 or node["instanceId"] != body.instanceId
+                or self._migration_unsupported(lease, migration_version)
                 or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
@@ -1195,6 +1245,10 @@ class TrainingJobs:
             compilerHash=body.compilerHash,
             trainingEntries=body.trainingEntries,
             checkpointVersion=body.checkpointVersion,
+            initializedCheckpointMigrationVersion=(
+                INITIALIZED_CHECKPOINT_MIGRATION_VERSION
+                if migration_version == INITIALIZED_CHECKPOINT_MIGRATION_VERSION else None
+            ),
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )
         if body.poseRuntime is None:
