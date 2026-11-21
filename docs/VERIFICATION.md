@@ -991,6 +991,14 @@ measuring its held-out evaluation. Submit a fresh Goal when the reference identi
 changes. The first human approval fixes that identity together with the Goal
 Suite's evaluation conditions and sealed trials.
 
+For a Plan using `lw.reference-actor-init/1`, compare the initialization receipt
+from the three-iteration Plan validation with the ordinary Job receipt. Verify
+the fitted normalizer and effective PPO schedule, then resume from a portable
+checkpoint and finalize without updates. The checkpoint retains learned weights
+and the same normalization statistics. Check Policy Export for the initialization
+receipt and verify its ONNX output independently. Use a controlled CPU fixture
+before any formal training approval.
+
 For an Asset-pinned imitation Goal, the Suite fixes the trajectory tolerances
 and terminal dwell with the Reference Motion digest. Evaluation starts from
 the seeded, zero-step state and resumes after the action enters the pipeline.

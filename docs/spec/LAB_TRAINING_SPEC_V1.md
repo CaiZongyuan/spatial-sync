@@ -138,6 +138,10 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 3. **审批**：人在 Web 或交互式 `lw approve` 中批准或驳回，可附备注。驳回后计划状态为 `rejected`，agent 回到访谈。
 4. **执行**：计划批准后，agent 可以在 `jobs` 声明的范围内自主启动、取消作业。
 5. **预算**：作业启动前，用 `hyperparameters` 和节点上实测的每 iter 耗时估算 GPU 小时。累计预计用量超过 `budget` 时，产生"超预算作业"审批。
+
+声明式 mjlab 参考跟踪 Plan 可声明可选的 `initialization`。版本 `lw.reference-actor-init/1` 固定 ELU 双隐藏层 actor、开启观测归一化、固定 PPO 学习率调度。输入包含 `taskContentHash`、`referenceMotionSha256`、原始观测文件的 `observationSha256`、`initialStd`、`normalization: {mean, variance, count}`、`shift` 和 `sha256`。观测均值及总体方差按观测列顺序给出，actor 和 critic 共用且冻结。身份摘要覆盖自身有效负载、模型设置和学习率。Gateway 在接收 Plan 和 Job 时检查兼容性，Node 在创建环境之前再次验证租约输入。
+
+受管初始 actor 以 `reference + 4 * (reference - current)` 计算关节目标，按声明动作缩放与偏移转换为原始动作。该仿射映射折入 actor 的两层 ELU 和输出层。预检及普通训练共用该初始化。续训和 finalize 从 Checkpoint 恢复模型并恢复非张量冻结配置。Job、Policy 和 Policy Export 记录有效配置摘要。省略字段时使用原有训练默认值及身份。
 6. **改动即新计划**：改算法、模型、奖励（即 Task 版本）、超出声明的 seed，都必须提交新计划。
 
 计划状态：`draft → submitted → approved | rejected → completed | abandoned`。
