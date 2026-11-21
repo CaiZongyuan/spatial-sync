@@ -11,6 +11,7 @@ from pathlib import Path
 MJLAB_ENTRY = ("-m", "lw_mjlab_launcher")
 PRE_INITIALIZATION_COMPILER = "7948750d98b8750488bd71a3522dc70accb892c87768882c21b74ae6aa265356"
 INITIALIZATION_R1_COMPILER = "4d85344fc6c5fd781cf081a3dcb0ae7776cd0eafc32e2f1f03b56e9a46bd8da6"
+INITIALIZATION_R2_COMPILER = "335d7c03abd4f916a03b3e103f51256b1d053e6ee244ee56ccc92bcd8eb4a547"
 MJLAB_DISTRIBUTIONS = {
     "mjlab": "mjlab", "mujoco": "mujoco", "mujoco_warp": "mujoco-warp",
     "warp": "warp-lang", "torch": "torch", "rsl_rl": "rsl-rl-lib",
@@ -127,7 +128,9 @@ def compatible_checkpoint_runtime(source, target, plan, current_compiler):
         return True
     return bool(
         target and not plan.get("initialization") and source.get("entry") == "mjlab:managed"
-        and source.get("compilerHash") in (PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER)
+        and source.get("compilerHash") in (
+            PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER, INITIALIZATION_R2_COMPILER,
+        )
         and target == source | {"compilerHash": current_compiler}
     )
 

@@ -287,7 +287,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     from mjlab.utils.os import dump_yaml
     from mjlab.utils.torch import configure_torch_backends
 
-    configure_torch_backends()
+    if initialization is not None:
+        import torch
+
+        if torch.get_default_dtype() != torch.float32:
+            raise ValueError("Managed initialization requires the torch float32 default dtype")
+        configure_torch_backends(allow_tf32=False)
+    else:
+        configure_torch_backends()
     if declarative:
         import yaml
         from lw_declarative_mjlab import compile_environment

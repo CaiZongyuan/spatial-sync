@@ -16,7 +16,12 @@ from packages.library.archive import destination_parent, extract_package, packag
 from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, document
 from packages.training.reference_initialization import MAX_STATISTIC, NORMALIZATION_EPSILON
 from packages.training.reference_initialization import receipt as initialization_receipt
-from packages.training.runtime import INITIALIZATION_R1_COMPILER, PINS, PRE_INITIALIZATION_COMPILER
+from packages.training.runtime import (
+    INITIALIZATION_R1_COMPILER,
+    INITIALIZATION_R2_COMPILER,
+    PINS,
+    PRE_INITIALIZATION_COMPILER,
+)
 
 from .consistency import compare_observations
 from .library import digest, read_json
@@ -31,6 +36,7 @@ from .observations import ObservationSpec
 
 PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65e6382eebd27046a"
 INITIALIZATION_R1_VERIFIER = "2cd813677830ff3ed0abc451dafe3e5875559df6220a376c30786971547ba8e1"
+INITIALIZATION_R2_VERIFIER = "a125d3b416cd51ba528874383d0d9cb382ac7ed0d3249d92c920ac6e6af4b061"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -90,29 +96,52 @@ def verify_initialized_normalizer(plan, versions, state):
     return mean, std + np.float32(NORMALIZATION_EPSILON)
 
 
-def _verify_exported_normalizer(graph, normalization):
-    """Prove that the pinned exporter feeds the normalized input through to the action output."""
-    nodes = graph.node
-    operators = ("Sub", "Div", "Gemm", "Elu", "Gemm", "Elu", "Gemm")
+def _verify_exported_normalizer(model, normalization, widths):
+    """Match the pinned RSL exporter from raw input through the action output."""
+    graph = model.graph
     initializers = {tensor.name: tensor for tensor in graph.initializer}
-    error = "ONNX action path does not use the approved frozen normalizer"
-    if (len(graph.output) != 1 or tuple(node.op_type for node in nodes) != operators
+    error = "ONNX action path differs from the reviewed normalized actor"
+    if ([(op.domain, op.version) for op in model.opset_import] != [("", 18)]
+            or len(graph.input) != 1 or len(graph.output) != 1 or len(graph.node) != 7
             or len(initializers) != len(graph.initializer) or graph.sparse_initializer):
         raise ValueError(error)
+    attr = onnx.AttributeProto
+    affine_defaults = {"alpha": (attr.FLOAT, 1.0), "beta": (attr.FLOAT, 1.0),
+                       "transA": (attr.INT, 0), "transB": (attr.INT, 0)}
+    gemm = affine_defaults | {"transB": (attr.INT, 1)}
+    elu = {"alpha": (attr.FLOAT, 1.0)}
+    defaults = {"Gemm": affine_defaults, "Elu": elu}
+    inputs, first, second, output = widths
+    schema = (
+        ("Sub", ((1, inputs),), {}),
+        ("Div", ((1, inputs),), {}),
+        ("Gemm", ((first, inputs), (first,)), gemm),
+        ("Elu", (), elu),
+        ("Gemm", ((second, first), (second,)), gemm),
+        ("Elu", (), elu),
+        ("Gemm", ((output, second), (output,)), gemm),
+    )
     value = graph.input[0].name
-    for node in nodes:
-        if (node.domain or not node.input or node.input[0] != value
-                or len(node.output) != 1 or any(name not in initializers for name in node.input[1:])):
+    for node, (operator, shapes, attributes) in zip(graph.node, schema, strict=True):
+        if (node.domain or node.overload or node.op_type != operator or len(node.input) != 1 + len(shapes)
+                or node.input[0] != value or len(node.output) != 1 or len(node.attribute) > len(attributes)):
             raise ValueError(error)
+        actual = {item.name: (item.type, onnx.helper.get_attribute_value(item)) for item in node.attribute}
+        if len(actual) != len(node.attribute) or defaults.get(operator, {}) | actual != attributes:
+            raise ValueError(error)
+        for name, shape in zip(node.input[1:], shapes, strict=True):
+            tensor = initializers.get(name)
+            if tensor is None or tensor.data_type != onnx.TensorProto.FLOAT or tuple(tensor.dims) != shape:
+                raise ValueError(error)
+            if (tensor.data_location == onnx.TensorProto.DEFAULT
+                    and not np.isfinite(onnx.numpy_helper.to_array(tensor)).all()):
+                raise ValueError(error)
         value = node.output[0]
     if value != graph.output[0].name:
         raise ValueError(error)
-    for node, expected in zip(nodes[:2], normalization, strict=True):
-        if len(node.input) != 2:
-            raise ValueError(error)
+    for node, expected in zip(graph.node[:2], normalization, strict=True):
         tensor = initializers[node.input[1]]
-        if (tensor.data_type != onnx.TensorProto.FLOAT or tuple(tensor.dims) != expected.shape
-                or tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
+        if (tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
                 or not np.array_equal(onnx.numpy_helper.to_array(tensor), expected)):
             raise ValueError(error)
 
@@ -158,7 +187,7 @@ class NativeProfiles:
 
 def declarative_profile(task, spec, job, runtime):
     """Use the managed compiler and reviewed trainer, with layout from pinned Task data."""
-    allowed = {compiler_hash()}
+    allowed = {compiler_hash(), INITIALIZATION_R2_COMPILER}
     init = job["plan"].get("initialization")
     if not init:
         allowed.add(PRE_INITIALIZATION_COMPILER)
@@ -222,7 +251,8 @@ class NativeCaptureVerifier:
             document(self.evidence.manager.policies.resolve(policy["id"])[1] / "obs_spec.yaml")
         )
         package = self.evidence.manager.policies.resolve(policy["id"])[1]
-        graph = onnx.load_model(str(package / policy["onnx"]), load_external_data=False).graph
+        model = onnx.load_model(str(package / policy["onnx"]), load_external_data=False)
+        graph = model.graph
         export = read_json(package / "artifacts/export.json")
         if (
             (profile.compilerHash is not None and receipt.iteration != export["iteration"])
@@ -245,7 +275,8 @@ class NativeCaptureVerifier:
                 "Actual native source, export boundary or material differs from the reviewed profile"
             )
         if normalization is not None:
-            _verify_exported_normalizer(graph, normalization)
+            widths = (spec.size, *job["plan"]["model"]["actor"], len(spec.action.jointKeys))
+            _verify_exported_normalizer(model, normalization, widths)
         task = read_json(package / "task.json")
         sample_count = validate_witnesses(
             receipt, envelope, task=task if profile.compilerHash else None
@@ -346,16 +377,15 @@ class NativeCaptureVerifier:
         job = self.evidence.manager.jobs.get(policy["jobId"])
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
-        compatible = [current]
+        retained_verifiers = [INITIALIZATION_R2_VERIFIER]
         init = job["plan"].get("initialization")
         if not init or "fitActionAbsMax" not in init:
-            compatible.append(current | {"files": current["files"] | {
-                "packages/policies/qualification.py": INITIALIZATION_R1_VERIFIER,
-            }})
+            retained_verifiers.append(INITIALIZATION_R1_VERIFIER)
         if not init:
-            compatible.append(current | {"files": current["files"] | {
-                "packages/policies/qualification.py": PRE_INITIALIZATION_VERIFIER,
-            }})
+            retained_verifiers.append(PRE_INITIALIZATION_VERIFIER)
+        compatible = [current, *(current | {"files": current["files"] | {
+            "packages/policies/qualification.py": sha,
+        }} for sha in retained_verifiers)]
         if receipt.afterLearn and not profile.compilerHash:
             earlier = compatible_legacy_verifier(current)
             compatible.append(earlier)

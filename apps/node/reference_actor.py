@@ -5,9 +5,21 @@ from rsl_rl.modules import EmpiricalNormalization
 from torch import nn
 
 if __package__:
-    from packages.training.reference_initialization import NORMALIZATION_EPSILON, projection, receipt
+    from packages.training.reference_initialization import (
+        CURRENT_JOINT_GAIN,
+        NORMALIZATION_EPSILON,
+        REFERENCE_JOINT_GAIN,
+        projection,
+        receipt,
+    )
 else:
-    from lw_reference_initialization import NORMALIZATION_EPSILON, projection, receipt
+    from lw_reference_initialization import (
+        CURRENT_JOINT_GAIN,
+        NORMALIZATION_EPSILON,
+        REFERENCE_JOINT_GAIN,
+        projection,
+        receipt,
+    )
 
 
 @torch.no_grad()
@@ -20,6 +32,8 @@ def freeze_normalizers(runner, plan, *, restored):
         "count": torch.tensor(settings["count"], dtype=torch.long),
     }
     for model, group in ((runner.alg.actor, "actor"), (runner.alg.critic, "critic")):
+        if any(parameter.dtype != torch.float32 for parameter in model.parameters()):
+            raise ValueError("Managed initialization requires float32 actor and critic parameters")
         normalizer = model.obs_normalizer
         if (tuple(model.obs_groups) != (group,) or not isinstance(normalizer, EmpiricalNormalization)
                 or normalizer.eps != NORMALIZATION_EPSILON):
@@ -49,21 +63,21 @@ def initialize_actor(runner, plan, task, spec):
     layers = list(actor.mlp)
     linear = layers[::2]
     expected = [actor.obs_dim, *plan["model"]["actor"], width]
-    if (len(layers) != 5 or not all(isinstance(layer, nn.ELU) for layer in layers[1::2])
+    if (len(layers) != 5
+            or not all(isinstance(layer, nn.ELU) and layer.alpha == 1.0 for layer in layers[1::2])
             or not all(isinstance(layer, nn.Linear) for layer in linear)
             or [layer.in_features for layer in linear] + [linear[-1].out_features] != expected):
         raise ValueError("Runner actor topology differs from the managed initialization")
     first, second, last = linear
     std = actor.distribution.std_param
-    if (first.weight.dtype != torch.float32
-            or not torch.equal(std, torch.full_like(std, effective["initialStd"]))):
-        raise ValueError("Runner actor dtype or initial exploration differs from the managed initialization")
+    if not torch.equal(std, torch.full_like(std, effective["initialStd"])):
+        raise ValueError("Runner initial exploration differs from the managed initialization")
 
     weight = first.weight.new_zeros((width, actor.obs_dim))
     act_scale = weight.new_tensor(action["scale"])
     bias = -weight.new_tensor(action["defaultPosition"]) / act_scale
     rows = range(width)
-    for columns, gain in ((current, -4), (reference, 5)):
+    for columns, gain in ((current, CURRENT_JOINT_GAIN), (reference, REFERENCE_JOINT_GAIN)):
         column_scales = [scales[index] for index in columns]
         term_scale = weight.new_tensor(column_scales)
         term_offset = weight.new_tensor([offsets[index] for index in columns])

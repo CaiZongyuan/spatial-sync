@@ -16,17 +16,24 @@ def initialized_export(defect):
     weights = [
         helper.make_tensor("mean", TensorProto.FLOAT, [1, 1], [0.0]),
         helper.make_tensor("divisor", TensorProto.FLOAT, [1, 1], [1.02 if defect == "divisor" else 1.01]),
-        helper.make_tensor("weight", TensorProto.FLOAT, [1, 1], [1.0]),
-        helper.make_tensor("bias", TensorProto.FLOAT, [1], [0.0]),
     ]
+    for index, (inputs, outputs) in enumerate(((1, 256), (256, 128), (128, 1))):
+        shape = [outputs, inputs]
+        weights.extend((
+            helper.make_tensor(f"weight{index}", TensorProto.FLOAT, shape, [0.5] * (inputs * outputs)),
+            helper.make_tensor(f"bias{index}", TensorProto.FLOAT, [outputs], [0.0] * outputs),
+        ))
+    gemm = {"alpha": 1.0, "beta": 1.0, "transB": 1}
     nodes = [
         helper.make_node("Sub", ["observations", "mean"], ["centered"]),
         helper.make_node("Div", ["centered", "divisor"], ["normalized"]),
-        helper.make_node("Gemm", ["normalized", "weight", "bias"], ["projected"]),
-        helper.make_node("Elu", ["projected"], ["activated"]),
-        helper.make_node("Gemm", ["activated", "weight", "bias"], ["hidden"]),
-        helper.make_node("Elu", ["hidden"], ["activated_again"]),
-        helper.make_node("Gemm", ["activated_again", "weight", "bias"], ["actions"]),
+        helper.make_node("Gemm", ["normalized", "weight0", "bias0"], ["projected"],
+                         **(gemm | ({"alpha": 0.0} if defect == "gemm_alpha" else {}))),
+        helper.make_node("Elu", ["projected"], ["activated"], alpha=2.0 if defect == "elu_alpha" else 1.0),
+        helper.make_node("Gemm", ["activated", "weight1", "bias1"], ["hidden"],
+                         **(gemm | ({"beta": 0.0} if defect == "gemm_beta" else {}))),
+        helper.make_node("Elu", ["hidden"], ["activated_again"], alpha=1.0),
+        helper.make_node("Gemm", ["activated_again", "weight2", "bias2"], ["actions"], **gemm),
     ]
     if defect == "constant":
         value = helper.make_tensor("constant", TensorProto.FLOAT, [1, 1], [0.25])
@@ -34,6 +41,17 @@ def initialized_export(defect):
         weights = []
     if defect == "unused":
         nodes[2].input[0] = "observations"
+    if defect == "missing_bias":
+        del nodes[2].input[-1]
+    if defect == "gemm_transpose":
+        nodes[2].attribute.remove(next(attr for attr in nodes[2].attribute if attr.name == "transB"))
+        weights[2].dims[:] = [1, 256]  # Valid ONNX, using a different exporter layout.
+    if defect == "nonfinite_weight":
+        weights[2].float_data[0] = float("nan")
+    if defect == "operator_defaults":
+        del nodes[3].attribute[:]
+        nodes[2].attribute.remove(next(attr for attr in nodes[2].attribute if attr.name == "alpha"))
+        nodes[2].attribute.append(helper.make_attribute("transA", 0))
     graph = helper.make_graph(
         nodes, "initialized-export-fixture",
         [helper.make_tensor_value_info("observations", TensorProto.FLOAT, [1, 1])],
@@ -45,7 +63,10 @@ def initialized_export(defect):
 
 
 @pytest.mark.parametrize(
-    "defect", ["constant", "divisor", "unused", "bool_mean", "string_std", "huge_std", None],
+    "defect", [
+        "constant", "divisor", "unused", "gemm_alpha", "gemm_beta", "gemm_transpose", "elu_alpha",
+        "missing_bias", "nonfinite_weight", "bool_mean", "string_std", "huge_std", "operator_defaults", None,
+    ],
 )
 def test_verify_source_checks_initialized_onnx_and_typed_statistics(tmp_path, monkeypatch, defect):
     registry = NativeProfiles([], allow_controlled=True)
@@ -71,7 +92,7 @@ def test_verify_source_checks_initialized_onnx_and_typed_statistics(tmp_path, mo
         assert check.json()["result"]["numericalPass"]
         verified = client.post(f"{route}/{check.json()['id']}/verify-source",
                                json={"artifact": "observations/native-capture.json"})
-        if defect:
+        if defect not in (None, "operator_defaults"):
             assert verified.status_code == 422, verified.text
             assert verified.json()["detail"]["code"] == "observation_evidence_invalid"
         else:

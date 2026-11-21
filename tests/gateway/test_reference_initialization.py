@@ -30,6 +30,54 @@ def sign(plan):
     return plan
 
 
+@pytest.mark.parametrize(
+    "offsets,action_scale", [((-999999.0, 999999.0), 0.05), ((999999.0, -999998.0), 0.35),
+                             ((0.1, 0.0), 0.0001), ((0.0, 0.0), 1e5)],
+)
+def test_ill_conditioned_reference_actor_is_rejected_before_approval(offsets, action_scale):
+    app = create_app(remote_settings())
+    with TestClient(app) as client:
+        manager = app.state.manager
+        reference = client.post(URL, headers=OPERATOR, json=keyframes(manager.library_assets))
+        assert reference.status_code == 201, reference.text
+        body = imitation_request(reference.json())
+        observation = body["observation"]
+        observation["action"]["scale"][0] = action_scale
+        terms = {term["source"]: term for term in observation["observations"]}
+        terms["joint_position"]["offset"][0], terms["reference_motion_frame"]["offset"][7] = offsets
+        response = client.post("/api/v1/tasks/reference-motion", headers=OPERATOR, json=body)
+        assert response.status_code == 201, response.text
+        task = response.json()
+        raw = manager.tasks.observation_bytes(task)
+        spec = json.loads(raw)
+        means = [0.0] * sum(term["shape"][0] for term in spec["observations"])
+        cursor = 0
+        for term in spec["observations"]:
+            if term["source"] == "joint_position":
+                means[cursor] = -offsets[0]
+            if term["source"] == "reference_motion_frame":
+                means[cursor + 7] = -offsets[1]
+            cursor += term["shape"][0]
+        plan = sign(training_plan(
+            task["id"],
+            algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
+            model={"actor": [32, 16], "critic": [32, 16], "activation": "elu", "obs_normalization": True},
+            hyperparameters={"num_envs": 4, "max_iterations": 20, "learning_rate": 1e-5, "device": "cpu"},
+            evaluation={"scene": task["task"]["scene"], "episodes": 30, "threshold": 24},
+            initialization={
+                "schema": "lw.reference-actor-init/1", "taskContentHash": task["contentHash"],
+                "referenceMotionSha256": task["task"]["referenceMotionRef"]["sha256"],
+                "observationSha256": hashlib.sha256(raw).hexdigest(), "shift": 8.0, "initialStd": 0.1,
+                "fitActionAbsMax": 0.0,
+                "normalization": {"mean": means, "variance": [0.0] * len(means), "count": 2},
+            },
+        ))
+        rejected = client.post("/api/v1/plans", headers=OPERATOR, json=plan)
+        assert rejected.status_code == 422, rejected.text
+        assert "float32" in rejected.text
+        assert client.get("/api/v1/approvals", headers=OPERATOR).json()["pendingCount"] == 0
+
+
 def test_reference_initialization_is_checked_before_lease_and_reported_after_validation():
     settings = remote_settings()
     app = create_app(settings)
@@ -78,6 +126,19 @@ def test_reference_initialization_is_checked_before_lease_and_reported_after_val
             wrong["initialization"]["shift"] = shift
             response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
             assert response.status_code == 422, response.text
+        wrong = deepcopy(plan)
+        wrong["initialization"]["shift"] = 1000.0
+        response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
+        assert response.status_code == 422 and "float32 folding" in response.text
+        wrong = deepcopy(plan)
+        cursor = 0
+        for term in json.loads(raw)["observations"]:
+            if term["source"] == "joint_position":
+                wrong["initialization"]["normalization"]["mean"][cursor] = 999999.0
+                break
+            cursor += term["shape"][0]
+        response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
+        assert response.status_code == 422 and "float32 folding" in response.text
         missing = deepcopy(plan)
         del missing["initialization"]["fitActionAbsMax"]
         response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(missing))

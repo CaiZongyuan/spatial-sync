@@ -1,5 +1,7 @@
 """Bounded data contract shared with the isolated managed mjlab launcher."""
 
+from math import sqrt
+
 if __package__:
     from packages.training.checkpoint_format import digest, json_bytes
 else:
@@ -12,6 +14,11 @@ MAX_STATISTIC = 1_000_000
 MAX_SHIFT = 10_000
 FIT_SHIFT_MARGIN = 8.0
 NORMALIZATION_EPSILON = 0.01
+CURRENT_JOINT_GAIN = -4
+REFERENCE_JOINT_GAIN = 5
+# Allow for rounding across the offset, normalization and folded affine operations.
+# Sixteen float32 unit roundoffs at this magnitude are below 1e-4.
+MAX_FOLD_MAGNITUDE = 96.0
 # mjlab 1.3.0 RslRlOnPolicyRunnerCfg and RslRlPpoAlgorithmCfg.
 DEFAULT_STEPS_PER_ENV = 24
 DEFAULT_MINI_BATCHES = 4
@@ -89,6 +96,42 @@ def projection(spec, task):
             [frames[0] + reference_keys.index(key) for key in keys], offset, scale)
 
 
+def _require_conditioned_fold(init, action, frames, current, reference, offsets, scales):
+    statistics = init["normalization"]
+    mean, variance, count = (statistics[key] for key in ("mean", "variance", "count"))
+    # The matched reference columns are contiguous in the motion's joint order.
+    reference_start = min(reference)
+    reference_positions = list(zip(*(frame["joints"] for frame in frames), strict=True))
+    for index, (measured, desired) in enumerate(zip(current, reference, strict=True)):
+        action_scale = abs(action["scale"][index])
+        default = action["defaultPosition"][index]
+        positions = reference_positions[desired - reference_start]
+        reference_bounds = (min(positions), max(positions))
+        raw_delta = init["fitActionAbsMax"] * action_scale
+        # Linear joint interpolation stays within the pinned frames. Invert the
+        # teacher law over that interval and its declared raw action bound.
+        current_bounds = (
+            (REFERENCE_JOINT_GAIN * reference_bounds[0] - default - raw_delta) / -CURRENT_JOINT_GAIN,
+            (REFERENCE_JOINT_GAIN * reference_bounds[1] - default + raw_delta) / -CURRENT_JOINT_GAIN,
+        )
+        magnitude = init["shift"] + abs(default) / action_scale
+        for column, gain, bounds in (
+            (measured, CURRENT_JOINT_GAIN, current_bounds),
+            (desired, REFERENCE_JOINT_GAIN, reference_bounds),
+        ):
+            # Account for observation encoding, fitted rows, and centering
+            # separately so cancellation cannot conceal large operands.
+            centered_position = max(abs(q - offsets[column]) for q in bounds)
+            center = abs(mean[column])
+            fitted_observation = center + sqrt(count * variance[column])
+            observation = max(centered_position * abs(scales[column]), fitted_observation)
+            joint_value = abs(offsets[column]) + (observation + center) / abs(scales[column])
+            magnitude += abs(gain) * joint_value / action_scale
+        if max(magnitude, magnitude * action_scale) > MAX_FOLD_MAGNITUDE:
+            joint = action["jointKeys"][index]
+            raise ValueError(f"Initialization float32 folding exceeds the calibrated range for {joint}")
+
+
 def require_initialization(plan, task, task_hash, observation_raw, spec):
     init = plan.get("initialization")
     if init is None:
@@ -104,7 +147,7 @@ def require_initialization(plan, task, task_hash, observation_raw, spec):
     if plan["algorithm"] != ALGORITHM:
         raise ValueError("Initialization requires rsl_rl PPO 5.0.1")
     model, hyper = plan["model"], plan["hyperparameters"]
-    measured, _, offset, scale = projection(spec, task)
+    measured, desired, offset, scale = projection(spec, task)
     if (
         set(model) != MODEL_FIELDS or model["activation"] != "elu"
         or model["obs_normalization"] is not True
@@ -133,5 +176,7 @@ def require_initialization(plan, task, task_hash, observation_raw, spec):
     if (any(not 1e-6 <= abs(value) <= MAX_STATISTIC for value in [*scale, *action["scale"]])
             or any(abs(value) > MAX_STATISTIC for value in [*offset, *action["defaultPosition"]])):
         raise ValueError("Initialization observation or action transforms exceed float32 bounds")
+    frames = task["referenceMotion"]["frames"]
+    _require_conditioned_fold(init, action, frames, measured, desired, offset, scale)
     if init["sha256"] != identity(plan, init):
         raise ValueError("Initialization digest does not match the approved configuration")
