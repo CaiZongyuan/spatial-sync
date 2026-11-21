@@ -10,6 +10,11 @@ MAX_WIDTH = 4096
 MAX_COUNT = 10_000_000
 MAX_STATISTIC = 1_000_000
 MAX_SHIFT = 10_000
+FIT_SHIFT_MARGIN = 8.0
+NORMALIZATION_EPSILON = 0.01
+# mjlab 1.3.0 RslRlOnPolicyRunnerCfg and RslRlPpoAlgorithmCfg.
+DEFAULT_STEPS_PER_ENV = 24
+DEFAULT_MINI_BATCHES = 4
 HYPERPARAMETERS = {
     "num_envs", "max_iterations", "learning_rate", "device", "num_steps_per_env",
     "num_learning_epochs", "num_mini_batches", "save_interval",
@@ -43,6 +48,7 @@ def receipt(plan):
             "schema", "sha256", "taskContentHash", "referenceMotionSha256",
             "observationSha256", "initialStd", "shift",
         )},
+        **({"fitActionAbsMax": init["fitActionAbsMax"]} if "fitActionAbsMax" in init else {}),
         "normalizationCount": init["normalization"]["count"],
         "normalizationWidth": len(init["normalization"]["mean"]),
         "normalizationFrozen": True,
@@ -114,6 +120,12 @@ def require_initialization(plan, task, task_hash, observation_raw, spec):
             or any(type(hyper.get(key)) is not int or not 1 <= hyper[key] <= 2**31 - 1
                    for key in (set(hyper) - {"learning_rate", "device"}) | {"num_envs", "max_iterations"})):
         raise ValueError("Initialization requires supported training settings and an explicit learning rate")
+    samples = hyper["num_envs"] * hyper.get("num_steps_per_env", DEFAULT_STEPS_PER_ENV)
+    if samples < max(2, hyper.get("num_mini_batches", DEFAULT_MINI_BATCHES)):
+        raise ValueError("Initialization requires at least two PPO rollout samples and nonempty mini-batches")
+    fit_bound = init.get("fitActionAbsMax")
+    if fit_bound is None or not 0 <= fit_bound or init["shift"] < FIT_SHIFT_MARGIN + fit_bound:
+        raise ValueError("Initialization shift must cover fitActionAbsMax plus the 8.0 ELU margin")
     norm = init["normalization"]
     if not len(norm["mean"]) == len(norm["variance"]) == len(offset) <= MAX_WIDTH:
         raise ValueError("Initialization statistics do not match the ordered observation width")

@@ -5,9 +5,9 @@ from rsl_rl.modules import EmpiricalNormalization
 from torch import nn
 
 if __package__:
-    from packages.training.reference_initialization import projection, receipt
+    from packages.training.reference_initialization import NORMALIZATION_EPSILON, projection, receipt
 else:
-    from lw_reference_initialization import projection, receipt
+    from lw_reference_initialization import NORMALIZATION_EPSILON, projection, receipt
 
 
 @torch.no_grad()
@@ -22,7 +22,7 @@ def freeze_normalizers(runner, plan, *, restored):
     for model, group in ((runner.alg.actor, "actor"), (runner.alg.critic, "critic")):
         normalizer = model.obs_normalizer
         if (tuple(model.obs_groups) != (group,) or not isinstance(normalizer, EmpiricalNormalization)
-                or normalizer.eps != 1e-2):
+                or normalizer.eps != NORMALIZATION_EPSILON):
             raise ValueError("Managed initialization requires the reviewed actor and critic normalizers")
         for name, expected in buffers.items():
             actual = getattr(normalizer, name)

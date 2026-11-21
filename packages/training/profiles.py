@@ -24,12 +24,11 @@ def measured_profile(raw, job, plan, node, resource_id, *, task=None):
         "taskContentHash": job["taskContentHash"],
         "hardware": node["hardware"],
         "resourceId": resource_id,
+        "initialization": initialization_receipt(plan),
         **{name: plan[name] for name in ("algorithm", "model", "hyperparameters")},
     }
     if runtime is not None:
         expected["runtimeIdentity"] = runtime
-    if init := initialization_receipt(plan):
-        expected["initialization"] = init
     if receipt.get("schema") != schema or not json_equal(
         {key: receipt.get(key) for key in expected}, expected
     ):

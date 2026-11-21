@@ -256,6 +256,9 @@ class ReferenceActorInitialization(Schema):
     sha256: InitHash
     initialStd: float = Field(ge=1e-4, le=2)
     shift: float = Field(gt=0, le=MAX_SHIFT)
+    fitActionAbsMax: float | None = Field(
+        default=None, ge=0, le=MAX_SHIFT, exclude_if=lambda value: value is None,
+    )
     normalization: InitializationStatistics
 
 

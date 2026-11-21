@@ -52,7 +52,8 @@ def test_reference_initialization_is_checked_before_lease_and_reported_after_val
             initialization={
                 "schema": "lw.reference-actor-init/1", "taskContentHash": task["contentHash"],
                 "referenceMotionSha256": task["task"]["referenceMotionRef"]["sha256"],
-                "observationSha256": hashlib.sha256(raw).hexdigest(), "shift": 8.0, "initialStd": 0.1,
+                "observationSha256": hashlib.sha256(raw).hexdigest(), "shift": 8.5, "initialStd": 0.1,
+                "fitActionAbsMax": 0.5,
                 "normalization": {"mean": [0.0] * width, "variance": [1.0] * width, "count": 3},
             },
         ))
@@ -72,8 +73,29 @@ def test_reference_initialization_is_checked_before_lease_and_reported_after_val
         wrong["hyperparameters"]["schedule"] = "adaptive"
         response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
         assert response.status_code == 422, response.text
+        for shift in (0.001, 8.499):
+            wrong = deepcopy(plan)
+            wrong["initialization"]["shift"] = shift
+            response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
+            assert response.status_code == 422, response.text
+        missing = deepcopy(plan)
+        del missing["initialization"]["fitActionAbsMax"]
+        response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(missing))
+        assert response.status_code == 422, response.text
+        for envs, batches in ((1, 1), (2, 4), (2, None)):
+            wrong = deepcopy(plan)
+            wrong["hyperparameters"].update(num_envs=envs, num_steps_per_env=1)
+            if batches is not None:
+                wrong["hyperparameters"]["num_mini_batches"] = batches
+            response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(wrong))
+            assert response.status_code == 422, response.text
         assert client.get("/api/v1/approvals", headers=OPERATOR).json()["pendingCount"] == 0
 
+        # The pinned PPO normalizes advantage over the whole rollout.
+        edge = deepcopy(plan)
+        edge["hyperparameters"].update(num_envs=2, num_steps_per_env=1, num_mini_batches=2)
+        response = client.post("/api/v1/plans", headers=OPERATOR, json=sign(edge))
+        assert response.status_code == 201, response.text
         response = client.post("/api/v1/plans", headers=OPERATOR, json=plan)
         assert response.status_code == 201, response.text
         submitted = response.json()

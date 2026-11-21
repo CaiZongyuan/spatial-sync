@@ -11,10 +11,12 @@ import onnx
 from apps.node.mjlab_launcher import compiler_hash, compiler_sources
 from apps.node.observation_capture import canonical_hash, code_hash
 from packages.info.plans import PlanError
+from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent, extract_package, package_files, relative_path
 from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, document
+from packages.training.reference_initialization import MAX_STATISTIC, NORMALIZATION_EPSILON
 from packages.training.reference_initialization import receipt as initialization_receipt
-from packages.training.runtime import PINS, PRE_INITIALIZATION_COMPILER
+from packages.training.runtime import INITIALIZATION_R1_COMPILER, PINS, PRE_INITIALIZATION_COMPILER
 
 from .consistency import compare_observations
 from .library import digest, read_json
@@ -28,6 +30,7 @@ from .native_evidence import (
 from .observations import ObservationSpec
 
 PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65e6382eebd27046a"
+INITIALIZATION_R1_VERIFIER = "2cd813677830ff3ed0abc451dafe3e5875559df6220a376c30786971547ba8e1"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -55,24 +58,63 @@ def compatible_legacy_verifier(current):
     return current | {"files": files | LEGACY_VERIFIER_FILES}
 
 
+def _normalizer_row(state, field, width, lower):
+    value = state.get(field)
+    if (not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], list)
+            or len(value[0]) != width
+            or any(type(number) not in (int, float) or not lower <= number <= MAX_STATISTIC
+                   for number in value[0])):
+        raise ValueError("Native normalizer state differs from the approved frozen statistics")
+    return value
+
+
 def verify_initialized_normalizer(plan, versions, state):
     init = plan.get("initialization")
     if init is None:
         return
-    if versions.get("initialization") != initialization_receipt(plan):
+    if not json_equal(versions.get("initialization"), initialization_receipt(plan)):
         raise ValueError("Native source lacks the approved managed initialization receipt")
     settings = init["normalization"]
     mean = np.array([settings["mean"]], dtype=np.float32)
     variance = np.array([settings["variance"]], dtype=np.float32)
-    std = np.array(state.get("_std"), dtype=np.float32)
+    width = mean.shape[1]
+    std = np.array(_normalizer_row(state, "_std", width, 0), dtype=np.float32)
     expected_std = np.sqrt(variance)
     if (
         type(state.get("count")) is not int or state["count"] != settings["count"]
-        or state.get("_mean") != mean.tolist() or state.get("_var") != variance.tolist()
-        or std.shape != expected_std.shape
+        or _normalizer_row(state, "_mean", width, -MAX_STATISTIC) != mean.tolist()
+        or _normalizer_row(state, "_var", width, 0) != variance.tolist()
         or not np.all(np.abs(std - expected_std) <= np.spacing(expected_std))
     ):
         raise ValueError("Native normalizer state differs from the approved frozen statistics")
+    return mean, std + np.float32(NORMALIZATION_EPSILON)
+
+
+def _verify_exported_normalizer(graph, normalization):
+    """Prove that the pinned exporter feeds the normalized input through to the action output."""
+    nodes = graph.node
+    operators = ("Sub", "Div", "Gemm", "Elu", "Gemm", "Elu", "Gemm")
+    initializers = {tensor.name: tensor for tensor in graph.initializer}
+    error = "ONNX action path does not use the approved frozen normalizer"
+    if (len(graph.output) != 1 or tuple(node.op_type for node in nodes) != operators
+            or len(initializers) != len(graph.initializer) or graph.sparse_initializer):
+        raise ValueError(error)
+    value = graph.input[0].name
+    for node in nodes:
+        if (node.domain or not node.input or node.input[0] != value
+                or len(node.output) != 1 or any(name not in initializers for name in node.input[1:])):
+            raise ValueError(error)
+        value = node.output[0]
+    if value != graph.output[0].name:
+        raise ValueError(error)
+    for node, expected in zip(nodes[:2], normalization, strict=True):
+        if len(node.input) != 2:
+            raise ValueError(error)
+        tensor = initializers[node.input[1]]
+        if (tensor.data_type != onnx.TensorProto.FLOAT or tuple(tensor.dims) != expected.shape
+                or tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
+                or not np.array_equal(onnx.numpy_helper.to_array(tensor), expected)):
+            raise ValueError(error)
 
 
 class NativeProfiles:
@@ -117,8 +159,11 @@ class NativeProfiles:
 def declarative_profile(task, spec, job, runtime):
     """Use the managed compiler and reviewed trainer, with layout from pinned Task data."""
     allowed = {compiler_hash()}
-    if not job["plan"].get("initialization"):
+    init = job["plan"].get("initialization")
+    if not init:
         allowed.add(PRE_INITIALIZATION_COMPILER)
+    if not init or "fitActionAbsMax" not in init:
+        allowed.add(INITIALIZATION_R1_COMPILER)
     if (not runtime or runtime.get("entry") != "mjlab:managed"
             or runtime.get("compilerHash") not in allowed):
         raise LibraryError("observation_source_unverified", "Unreviewed declarative compiler identity", 409)
@@ -165,7 +210,9 @@ class NativeCaptureVerifier:
     def _facts(self, policy, job, report, envelope, receipt, profile, provider):
         self.evidence._validate_source(policy, job, receipt)
         self.evidence._validate_source(policy, job, envelope)
-        verify_initialized_normalizer(job["plan"], receipt.source.versions, receipt.normalizerState)
+        normalization = verify_initialized_normalizer(
+            job["plan"], receipt.source.versions, receipt.normalizerState,
+        )
         if job["kind"] == "checkpoint_finalize":
             if getattr(receipt, "finalizedCheckpointSha256", None) != job["checkpointRef"].split("/", 1)[1]:
                 raise ValueError("Native receipt refers to a different source checkpoint")
@@ -175,7 +222,7 @@ class NativeCaptureVerifier:
             document(self.evidence.manager.policies.resolve(policy["id"])[1] / "obs_spec.yaml")
         )
         package = self.evidence.manager.policies.resolve(policy["id"])[1]
-        graph = onnx.load_model(str(package / policy["onnx"]), load_external_data=False)
+        graph = onnx.load_model(str(package / policy["onnx"]), load_external_data=False).graph
         export = read_json(package / "artifacts/export.json")
         if (
             (profile.compilerHash is not None and receipt.iteration != export["iteration"])
@@ -191,12 +238,14 @@ class NativeCaptureVerifier:
             or receipt.samplesSha256 != report["artifact"]["sha256"]
             or receipt.sampleCount != len(envelope.samples)
             or receipt.normalizerStateSha256 != canonical_hash(receipt.normalizerState)
-            or len(graph.graph.input) != 1
-            or graph.graph.input[0].name != profile.inputName
+            or len(graph.input) != 1
+            or graph.input[0].name != profile.inputName
         ):
             raise ValueError(
                 "Actual native source, export boundary or material differs from the reviewed profile"
             )
+        if normalization is not None:
+            _verify_exported_normalizer(graph, normalization)
         task = read_json(package / "task.json")
         sample_count = validate_witnesses(
             receipt, envelope, task=task if profile.compilerHash else None
@@ -298,8 +347,12 @@ class NativeCaptureVerifier:
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
         compatible = [current]
-        if not job["plan"].get("initialization"):
-            # Admission of the initializer does not change the independent native witness checks.
+        init = job["plan"].get("initialization")
+        if not init or "fitActionAbsMax" not in init:
+            compatible.append(current | {"files": current["files"] | {
+                "packages/policies/qualification.py": INITIALIZATION_R1_VERIFIER,
+            }})
+        if not init:
             compatible.append(current | {"files": current["files"] | {
                 "packages/policies/qualification.py": PRE_INITIALIZATION_VERIFIER,
             }})
