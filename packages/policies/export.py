@@ -333,6 +333,7 @@ def policy_export(manager, identifier):
             "actuators": channels,
             "sourceCalibration": calibration,
             "versions": policy["versions"],
+            **({"initialization": init} if (init := policy["versions"].get("initialization")) else {}),
             "qualification": evidence,
             "evaluations": evaluations,
             "provenance": provenance,

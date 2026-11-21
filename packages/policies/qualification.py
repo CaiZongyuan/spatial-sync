@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import onnx
 
 from apps.node.mjlab_launcher import compiler_hash, compiler_sources
@@ -12,7 +13,8 @@ from apps.node.observation_capture import canonical_hash, code_hash
 from packages.info.plans import PlanError
 from packages.library.archive import destination_parent, extract_package, package_files, relative_path
 from packages.library.common import BUILTIN_ROOT, LibraryError, content_hash, document
-from packages.training.runtime import PINS
+from packages.training.reference_initialization import receipt as initialization_receipt
+from packages.training.runtime import PINS, PRE_INITIALIZATION_COMPILER
 
 from .consistency import compare_observations
 from .library import digest, read_json
@@ -24,6 +26,8 @@ from .native_evidence import (
     validate_witnesses,
 )
 from .observations import ObservationSpec
+
+PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65e6382eebd27046a"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -49,6 +53,26 @@ def compatible_legacy_verifier(current):
         )
     }
     return current | {"files": files | LEGACY_VERIFIER_FILES}
+
+
+def verify_initialized_normalizer(plan, versions, state):
+    init = plan.get("initialization")
+    if init is None:
+        return
+    if versions.get("initialization") != initialization_receipt(plan):
+        raise ValueError("Native source lacks the approved managed initialization receipt")
+    settings = init["normalization"]
+    mean = np.array([settings["mean"]], dtype=np.float32)
+    variance = np.array([settings["variance"]], dtype=np.float32)
+    std = np.array(state.get("_std"), dtype=np.float32)
+    expected_std = np.sqrt(variance)
+    if (
+        type(state.get("count")) is not int or state["count"] != settings["count"]
+        or state.get("_mean") != mean.tolist() or state.get("_var") != variance.tolist()
+        or std.shape != expected_std.shape
+        or not np.all(np.abs(std - expected_std) <= np.spacing(expected_std))
+    ):
+        raise ValueError("Native normalizer state differs from the approved frozen statistics")
 
 
 class NativeProfiles:
@@ -92,8 +116,11 @@ class NativeProfiles:
 
 def declarative_profile(task, spec, job, runtime):
     """Use the managed compiler and reviewed trainer, with layout from pinned Task data."""
+    allowed = {compiler_hash()}
+    if not job["plan"].get("initialization"):
+        allowed.add(PRE_INITIALIZATION_COMPILER)
     if (not runtime or runtime.get("entry") != "mjlab:managed"
-            or runtime.get("compilerHash") != compiler_hash()):
+            or runtime.get("compilerHash") not in allowed):
         raise LibraryError("observation_source_unverified", "Unreviewed declarative compiler identity", 409)
     versions = runtime["trainerVersions"]
     expected = PINS["mjlab"] | {"rsl_rl": "5.0.1"}
@@ -138,6 +165,7 @@ class NativeCaptureVerifier:
     def _facts(self, policy, job, report, envelope, receipt, profile, provider):
         self.evidence._validate_source(policy, job, receipt)
         self.evidence._validate_source(policy, job, envelope)
+        verify_initialized_normalizer(job["plan"], receipt.source.versions, receipt.normalizerState)
         if job["kind"] == "checkpoint_finalize":
             if getattr(receipt, "finalizedCheckpointSha256", None) != job["checkpointRef"].split("/", 1)[1]:
                 raise ValueError("Native receipt refers to a different source checkpoint")
@@ -270,6 +298,11 @@ class NativeCaptureVerifier:
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
         compatible = [current]
+        if not job["plan"].get("initialization"):
+            # Admission of the initializer does not change the independent native witness checks.
+            compatible.append(current | {"files": current["files"] | {
+                "packages/policies/qualification.py": PRE_INITIALIZATION_VERIFIER,
+            }})
         if receipt.afterLearn and not profile.compilerHash:
             earlier = compatible_legacy_verifier(current)
             compatible.append(earlier)

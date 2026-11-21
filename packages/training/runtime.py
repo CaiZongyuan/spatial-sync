@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 MJLAB_ENTRY = ("-m", "lw_mjlab_launcher")
+PRE_INITIALIZATION_COMPILER = "7948750d98b8750488bd71a3522dc70accb892c87768882c21b74ae6aa265356"
 MJLAB_DISTRIBUTIONS = {
     "mjlab": "mjlab", "mujoco": "mujoco", "mujoco_warp": "mujoco-warp",
     "warp": "warp-lang", "torch": "torch", "rsl_rl": "rsl-rl-lib",
@@ -115,7 +116,19 @@ def profile_key(plan, task_hash, hardware, gpu_id):
         "taskContentHash": task_hash, "hardware": hardware, "gpuId": gpu_id,
         **{key: plan[key] for key in ("algorithm", "model", "hyperparameters")},
     }
+    if init := plan.get("initialization"):
+        value["initializationSha256"] = init["sha256"]
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def compatible_checkpoint_runtime(source, target, plan, current_compiler):
+    if source == target:
+        return True
+    return bool(
+        target and not plan.get("initialization") and source.get("entry") == "mjlab:managed"
+        and source.get("compilerHash") == PRE_INITIALIZATION_COMPILER
+        and target == source | {"compilerHash": current_compiler}
+    )
 
 
 def runtime_profile_key(plan, task_hash, node, resource, runtime):

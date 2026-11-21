@@ -176,6 +176,15 @@ def install():
                         if args or "num_learning_iterations" not in kwargs:
                             raise ValueError("Managed checkpoint dispatch requires named iteration count")
                         kwargs["num_learning_iterations"] -= completed
+                if inputs["plan"].get("initialization") is not None:
+                    from lw_reference_actor import freeze_normalizers, receipt
+
+                    effective = (freeze_normalizers(runner, inputs["plan"], restored=True) if source
+                                 else getattr(runner, "_lw_initialization", None))
+                    if effective != receipt(inputs["plan"]):
+                        raise ValueError("Managed Job did not apply the leased initialization")
+                    versions["initialization"] = effective
+                    (output / "versions.json").write_text(json.dumps(versions), encoding="utf-8")
                 runner.logger.log = log
                 try:
                     with ExitStack() as stack:

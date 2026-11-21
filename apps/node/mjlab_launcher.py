@@ -26,11 +26,14 @@ def compiler_sources():
     return {
         name: node / name
         for name in ("mjlab_launcher.py", "usd_mjcf.py", "declarative_mjlab.py", "declarative_capture.py",
-                     "declarative_scene.py")
+                     "declarative_scene.py", "reference_actor.py")
     } | {
         name: node.parents[1] / "packages/policies" / name
         for name in ("motion.py", "action_contract.py")
-    } | {"reward_state.py": node.parents[1] / "packages/training/reward_state.py"}
+    } | {
+        name: node.parents[1] / "packages/training" / name
+        for name in ("reward_state.py", "reference_initialization.py", "checkpoint_format.py")
+    }
 
 
 def compiler_hash(directory=None, *, prefix=""):
@@ -262,6 +265,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     inputs = json.loads(Path(input_path).read_text(encoding="utf-8")) if input_path else {}
     task = inputs.get("task", {})
     declarative = task.get("declarative") is not None
+    plan = inputs.get("plan", {})
+    initialization = plan.get("initialization")
+    if initialization is not None and not declarative:
+        raise ValueError("Managed initialization requires a declarative Task")
     if validation:
         from lw_training_bridge import verify_trainer_versions
 
@@ -286,7 +293,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         from lw_declarative_mjlab import compile_environment
 
         package = Path(os.environ["LW_TASK_PACKAGE"])
-        spec = yaml.safe_load((package / task["observation"]).read_bytes())
+        raw = (package / task["observation"]).read_bytes()
+        spec = yaml.safe_load(raw)
+        if initialization is not None:
+            from lw_reference_initialization import require_initialization
+
+            require_initialization(plan, task, inputs["job"]["taskContentHash"], raw, spec)
         env_cfg, agent_cfg, runner_cls = compile_environment(task, spec, os.environ["LW_SCENE_STAGE"])
     else:
         env_cfg = load_env_cfg(args.task)
@@ -326,6 +338,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         obs_norm = bool(json.loads(args.obs_normalization))
         agent_cfg.actor.obs_normalization = obs_norm
         agent_cfg.critic.obs_normalization = obs_norm
+    if initialization is not None:
+        if (
+            list(agent_cfg.actor.hidden_dims) != plan["model"]["actor"]
+            or list(agent_cfg.critic.hidden_dims) != plan["model"]["critic"]
+            or agent_cfg.actor.activation != "elu" or agent_cfg.critic.activation != "elu"
+            or not agent_cfg.actor.obs_normalization or not agent_cfg.critic.obs_normalization
+            or agent_cfg.algorithm.learning_rate != plan["hyperparameters"]["learning_rate"]
+        ):
+            raise ValueError("Managed initialization differs from the effective launcher configuration")
+        agent_cfg.algorithm.schedule = "fixed"
+        agent_cfg.actor.distribution_cfg["init_std"] = initialization["initialStd"]
 
     verify_usd_model = None
     stage = os.environ.get("LW_SCENE_STAGE")
@@ -350,10 +373,19 @@ def main(argv: Sequence[str] | None = None) -> None:
             verify_usd_model(env.sim.mj_model)
         vec_env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
         agent_dict = asdict(agent_cfg)
-        if validation:
-            if declarative:
-                env.enable_reward_validation()
+        if validation and declarative:
+            env.enable_reward_validation()
+        if not validation:
+            dump_yaml(log_dir / "params" / "env.yaml", asdict(env_cfg))
+            dump_yaml(log_dir / "params" / "agent.yaml", agent_dict)
+        runner = runner_cls(vec_env, agent_dict, None if validation else str(log_dir), device=device)
+        effective_initialization = None
+        if initialization is not None and not inputs.get("resumeCheckpoint"):
+            from lw_reference_actor import initialize_actor
 
+            effective_initialization = initialize_actor(runner, plan, task, spec)
+            runner._lw_initialization = effective_initialization
+        if validation:
             def synchronize():
                 if device != "cpu":
                     import torch
@@ -362,18 +394,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                     warp.synchronize_device(device)
                     torch.cuda.synchronize(device)
 
-            runner = runner_cls(vec_env, agent_dict, None, device=device)
             timing = profile_training(
                 runner, vec_env, device=device, num_envs=args.num_envs, iterations=args.validation_iterations,
                 synchronize=synchronize, setup_started=setup_started, init_at_random_ep_len=not declarative,
             )
+            if effective_initialization is not None:
+                timing["initialization"] = effective_initialization
             (Path(os.environ["LW_NODE_OUTPUT"]) / "validation.json").write_text(
                 json.dumps(timing, allow_nan=False), encoding="utf-8"
             )
             return
-        dump_yaml(log_dir / "params" / "env.yaml", asdict(env_cfg))
-        dump_yaml(log_dir / "params" / "agent.yaml", agent_dict)
-        runner = runner_cls(vec_env, agent_dict, str(log_dir), device=device)
         runner.learn(
             num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=not declarative
         )

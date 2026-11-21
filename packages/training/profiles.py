@@ -5,6 +5,7 @@ import json
 import math
 
 from packages.info.schema_subset import json_equal
+from packages.training.reference_initialization import receipt as initialization_receipt
 from packages.training.runtime import job_backend, legacy_local, runtime_profile_key, training_runtime
 
 
@@ -27,6 +28,8 @@ def measured_profile(raw, job, plan, node, resource_id, *, task=None):
     }
     if runtime is not None:
         expected["runtimeIdentity"] = runtime
+    if init := initialization_receipt(plan):
+        expected["initialization"] = init
     if receipt.get("schema") != schema or not json_equal(
         {key: receipt.get(key) for key in expected}, expected
     ):

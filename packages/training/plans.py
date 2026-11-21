@@ -13,6 +13,7 @@ from packages.library.common import LibraryError
 from packages.library.transactions import durable_json
 from packages.protocol.schema import Actor
 from packages.training.loop_budgets import goal_id
+from packages.training.reference_initialization import validate_plan_initialization
 from packages.training.schema import TrainingPlan
 
 
@@ -153,6 +154,7 @@ class TrainingPlanStore:
                     task_snapshot = self.tasks.show(plan.task)
                 self._require_program(plan, task_snapshot)
                 task = task_snapshot["task"]
+                validate_plan_initialization(plan.model_dump(mode="json"), task_snapshot, self.tasks)
                 if plan.evaluation.scene != task["scene"]:
                     raise ValueError("Plan evaluation must use the pinned Task scene")
                 previous = previous_revision or (self.get(plan.previous) if plan.previous else None)
@@ -162,7 +164,7 @@ class TrainingPlanStore:
                     raise ValueError("A plan cannot name itself as the previous round")
                 if not plan_id and plan.id in self.records:
                     raise ValueError("Plan ID already exists")
-            except (ValidationError, ValueError, LibraryError, PlanError) as exc:
+            except (ValidationError, ValueError, LibraryError, PlanError, OSError) as exc:
                 errors = ([{"location": list(item["loc"]), "message": item["msg"]}
                            for item in exc.errors(include_input=False, include_url=False)]
                           if isinstance(exc, ValidationError) else [{"message": str(exc)}])
@@ -178,9 +180,10 @@ class TrainingPlanStore:
             plan = TrainingPlan.model_validate(fresh)
             goal_suite = self.goal_suites.prepare(plan, task_snapshot) if self.goal_suites else None
             old = previous.plan.model_dump(mode="json", by_alias=True) if previous else {}
-            changes = [{"field": key, "before": old.get(key), "after": item}
-                       for key, item in fresh.items()
-                       if key not in ("id", "revision", "status", "previous") and old.get(key) != item]
+            changes = [{"field": key, "before": old.get(key), "after": fresh.get(key)}
+                       for key in dict.fromkeys((*fresh, *old))
+                       if key not in ("id", "revision", "status", "previous")
+                       and old.get(key) != fresh.get(key)]
             plan.status = "submitted"
             record = StoredTrainingPlan(plan=plan, requestedBy=actor, createdAtMs=time.time() * 1000,
                                         changes=changes, goalContext=goal_context, goalSuite=goal_suite)

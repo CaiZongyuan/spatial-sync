@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from packages.programs.metadata import ProgramIntent
 from packages.training.declarative import Completion, LayerA, ReferenceMotion, ReferencePin
 from packages.training.predictions import prediction
+from packages.training.reference_initialization import MAX_COUNT, MAX_SHIFT, MAX_STATISTIC, MAX_WIDTH, SCHEMA
 
 
 class Schema(BaseModel):
@@ -234,6 +235,30 @@ class PlanBudget(Schema):
     episodes: int | None = Field(default=None, ge=1)
 
 
+InitHash = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+
+class InitializationStatistics(Schema):
+    mean: list[Annotated[float, Field(ge=-MAX_STATISTIC, le=MAX_STATISTIC)]] = Field(
+        min_length=1, max_length=MAX_WIDTH,
+    )
+    variance: list[Annotated[float, Field(ge=0, le=MAX_STATISTIC)]] = Field(
+        min_length=1, max_length=MAX_WIDTH,
+    )
+    count: int = Field(ge=1, le=MAX_COUNT)
+
+
+class ReferenceActorInitialization(Schema):
+    schema_version: Literal[SCHEMA] = Field(alias="schema")
+    taskContentHash: InitHash
+    referenceMotionSha256: InitHash
+    observationSha256: InitHash
+    sha256: InitHash
+    initialStd: float = Field(ge=1e-4, le=2)
+    shift: float = Field(gt=0, le=MAX_SHIFT)
+    normalization: InitializationStatistics
+
+
 class TrainingPlan(Schema):
     id: str = Field(pattern=r"^plan-[A-Za-z0-9-]+$")
     kind: Literal["training"] = "training"
@@ -246,6 +271,9 @@ class TrainingPlan(Schema):
     algorithm: dict[str, JsonValue] = Field(default_factory=dict)
     model: dict[str, JsonValue] = Field(default_factory=dict)
     hyperparameters: dict[str, JsonValue] = Field(default_factory=dict)
+    initialization: ReferenceActorInitialization | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
     jobs: Jobs
     budget: PlanBudget
     evaluation: PlanEvaluation
@@ -262,7 +290,8 @@ class TrainingPlan(Schema):
         if self.program is None:
             if not all(training):
                 raise ValueError("A training round requires algorithm, model and hyperparameters")
-        elif any(training) or self.jobs.seeds or self.budget.gpuHours != 0 or self.budget.episodes is None:
+        elif (any(training) or self.initialization is not None or self.jobs.seeds
+              or self.budget.gpuHours != 0 or self.budget.episodes is None):
             raise ValueError(
                 "A script round has no training metadata/Jobs/GPU budget and requires episode budget"
             )

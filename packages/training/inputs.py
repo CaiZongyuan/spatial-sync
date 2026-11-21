@@ -10,9 +10,11 @@ import tempfile
 from pathlib import Path
 
 from packages.info.plans import PlanError
+from packages.info.schema_subset import json_equal
 from packages.library.archive import destination_parent, extract_package, package_files
 from packages.library.common import content_hash
 from packages.training.checkpoint_format import MAX_METADATA, decode_json, digest, json_bytes
+from packages.training.reference_initialization import receipt as initialization_receipt
 from packages.training.runtime import job_backend, trainer_distributions
 
 
@@ -185,6 +187,7 @@ def store_artifacts(manager, job, stream, verify_lease=None, trainer_versions=No
                 )
                 or versions["hardware"]["device"] != job["executionDevice"]
                 or versions.get("demonstrationSets", []) != job.get("demonstrationSets", [])
+                or not json_equal(versions.get("initialization"), initialization_receipt(job.get("plan", {})))
             ):
                 raise ValueError("Artifact versions do not identify the approved inputs/device")
             task_doc = manager.tasks.show(job["task"])["task"]
