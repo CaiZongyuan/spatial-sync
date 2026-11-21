@@ -1,7 +1,11 @@
 """Trusted verification is derived and reachable; numerical/native-looking caller labels cannot enable it."""
 
+import io
+import json
 import struct
+import zipfile
 
+import onnx
 import pytest
 from fastapi.testclient import TestClient
 from onnx import TensorProto, external_data_helper, helper
@@ -9,7 +13,8 @@ from onnx import TensorProto, external_data_helper, helper
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
 from packages.info.plans import PlanError
-from packages.policies.qualification import NativeProfiles
+from packages.policies import evidence, qualification
+from packages.policies.qualification import INITIALIZATION_R3_VERIFIER, NativeProfiles
 from tests.fixtures.native_policy_evidence import native_inputs
 from tests.gateway.test_training_jobs import TOKEN
 
@@ -120,6 +125,63 @@ def test_verify_source_checks_initialized_onnx_and_typed_statistics(tmp_path, mo
         else:
             assert verified.status_code == 200, verified.text
             assert verified.json()["sourceVerification"]["qualified"]
+
+
+def test_retained_external_initialized_policy_downloads_without_qualification(tmp_path, monkeypatch):
+    registry = NativeProfiles([], allow_controlled=True)
+    initialization = {
+        "schema": "lw.reference-actor-init/1", "sha256": "a" * 64, "taskContentHash": "b" * 64,
+        "referenceMotionSha256": "c" * 64, "observationSha256": "d" * 64, "initialStd": .1,
+        "shift": 8.5, "fitActionAbsMax": .5, "normalization": {"mean": [0.0], "variance": [1.0], "count": 3},
+    }
+    model = initialized_export("external_weight")
+    weights = struct.pack("<256f", *([0.5] * 256))
+    with TestClient(create_app(Settings(node_token=TOKEN), observation_profiles=registry)) as client:
+        policy, route = native_inputs(
+            client, tmp_path, monkeypatch, registry, initialization=initialization,
+            normalizer_state={"_mean": [[0.0]], "_std": [[1.0]], "_var": [[1.0]], "count": 3},
+            model=model, external={"weights.bin": weights},
+        )
+        check = client.post(route, json={"artifact": "observations/native-samples.json"})
+        assert check.status_code == 201, check.text
+        verify = f"{route}/{check.json()['id']}/verify-source"
+        capture = {"artifact": "observations/native-capture.json"}
+        retained = evidence.implementation_identity()
+        retained["files"]["packages/policies/qualification.py"] = INITIALIZATION_R3_VERIFIER
+
+        def retained_r3_graph(graph_model, normalization, widths):
+            # This finite, signed external tensor was allowed by R3's graph verifier.
+            graph_model.graph.initializer[2].CopyFrom(
+                onnx.load_model_from_string(initialized_export(None)).graph.initializer[2]
+            )
+            verify_graph(graph_model, normalization, widths)
+
+        verify_graph = qualification._verify_exported_normalizer
+        with monkeypatch.context() as old:
+            old.setattr(evidence, "implementation_identity", lambda: retained)
+            old.setattr(qualification, "_verify_exported_normalizer", retained_r3_graph)
+            previous = client.post(verify, json=capture)
+            assert previous.status_code == 200, previous.text
+            assert previous.json()["sourceVerification"]["qualified"]
+
+        fresh = client.post(verify, json=capture)
+        assert fresh.status_code == 422 and fresh.json()["detail"]["code"] == "observation_evidence_invalid"
+        exported = client.get("/api/v1/policies/training-probe/1/export")
+        assert exported.status_code == 200, exported.text
+        with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            assert manifest["qualification"] == {"status": "unverified"}
+            assert manifest["normalization"] == "as-frozen-in-model"
+            assert manifest["policyContentHash"] == policy["contentHash"]
+            assert archive.read(manifest["model"]["path"]) == model
+            assert archive.read("model/weights.bin") == weights
+
+        def invalid_read(*args):
+            raise ValueError("unexpected graph reader failure")
+
+        monkeypatch.setattr(qualification, "_verify_exported_normalizer", invalid_read)
+        broken = client.get("/api/v1/policies/training-probe/1/export")
+        assert broken.status_code == 409 and broken.json()["detail"]["code"] == "policy_export_unavailable"
 
 
 def test_production_registry_does_not_trust_controlled_native_looking_artifacts(tmp_path, monkeypatch):

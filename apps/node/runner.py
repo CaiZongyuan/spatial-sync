@@ -395,6 +395,9 @@ class OwnedRun:
                         or source["inputsSha256"] != inputs["checkpointIdentity"]["inputsSha256"]
                         or not training_runtime.compatible_checkpoint_runtime(
                             source["runtime"], inputs.get("runtimeIdentity"), inputs["plan"], compiler_hash(),
+                            migration_version=self.node.headers.get(
+                                training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_HEADER,
+                            ),
                         )
                         or source["iteration"] != self.assignment.get("startIteration")
                     ):
@@ -1028,9 +1031,10 @@ def run_node(args):
         capabilities["trainingEntries"] = {backend: entry for backend, entry in entries.items() if entry}
     if "mjlab" in (capabilities.get("trainerVersions") or {}):
         capabilities["compilerHash"] = compiler_hash()
-    if mjlab_versions.get("rsl_rl") == "5.0.1" and (
+    managed_checkpoint_runtime = mjlab_versions.get("rsl_rl") == "5.0.1" and (
         capabilities.get("trainingEntries") or {}
-    ).get("mjlab") == "mjlab:managed":
+    ).get("mjlab") == "mjlab:managed"
+    if managed_checkpoint_runtime:
         capabilities["checkpointVersion"] = 1
     capabilities.pop("poseRuntime", None)
     pose_command = None
@@ -1059,6 +1063,10 @@ def run_node(args):
         token=token,
         pose_command=pose_command,
     )
+    if managed_checkpoint_runtime:
+        node.headers[training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_HEADER] = (
+            training_runtime.INITIALIZED_CHECKPOINT_MIGRATION_VERSION
+        )
     node.capabilities_path = capabilities_path
     asyncio.run(node.run())
 

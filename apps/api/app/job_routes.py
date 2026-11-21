@@ -26,6 +26,7 @@ from packages.training.job_contract import (
     StartJob,
 )
 from packages.training.jobs import TERMINAL
+from packages.training.runtime import INITIALIZED_CHECKPOINT_MIGRATION_HEADER
 
 
 def install_job_routes(app, manager, role_for, views=None):
@@ -198,7 +199,10 @@ def install_job_routes(app, manager, role_for, views=None):
         instance = request.headers.get("x-node-instance")
         if node_id != "local" and instance != body.instanceId:
             raise PlanError("node_owner_conflict", "Heartbeat instance must match the caller", status=403)
-        return jobs.heartbeat(body, node_id, owner_instance=instance)
+        return jobs.heartbeat(
+            body, node_id, owner_instance=instance,
+            migration_version=request.headers.get(INITIALIZED_CHECKPOINT_MIGRATION_HEADER),
+        )
 
     @app.get("/api/v1/jobs/{identity}/inputs")
     async def inputs(identity: str, request: Request):

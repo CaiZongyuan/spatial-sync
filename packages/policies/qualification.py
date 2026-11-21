@@ -38,6 +38,7 @@ PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65
 INITIALIZATION_R1_VERIFIER = "2cd813677830ff3ed0abc451dafe3e5875559df6220a376c30786971547ba8e1"
 INITIALIZATION_R2_VERIFIER = "a125d3b416cd51ba528874383d0d9cb382ac7ed0d3249d92c920ac6e6af4b061"
 INITIALIZATION_R3_VERIFIER = "64c14c450a8a26f6bdb1d620af25013474c7ad6321687ea4ce70d98606c83386"
+INITIALIZATION_R4_VERIFIER = "cd6e40733f44f6c0ddb00405ffd2989f2ddc329bdd94946345269b2f8f700b77"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -107,8 +108,14 @@ def _verify_exported_normalizer(model, normalization, widths):
             or graph.input[0].name in initializers or len(initializers) != len(graph.initializer)
             or graph.sparse_initializer or model.functions):
         raise ValueError(error)
-    if any(tensor.data_type != onnx.TensorProto.FLOAT
-           or tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
+    if any(tensor.data_location == onnx.TensorProto.EXTERNAL or tensor.external_data
+           for tensor in initializers.values()):
+        raise LibraryError(
+            "observation_evidence_invalid",
+            "Managed initialization qualification requires embedded tensors",
+            422,
+        )
+    if any(tensor.data_type != onnx.TensorProto.FLOAT or tensor.data_location != onnx.TensorProto.DEFAULT
            for tensor in initializers.values()):
         raise ValueError(error)
     attr = onnx.AttributeProto
@@ -404,7 +411,9 @@ class NativeCaptureVerifier:
         job = self.evidence.manager.jobs.get(policy["jobId"])
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
-        retained_verifiers = [INITIALIZATION_R3_VERIFIER, INITIALIZATION_R2_VERIFIER]
+        retained_verifiers = [
+            INITIALIZATION_R4_VERIFIER, INITIALIZATION_R3_VERIFIER, INITIALIZATION_R2_VERIFIER,
+        ]
         init = job["plan"].get("initialization")
         if not init or "fitActionAbsMax" not in init:
             retained_verifiers.append(INITIALIZATION_R1_VERIFIER)

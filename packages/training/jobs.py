@@ -28,11 +28,13 @@ from packages.training.reference_initialization import receipt as initialization
 from packages.training.reference_initialization import validate_plan_initialization
 from packages.training.runtime import (
     INITIALIZATION_R2_COMPILER,
+    INITIALIZED_CHECKPOINT_MIGRATION_VERSION,
     RuntimeMismatch,
     compatible_checkpoint_runtime,
     job_backend,
     legacy_local,
     reported_versions,
+    requires_initialized_checkpoint_migration,
     runtime_profile_key,
     training_runtime,
 )
@@ -715,7 +717,8 @@ class TrainingJobs:
                 reason = "initialization_runtime_unsupported"
                 continue
             if source and (node.get("checkpointVersion") != 1 or not compatible_checkpoint_runtime(
-                    source["runtime"], runtime, job["plan"], current_compiler)):
+                    source["runtime"], runtime, job["plan"], current_compiler,
+                    migration_version=node.get("initializedCheckpointMigrationVersion"))):
                 reason = "checkpoint_runtime_mismatch"
                 continue
             for resource in resources:
@@ -856,6 +859,15 @@ class TrainingJobs:
         return (
             lease["quarantined"] or self._offline(node, now)
             or self._dispatch_timeout(lease, now) is not None
+            or self._migration_unsupported(lease, node.get("initializedCheckpointMigrationVersion"))
+        )
+
+    def _migration_unsupported(self, lease, migration_version):
+        source = lease.get("resumeCheckpoint")
+        return source is not None and migration_version != INITIALIZED_CHECKPOINT_MIGRATION_VERSION and (
+            requires_initialized_checkpoint_migration(
+                source["runtime"], lease["runtimeIdentity"], self.records[lease["jobId"]]["plan"],
+            )
         )
 
     def _expire_leases(self, node, now):
@@ -868,6 +880,8 @@ class TrainingJobs:
                 if node["id"] == "local" and lease["quarantined"]:
                     continue
                 timeout = self._dispatch_timeout(lease, now)
+                if self._migration_unsupported(lease, node.get("initializedCheckpointMigrationVersion")):
+                    timeout = "checkpoint_runtime_mismatch"
                 if offline or lease["quarantined"] or timeout:
                     reason = "node_lost" if offline else timeout or "validation_timeout"
                     self._fence_lease(node, resource, reason, now)
@@ -1067,7 +1081,7 @@ class TrainingJobs:
             "complete": len(self.read_logs(job["jobId"])) == report.tailEnd,
         }
 
-    def heartbeat(self, body, identity="local", *, owner_instance=None):
+    def heartbeat(self, body, identity="local", *, owner_instance=None, migration_version=None):
         self._require_available()
         now = self.clock()
         node = self.nodes.get(identity)
@@ -1129,6 +1143,7 @@ class TrainingJobs:
                 or lease["leaseId"] != report.leaseId
                 or job["nodeId"] != identity
                 or node["instanceId"] != body.instanceId
+                or self._migration_unsupported(lease, migration_version)
                 or lease["quarantined"] and report.status not in ("cancelled", "failed", "cleaned")
             ):
                 raise PlanError("lease_mismatch", "Node report does not own this dispatch", status=403)
@@ -1230,6 +1245,10 @@ class TrainingJobs:
             compilerHash=body.compilerHash,
             trainingEntries=body.trainingEntries,
             checkpointVersion=body.checkpointVersion,
+            initializedCheckpointMigrationVersion=(
+                INITIALIZED_CHECKPOINT_MIGRATION_VERSION
+                if migration_version == INITIALIZED_CHECKPOINT_MIGRATION_VERSION else None
+            ),
             legacyHardware=body.legacyHardware if identity == "local" else None,
         )
         if body.poseRuntime is None:

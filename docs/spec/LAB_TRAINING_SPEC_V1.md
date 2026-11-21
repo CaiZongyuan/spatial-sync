@@ -146,6 +146,8 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 受管初始化使用 IEEE float32。准入从固定参考帧和所声明的原始动作上界反推每个关节的实测角范围，计算观测编码上界，并取它与拟合观测上界 `abs(mean) + sqrt(count * variance)` 的较大值。准入把平移量、动作默认位置，以及两个关节项在偏移、居中和缩放后的绝对贡献相加，以限制抵消前的运算量级。估计量在原始动作及还原关节单位中均不得超过 96。该数值范围适用于声明的拟合域。
 
 受管初始化的原生资格使用锁定导出器的 ONNX 动作图和内嵌有限 float32 张量。图可通过 `Identity` 复用已定义的内嵌常量，这些别名须最终用于动作计算。通用 Policy 仍可按归档清单携带外置 ONNX 张量。
+
+跨编译器恢复受管初始化 Checkpoint 时，网关通过已认证心跳上的 `X-Initialized-Checkpoint-Migration: 1` 识别支持该迁移的 Node，并核对源和目标运行时及固定输入。同运行时的受管作业继续走普通便携 Checkpoint 路径。旧归档的原生资格在重读时按当前规则验证，外置张量导致的受管原生资格拒绝以未验证状态保留归档下载。
 6. **改动即新计划**：改算法、模型、奖励（即 Task 版本）、超出声明的 seed，都必须提交新计划。
 
 计划状态：`draft → submitted → approved | rejected → completed | abandoned`。

@@ -10,11 +10,26 @@ from fastapi.testclient import TestClient
 from apps.api.app.main import create_app
 from apps.node.mjlab_launcher import compiler_hash
 from packages.policies.qualification import verify_initialized_normalizer
+from packages.training import jobs
 from packages.training.checkpoints import identity as checkpoint_identity
-from packages.training.runtime import PRE_INITIALIZATION_COMPILER, compatible_checkpoint_runtime, profile_key
+from packages.training.runtime import (
+    INITIALIZATION_R2_COMPILER,
+    INITIALIZED_CHECKPOINT_MIGRATION_HEADER,
+    PRE_INITIALIZATION_COMPILER,
+    compatible_checkpoint_runtime,
+    profile_key,
+)
 from tests.fixtures.training_task import training_plan
+from tests.gateway.test_checkpoint_jobs import checkpoint_archive
 from tests.gateway.test_reference_motion import URL, imitation_request, keyframes
-from tests.gateway.test_remote_training_nodes import MJLAB_VERSIONS, OPERATOR, beat, register, remote_settings
+from tests.gateway.test_remote_training_nodes import (
+    MJLAB_VERSIONS,
+    OPERATOR,
+    beat,
+    node_profile_key,
+    register,
+    remote_settings,
+)
 
 
 def sign(plan):
@@ -28,6 +43,122 @@ def sign(plan):
         json.dumps(raw, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     ).hexdigest()
     return plan
+
+
+def test_initialized_checkpoint_migration_requires_current_node_advertisement(monkeypatch):
+    app = create_app(remote_settings())
+    now = [1000.0]
+    app.state.jobs.clock = lambda: now[0]
+    with TestClient(app) as client:
+        reference = client.post(URL, headers=OPERATOR, json=keyframes(app.state.manager.library_assets))
+        assert reference.status_code == 201, reference.text
+        response = client.post("/api/v1/tasks/reference-motion", headers=OPERATOR,
+                               json=imitation_request(reference.json()))
+        assert response.status_code == 201, response.text
+        task = response.json()
+        raw = app.state.manager.tasks.observation_bytes(task)
+        width = sum(term["shape"][0] for term in json.loads(raw)["observations"])
+        plan = sign(training_plan(
+            task["id"],
+            algorithm={"library": "rsl_rl", "name": "PPO", "version": "5.0.1"},
+            model={"actor": [32, 16], "critic": [32, 16], "activation": "elu", "obs_normalization": True},
+            hyperparameters={"num_envs": 4, "max_iterations": 20, "learning_rate": 1e-5, "device": "cpu"},
+            evaluation={"scene": task["task"]["scene"], "episodes": 30, "threshold": 24},
+            initialization={
+                "schema": "lw.reference-actor-init/1", "taskContentHash": task["contentHash"],
+                "referenceMotionSha256": task["task"]["referenceMotionRef"]["sha256"],
+                "observationSha256": hashlib.sha256(raw).hexdigest(), "shift": 8.5, "initialStd": 0.1,
+                "fitActionAbsMax": 0.5,
+                "normalization": {"mean": [0.0] * width, "variance": [1.0] * width, "count": 3},
+            },
+        ))
+        created = client.post("/api/v1/plans", headers=OPERATOR, json=plan)
+        assert created.status_code == 201, created.text
+        plan = created.json()
+        approval = client.post(f"/api/v1/approvals/{plan['approvalId']}/decision", headers=OPERATOR,
+                               json={"decision": "approve"})
+        assert approval.status_code == 200, approval.text
+
+        def capabilities(compiler):
+            identity = {
+                "compilerHash": compiler, "trainerVersions": MJLAB_VERSIONS,
+                "trainingEntries": {"mjlab": "mjlab:managed"},
+            }
+            node = identity | {"id": "fixture", "hardware": "fixture"}
+            key = node_profile_key(plan, task["contentHash"], node, {"id": "cpu"}, backend="mjlab")
+            return identity | {
+                "checkpointVersion": 1, "cpuAvailable": True,
+                "profiles": [{"key": key, "iterationSeconds": 1, "samples": 2,
+                              "measuredAt": 999, "evidence": "fixture"}],
+            }
+
+        def start(seed, node):
+            reply = client.post("/api/v1/jobs", headers=OPERATOR,
+                                json={"planId": plan["id"], "seed": seed, "targetNodeId": node["X-Node-Id"]})
+            assert reply.status_code == 202, reply.text
+            return reply.json()
+
+        def commit(job, node):
+            lease = node | {"X-Lease-Id": job["leaseId"]}
+            url = f"/api/v1/jobs/{job['jobId']}"
+            dispatch = client.get(url + "/inputs", headers=lease)
+            assert dispatch.status_code == 200, dispatch.text
+            archive = checkpoint_archive(dispatch.json())
+            reply = client.post(url + "/checkpoints", headers=lease, content=archive)
+            assert reply.status_code == 201, reply.text
+            return reply.json()
+
+        old, updated = register(client, "older"), register(client, "updated")
+        prior = capabilities(INITIALIZATION_R2_COMPILER)
+        with monkeypatch.context() as r2:
+            r2.setattr(jobs, "compiler_hash", lambda: INITIALIZATION_R2_COMPILER)
+            assert beat(client, old, **prior).is_success
+            source = start(42, old)
+            checkpoint = commit(source, old)
+
+        current = capabilities(compiler_hash())
+        now[0] += 61  # Expire the R2 connection with a committed checkpoint.
+        read = client.get(f"/api/v1/jobs/{source['jobId']}", headers=OPERATOR)
+        assert read.json()["status"] == "suspended"
+        old |= {"X-Node-Instance": "after-r2"}
+        reply = beat(client, old, **current)
+        assert reply.status_code == 200 and reply.json()["assignments"] == []
+        assert beat(client, updated | {INITIALIZED_CHECKPOINT_MIGRATION_HEADER: "2"},
+                    **current).json()["assignments"] == []
+
+        finalize = client.post("/api/v1/jobs", headers=OPERATOR, json={
+            "kind": "checkpoint_finalize", "planId": plan["id"],
+            "checkpoint": f"{source['jobId']}/{checkpoint['sha256']}",
+        })
+        assert finalize.status_code == 202 and finalize.json()["leaseId"] is None
+        # The same older node still runs an ordinary Job and owns its checkpoint.
+        ordinary = start(43, old)
+        assert ordinary["nodeId"] == old["X-Node-Id"]
+        same_runtime_checkpoint = commit(ordinary, old)
+
+        capable = updated | {INITIALIZED_CHECKPOINT_MIGRATION_HEADER: "1"}
+        reply = beat(client, capable, **current)
+        assert reply.status_code == 200, reply.text
+        (assignment,) = reply.json()["assignments"]
+        assert assignment["jobId"] == source["jobId"] and assignment["startIteration"] == 4
+        lease = capable | {"X-Lease-Id": assignment["leaseId"]}
+        path = f"/api/v1/jobs/{source['jobId']}/inputs"
+        dispatch = client.get(path, headers=lease).json()
+        assert dispatch["resumeCheckpoint"]["sha256"] == checkpoint["sha256"]
+        assert dispatch["checkpointIdentity"]["inputsSha256"] == checkpoint["inputsSha256"]
+        assert beat(client, updated, **current).json()["assignments"] == []
+        assert client.get(path, headers=lease).status_code == 403
+
+        cancelled = client.post(f"/api/v1/jobs/{ordinary['jobId']}/cancel", headers=OPERATOR)
+        assert cancelled.status_code == 200, cancelled.text
+        report = {"jobId": ordinary["jobId"], "leaseId": ordinary["leaseId"],
+                  "status": "cancelled", "iteration": 4}
+        assert beat(client, old, **current, reports=[report]).is_success
+        same_runtime = client.post("/api/v1/jobs", headers=OPERATOR, json={
+            "kind": "checkpoint_finalize", "planId": plan["id"], "targetNodeId": old["X-Node-Id"],
+            "checkpoint": f"{ordinary['jobId']}/{same_runtime_checkpoint['sha256']}",
+        })
+        assert same_runtime.status_code == 202 and same_runtime.json()["nodeId"] == old["X-Node-Id"]
 
 
 @pytest.mark.parametrize(
