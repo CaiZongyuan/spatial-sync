@@ -126,11 +126,12 @@ def profile_key(plan, task_hash, hardware, gpu_id):
 def compatible_checkpoint_runtime(source, target, plan, current_compiler):
     if source == target:
         return True
+    historical = (INITIALIZATION_R2_COMPILER,) if plan.get("initialization") is not None else (
+        PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER, INITIALIZATION_R2_COMPILER,
+    )
     return bool(
-        target and not plan.get("initialization") and source.get("entry") == "mjlab:managed"
-        and source.get("compilerHash") in (
-            PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER, INITIALIZATION_R2_COMPILER,
-        )
+        target and source.get("backend") == "mjlab" and source.get("entry") == "mjlab:managed"
+        and source.get("compilerHash") in historical
         and target == source | {"compilerHash": current_compiler}
     )
 

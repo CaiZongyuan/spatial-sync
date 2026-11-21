@@ -144,6 +144,8 @@ interview: interview.md                # lab-training-plan 产出的完整问答
 受管初始 actor 以 `reference + 4 * (reference - current)` 计算关节目标，按声明动作缩放与偏移转换为原始动作。生成方将同次拟合数据的最大绝对教师动作记录为 `fitActionAbsMax`。准入要求 `shift >= 8.0 + fitActionAbsMax`，以便仿射映射在声明的拟合域内落在两层 ELU 的线性段。预检及普通训练共用该初始化。续训和 finalize 从 Checkpoint 恢复模型并恢复非张量冻结配置。Job、Policy 和 Policy Export 记录有效配置摘要，原生资格同时检查实际 ONNX 动作路径使用了匹配的冻结统计。省略初始化时使用原有训练默认值及身份。
 
 受管初始化使用 IEEE float32。准入从固定参考帧和所声明的原始动作上界反推每个关节的实测角范围，计算观测编码上界，并取它与拟合观测上界 `abs(mean) + sqrt(count * variance)` 的较大值。准入把平移量、动作默认位置，以及两个关节项在偏移、居中和缩放后的绝对贡献相加，以限制抵消前的运算量级。估计量在原始动作及还原关节单位中均不得超过 96。该数值范围适用于声明的拟合域。
+
+受管初始化的原生资格使用锁定导出器的 ONNX 动作图和内嵌有限 float32 张量。图可通过 `Identity` 复用已定义的内嵌常量，这些别名须最终用于动作计算。通用 Policy 仍可按归档清单携带外置 ONNX 张量。
 6. **改动即新计划**：改算法、模型、奖励（即 Task 版本）、超出声明的 seed，都必须提交新计划。
 
 计划状态：`draft → submitted → approved | rejected → completed | abandoned`。

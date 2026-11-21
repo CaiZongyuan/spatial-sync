@@ -27,6 +27,7 @@ from packages.training.node_telemetry import NodeTelemetryHistory
 from packages.training.reference_initialization import receipt as initialization_receipt
 from packages.training.reference_initialization import validate_plan_initialization
 from packages.training.runtime import (
+    INITIALIZATION_R2_COMPILER,
     RuntimeMismatch,
     compatible_checkpoint_runtime,
     job_backend,
@@ -679,6 +680,19 @@ class TrainingJobs:
         backend = job_backend(job, task)
         managed_init = job["plan"].get("initialization") is not None
         current_compiler = compiler_hash() if managed_init or source else None
+        if source and managed_init and source["runtime"].get("compilerHash") == INITIALIZATION_R2_COMPILER:
+            source_lease = {"leaseId": source["leaseId"], "runtimeIdentity": source["runtime"]}
+            if checkpoints.identity(job, source_lease)["inputsSha256"] != source["inputsSha256"]:
+                job["reason"] = "checkpoint_inputs_mismatch"
+                return
+            try:
+                task_snapshot = self.manager.tasks.show(job["task"])
+                if task_snapshot["contentHash"] != job["taskContentHash"]:
+                    raise ValueError("Checkpoint Task content changed")
+                validate_plan_initialization(job["plan"], task_snapshot, self.manager.tasks)
+            except (LibraryError, OSError, ValueError):
+                job["reason"] = "invalid_job"
+                return
         for node in self.nodes.values():
             if node["id"] != "local" and not self.manager.settings.remote:
                 continue

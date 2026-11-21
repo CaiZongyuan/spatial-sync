@@ -1,8 +1,10 @@
 """Trusted verification is derived and reachable; numerical/native-looking caller labels cannot enable it."""
 
+import struct
+
 import pytest
 from fastapi.testclient import TestClient
-from onnx import TensorProto, helper
+from onnx import TensorProto, external_data_helper, helper
 
 from apps.api.app.main import create_app
 from apps.api.app.settings import Settings
@@ -52,6 +54,23 @@ def initialized_export(defect):
         del nodes[3].attribute[:]
         nodes[2].attribute.remove(next(attr for attr in nodes[2].attribute if attr.name == "alpha"))
         nodes[2].attribute.append(helper.make_attribute("transA", 0))
+    if defect in ("constant_alias", "unused_alias", "external_alias"):
+        source = "weight0" if defect == "external_alias" else "mean"
+        nodes.insert(0, helper.make_node("Identity", [source], ["first_alias"]))
+        nodes.insert(1, helper.make_node("Identity", ["first_alias"], ["second_alias"]))
+        if defect == "constant_alias":
+            nodes[2].input[1] = "second_alias"
+        if defect == "external_alias":
+            nodes[4].input[1] = "second_alias"
+    if defect == "input_alias":
+        nodes.insert(0, helper.make_node("Identity", ["observations"], ["input_alias"]))
+        nodes[1].input[0] = "input_alias"
+    if defect in ("external_weight", "external_alias"):
+        tensor = weights[2]
+        tensor.ClearField("float_data")
+        tensor.raw_data = b"placeholder"
+        external_data_helper.set_external_data(tensor, location="weights.bin", offset=0, length=1024)
+        tensor.ClearField("raw_data")
     graph = helper.make_graph(
         nodes, "initialized-export-fixture",
         [helper.make_tensor_value_info("observations", TensorProto.FLOAT, [1, 1])],
@@ -66,6 +85,7 @@ def initialized_export(defect):
     "defect", [
         "constant", "divisor", "unused", "gemm_alpha", "gemm_beta", "gemm_transpose", "elu_alpha",
         "missing_bias", "nonfinite_weight", "bool_mean", "string_std", "huge_std", "operator_defaults", None,
+        "constant_alias", "unused_alias", "input_alias", "external_weight", "external_alias",
     ],
 )
 def test_verify_source_checks_initialized_onnx_and_typed_statistics(tmp_path, monkeypatch, defect):
@@ -82,17 +102,19 @@ def test_verify_source_checks_initialized_onnx_and_typed_statistics(tmp_path, mo
         state["_std"] = [["1.0"]]
     if defect == "huge_std":
         state["_std"] = [[10**400]]
+    external = {"weights.bin": struct.pack("<256f", float("nan"), *([0.5] * 255))}
     with TestClient(create_app(Settings(node_token=TOKEN), observation_profiles=registry)) as client:
         _, route = native_inputs(
             client, tmp_path, monkeypatch, registry, initialization=initialization,
             normalizer_state=state, model=initialized_export(defect),
+            external=external if defect in ("external_weight", "external_alias") else None,
         )
         check = client.post(route, json={"artifact": "observations/native-samples.json"})
         assert check.status_code == 201, check.text
         assert check.json()["result"]["numericalPass"]
         verified = client.post(f"{route}/{check.json()['id']}/verify-source",
                                json={"artifact": "observations/native-capture.json"})
-        if defect not in (None, "operator_defaults"):
+        if defect not in (None, "operator_defaults", "constant_alias"):
             assert verified.status_code == 422, verified.text
             assert verified.json()["detail"]["code"] == "observation_evidence_invalid"
         else:

@@ -37,6 +37,7 @@ from .observations import ObservationSpec
 PRE_INITIALIZATION_VERIFIER = "51f6c3eded5669dcad50604359cfb6bfb58c406e41e876a65e6382eebd27046a"
 INITIALIZATION_R1_VERIFIER = "2cd813677830ff3ed0abc451dafe3e5875559df6220a376c30786971547ba8e1"
 INITIALIZATION_R2_VERIFIER = "a125d3b416cd51ba528874383d0d9cb382ac7ed0d3249d92c920ac6e6af4b061"
+INITIALIZATION_R3_VERIFIER = "64c14c450a8a26f6bdb1d620af25013474c7ad6321687ea4ce70d98606c83386"
 
 # The pre-finalization verifier understood the same v1 evidence. Preserve its
 # retained decisions when all other implementation and runtime pins still match.
@@ -102,8 +103,13 @@ def _verify_exported_normalizer(model, normalization, widths):
     initializers = {tensor.name: tensor for tensor in graph.initializer}
     error = "ONNX action path differs from the reviewed normalized actor"
     if ([(op.domain, op.version) for op in model.opset_import] != [("", 18)]
-            or len(graph.input) != 1 or len(graph.output) != 1 or len(graph.node) != 7
-            or len(initializers) != len(graph.initializer) or graph.sparse_initializer):
+            or len(graph.input) != 1 or len(graph.output) != 1
+            or graph.input[0].name in initializers or len(initializers) != len(graph.initializer)
+            or graph.sparse_initializer or model.functions):
+        raise ValueError(error)
+    if any(tensor.data_type != onnx.TensorProto.FLOAT
+           or tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
+           for tensor in initializers.values()):
         raise ValueError(error)
     attr = onnx.AttributeProto
     affine_defaults = {"alpha": (attr.FLOAT, 1.0), "beta": (attr.FLOAT, 1.0),
@@ -122,28 +128,49 @@ def _verify_exported_normalizer(model, normalization, widths):
         ("Gemm", ((output, second), (output,)), gemm),
     )
     value = graph.input[0].name
-    for node, (operator, shapes, attributes) in zip(graph.node, schema, strict=True):
-        if (node.domain or node.overload or node.op_type != operator or len(node.input) != 1 + len(shapes)
-                or node.input[0] != value or len(node.output) != 1 or len(node.attribute) > len(attributes)):
+    defined = {value, *initializers}
+    aliases = set()
+    used_constants = set()
+    constants = initializers.copy()
+    steps = iter(schema)
+    for node in graph.node:
+        if (node.domain or node.overload or len(node.output) != 1
+                or not node.output[0] or node.output[0] in defined):
+            raise ValueError(error)
+        output_name = node.output[0]
+        defined.add(output_name)
+        if node.op_type == "Identity":
+            if len(node.input) != 1 or node.attribute or node.input[0] not in constants:
+                raise ValueError(error)
+            constants[output_name] = constants[node.input[0]]
+            used_constants.add(node.input[0])
+            aliases.add(output_name)
+            continue
+        step = next(steps, None)
+        if step is None:
+            raise ValueError(error)
+        operator, shapes, attributes = step
+        if (node.op_type != operator or len(node.input) != 1 + len(shapes)
+                or node.input[0] != value or len(node.attribute) > len(attributes)):
             raise ValueError(error)
         actual = {item.name: (item.type, onnx.helper.get_attribute_value(item)) for item in node.attribute}
         if len(actual) != len(node.attribute) or defaults.get(operator, {}) | actual != attributes:
             raise ValueError(error)
         for name, shape in zip(node.input[1:], shapes, strict=True):
-            tensor = initializers.get(name)
-            if tensor is None or tensor.data_type != onnx.TensorProto.FLOAT or tuple(tensor.dims) != shape:
+            tensor = constants.get(name)
+            if tensor is None or tuple(tensor.dims) != shape:
                 raise ValueError(error)
-            if (tensor.data_location == onnx.TensorProto.DEFAULT
-                    and not np.isfinite(onnx.numpy_helper.to_array(tensor)).all()):
+            used_constants.add(name)
+            array = onnx.numpy_helper.to_array(tensor)
+            if operator in ("Sub", "Div"):
+                expected = normalization[0 if operator == "Sub" else 1]
+                if not np.array_equal(array, expected):
+                    raise ValueError(error)
+            elif not np.isfinite(array).all():
                 raise ValueError(error)
-        value = node.output[0]
-    if value != graph.output[0].name:
+        value = output_name
+    if next(steps, None) is not None or value != graph.output[0].name or aliases - used_constants:
         raise ValueError(error)
-    for node, expected in zip(graph.node[:2], normalization, strict=True):
-        tensor = initializers[node.input[1]]
-        if (tensor.data_location != onnx.TensorProto.DEFAULT or tensor.external_data
-                or not np.array_equal(onnx.numpy_helper.to_array(tensor), expected)):
-            raise ValueError(error)
 
 
 class NativeProfiles:
@@ -377,7 +404,7 @@ class NativeCaptureVerifier:
         job = self.evidence.manager.jobs.get(policy["jobId"])
         profile = self._profile(policy, job, receipt)
         current = implementation_identity()
-        retained_verifiers = [INITIALIZATION_R2_VERIFIER]
+        retained_verifiers = [INITIALIZATION_R3_VERIFIER, INITIALIZATION_R2_VERIFIER]
         init = job["plan"].get("initialization")
         if not init or "fitActionAbsMax" not in init:
             retained_verifiers.append(INITIALIZATION_R1_VERIFIER)

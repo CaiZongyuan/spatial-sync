@@ -3,8 +3,35 @@
 import pytest
 
 from apps.node import bridge_callback
-from packages.training.runtime import RuntimeMismatch, training_runtime
+from packages.training.runtime import (
+    INITIALIZATION_R1_COMPILER,
+    INITIALIZATION_R2_COMPILER,
+    PRE_INITIALIZATION_COMPILER,
+    RuntimeMismatch,
+    compatible_checkpoint_runtime,
+    training_runtime,
+)
 from tests.gateway.test_remote_training_nodes import ISAAC_VERSIONS, MJLAB_VERSIONS
+
+
+def test_initialized_checkpoint_runtime_migration_is_exact():
+    current = "c" * 64
+    source = {"backend": "mjlab", "entry": "mjlab:managed", "compilerHash": INITIALIZATION_R2_COMPILER,
+              "trainerVersions": MJLAB_VERSIONS}
+    target = source | {"compilerHash": current}
+    plan = {"initialization": {"sha256": "a" * 64}}
+    assert compatible_checkpoint_runtime(source, target, plan, current)
+    assert not compatible_checkpoint_runtime(source, target | {"backend": "isaaclab"}, plan, current)
+    assert not compatible_checkpoint_runtime(source | {"backend": "isaaclab"},
+                                             target | {"backend": "isaaclab"}, plan, current)
+    assert not compatible_checkpoint_runtime(source, target | {"entry": "other"}, plan, current)
+    versions = MJLAB_VERSIONS | {"torch": "2.9.1+other"}
+    assert not compatible_checkpoint_runtime(source, target | {"trainerVersions": versions}, plan, current)
+    assert not compatible_checkpoint_runtime(source, target, plan, "d" * 64)
+    for compiler in (PRE_INITIALIZATION_COMPILER, INITIALIZATION_R1_COMPILER):
+        historical = source | {"compilerHash": compiler}
+        assert compatible_checkpoint_runtime(historical, target, {}, current)
+        assert not compatible_checkpoint_runtime(historical, target, plan, current)
 
 
 @pytest.mark.parametrize("kind,backend,pinned", [

@@ -19,7 +19,7 @@ from tests.unit import test_native_observation_capture as controlled
 
 
 def native_inputs(client, tmp_path, monkeypatch, registry=None, *, initialization=None,
-                  normalizer_state=None, model=None):
+                  normalizer_state=None, model=None, external=None):
     package = tmp_path / "task"
     package.mkdir()
     (package / "native_provider.py").write_bytes(Path(controlled.__file__).read_bytes())
@@ -30,7 +30,7 @@ def native_inputs(client, tmp_path, monkeypatch, registry=None, *, initializatio
     def artifacts(job):
         output = tmp_path / "output"
         output.mkdir()
-        extract_package(io.BytesIO(artifact_archive(job, model=model)), output)
+        extract_package(io.BytesIO(artifact_archive(job, model=model, external=external)), output)
         versions = json.loads((output / "versions.json").read_bytes())
         versions["versions"]["rsl_rl"] = "5.4.1"  # Match approved dispatch; the profile stays controlled.
         if initialization is not None:
